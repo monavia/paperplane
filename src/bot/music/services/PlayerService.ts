@@ -83,6 +83,8 @@ export async function skip(guildId: string, userId: string, userName: string): P
 export async function stop(guildId: string, userId: string, userName: string): Promise<void> {
   const engine = getEngine(guildId);
   await engine.playback.stop();
+  const { deleteState } = require("./StateService");
+  await deleteState(guildId).catch(() => {});
   const ActivityService = require("../../services/ActivityService").default;
   await ActivityService.log({ guildId, userId, userName, action: "stop", detail: "Stopped playback" });
 }

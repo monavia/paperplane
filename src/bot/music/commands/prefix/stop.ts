@@ -9,8 +9,11 @@ export default {
   async execute(message: any, _args: string[]) {
     const vc = checkSameVoice(message);
     if (!vc.ok) return message.channel.send({ embeds: [ErrorEmbed.build(vc.message)] });
-    const player = MusicService.getEngine(message.guildId!).player;
-    if (!player) return message.channel.send({ embeds: [ErrorEmbed.build("No track is currently playing.")] });
+    const engine = MusicService.getEngine(message.guildId!);
+    const player = engine.player;
+    if (!player || (!player.playing && !player.paused && !engine.queue.size())) {
+      return message.channel.send({ embeds: [ErrorEmbed.build("Nothing to stop.")] });
+    }
     try {
       await MusicService.stop(message.guildId!, message.author.id, message.author.username);
       return message.channel.send({ embeds: [new EmbedBuilder().setDescription("Playback stopped.").setColor(Colors.INFO)] });
