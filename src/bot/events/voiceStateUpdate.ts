@@ -5,6 +5,9 @@ import { getTextChannelId } from "../music/services/TextChannelStore";
 import { setLastFilter } from "../database/repositories/GuildRepository";
 import { isIdleDisconnect, clearIdleDisconnect } from "../music/engine/musicEvents";
 
+let startupPhase = true;
+setTimeout(() => { startupPhase = false; }, 15000);
+
 export function start(client: any): void {
   client.on("voiceStateUpdate", async (oldState: any, newState: any) => {
     const botId = client.user?.id;
@@ -16,14 +19,14 @@ export function start(client: any): void {
 
       await setLastFilter(guildId, "none").catch(() => {});
 
-      // Skip embed if disconnect was from idle timeout (queue ended)
+      // Skip embed if idle disconnect
       if (isIdleDisconnect(guildId)) {
         clearIdleDisconnect(guildId);
         return;
       }
 
-      // Skip embed if bot just started (fresh restart after crash — stale session)
-      if (!client.readyAt) return;
+      // Skip embed during startup (stale session from previous crash)
+      if (startupPhase) return;
 
       const channelId = getTextChannelId(guildId);
       if (channelId) {

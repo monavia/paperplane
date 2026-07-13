@@ -27,6 +27,8 @@ const retryTracks = new Map<string, Set<string>>();
 const manualAdvances = new Map<string, number>();
 const MANUAL_ADVANCE_WINDOW_MS = 5000;
 const idleDisconnects = new Set<string>();
+let startupPhase = true;
+setTimeout(() => { startupPhase = false; }, 15000);
 export function markIdleDisconnect(guildId: string): void { idleDisconnects.add(guildId); }
 export function isIdleDisconnect(guildId: string): boolean { return idleDisconnects.has(guildId); }
 export function clearIdleDisconnect(guildId: string): void { idleDisconnects.delete(guildId); }
@@ -177,7 +179,7 @@ function register(client: any): void {
     const isManualAdvance = manualAdvances.has(player.guildId);
     const suppress = suppressTrackStart.has(player.guildId);
     if (suppress) suppressTrackStart.delete(player.guildId);
-    const shouldSendEmbed = !restored && !isManualAdvance && !suppress;
+    const shouldSendEmbed = !restored && !isManualAdvance && !suppress && !startupPhase;
     const textChannelId2 = getTextChannelId(player.guildId);
     if (textChannelId2 && shouldSendEmbed) {
       const channel = client.channels.cache.get(textChannelId2);
