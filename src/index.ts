@@ -1,6 +1,14 @@
 import "reflect-metadata";
 import "dotenv/config";
 
+// Suppress lavalink-client internal console.error dumps
+const _origConsoleError = console.error;
+console.error = (...args: any[]) => {
+  const first = args[0];
+  if (first && typeof first === "object" && (first.NodeManager || first.nodeType === "Lavalink" || first.heartBeatPingTimestamp !== undefined)) return;
+  _origConsoleError(...args);
+};
+
 import { Client, GatewayIntentBits, REST, Routes, Collection } from "discord.js";
 import Config from "./bot/config/bot";
 import AIConfig from "./bot/config/ai";
@@ -111,16 +119,13 @@ async function main() {
 }
 
 process.on("unhandledRejection", (err: any) => {
+  if (!(err instanceof Error)) return;
   Logger.error("Unhandled rejection:", err?.message || String(err));
 });
 process.on("uncaughtException", (err: any) => {
-  const msg = err?.message || err;
-  // lavalink-client sometimes throws detailed node objects — only log brief
-  if (typeof msg === "object") {
-    Logger.error(`Uncaught exception: ${msg?.options?.id || "Lavalink"} node error`);
-  } else {
-    Logger.error("Uncaught exception:", msg);
-  }
+  if (!(err instanceof Error)) return;
+  if (err.message?.includes("Unhandled error")) return;
+  Logger.error("Uncaught exception:", err?.message || String(err));
 });
 
 main();

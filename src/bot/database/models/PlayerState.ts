@@ -7,6 +7,7 @@ const playerStateSchema = new Schema({
   queue: { type: [Schema.Types.Mixed], default: [] },
   nowPlaying: { type: Schema.Types.Mixed, default: null },
   position: { type: Number, default: 0 },
+  nodeId: { type: String, default: null },
   updatedAt: { type: Date, default: Date.now },
 });
 

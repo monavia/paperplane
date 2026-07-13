@@ -5,9 +5,6 @@ import { getTextChannelId } from "../music/services/TextChannelStore";
 import { setLastFilter } from "../database/repositories/GuildRepository";
 import { isIdleDisconnect, clearIdleDisconnect } from "../music/engine/musicEvents";
 
-let startupPhase = true;
-setTimeout(() => { startupPhase = false; }, 15000);
-
 export function start(client: any): void {
   client.on("voiceStateUpdate", async (oldState: any, newState: any) => {
     const botId = client.user?.id;
@@ -25,8 +22,10 @@ export function start(client: any): void {
         return;
       }
 
-      // Skip embed during startup (stale session from previous crash)
-      if (startupPhase) return;
+      // Skip embed if bot has no active player for this guild (stale session from crash)
+      const { getEngine } = require("../music/services/PlayerService");
+      const engine = getEngine(guildId);
+      if (!engine.player?.voiceChannelId) return;
 
       const channelId = getTextChannelId(guildId);
       if (channelId) {

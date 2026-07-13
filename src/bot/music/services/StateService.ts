@@ -26,7 +26,7 @@ export function startPositionSync(guildId: string): void {
       const engine = getEngine(guildId);
       const player = engine.player;
       if (!player?.playing) return;
-      await PlayerState.updateOne({ guildId }, { $set: { position: player.position || 0, updatedAt: new Date() } });
+      await PlayerState.updateOne({ guildId }, { $set: { position: player.position || 0, nodeId: player.node?.id || null, updatedAt: new Date() } });
     } catch {}
   }, 5000);
   positionSyncTimers.set(guildId, timer);
@@ -63,6 +63,7 @@ async function saveState(guildId: string) {
         queue: queue.map((t: any) => JSON.parse(JSON.stringify(t))),
         nowPlaying: nowPlaying ? JSON.parse(JSON.stringify(nowPlaying)) : null,
         position: player.position || 0,
+        nodeId: player.node?.id || null,
         updatedAt: new Date(),
       },
       { upsert: true },
@@ -116,10 +117,55 @@ async function restoreGuildState(client: any, saved: any): Promise<boolean> {
   if (saved.textChannelId) setTextChannelId(saved.guildId, saved.textChannelId);
 
   const engine = getEngine(saved.guildId);
-  const player = await engine.join(saved.voiceChannelId, saved.textChannelId);
+  let player = await engine.join(saved.voiceChannelId, saved.textChannelId);
   if (!player) return false;
 
-  const node = player?.node;
+  // Wait for voice connection to establish (max 5s)
+  let voiceRetries = 0;
+  while (!player.connected && voiceRetries < 10) {
+    await new Promise(r => setTimeout(r, 500));
+    voiceRetries++;
+  }
+  if (!player.connected) {
+    Logger.warn(`[StateRestore] Voice connection not ready for ${saved.guildId} after ${voiceRetries * 500}ms`);
+  }
+
+  // Ensure player is on a healthy node (failover support)
+  const lavalink = require("../engine/lavalink");
+  const manager = lavalink.get();
+  const allNodes = manager?.nodeManager?.nodes ? Array.from(manager.nodeManager.nodes.values()) : [];
+  const healthyNodes = allNodes.filter((n: any) => n.connected);
+  const playerNodeHealthy = player.node?.connected;
+
+  if (!playerNodeHealthy && healthyNodes.length) {
+    let target: any = saved.nodeId ? healthyNodes.find((n: any) => n.id === saved.nodeId) : null;
+    if (!target) target = healthyNodes[0];
+
+    try {
+      await player.changeNode(target.id);
+      Logger.info(`[StateRestore] Moved player ${saved.guildId} to healthy node ${target.id}`);
+    } catch {
+      Logger.warn(`[StateRestore] changeNode failed — recreating player on ${target.id}`);
+      try {
+        await player.destroy().catch(() => {});
+        player = manager.createPlayer({
+          guildId: saved.guildId,
+          voiceChannelId: saved.voiceChannelId,
+          textChannelId: saved.textChannelId || "",
+          selfDeaf: true,
+          selfMute: false,
+          node: target.id,
+        });
+        await player.connect();
+        engine.player = player;
+        Logger.info(`[StateRestore] Recreated player ${saved.guildId} on ${target.id}`);
+      } catch {
+        return false;
+      }
+    }
+  }
+
+  const node = engine.player?.node;
   if (!node?.connected) return false;
 
   let resumedTrackActive = false;
@@ -150,7 +196,8 @@ async function restoreGuildState(client: any, saved: any): Promise<boolean> {
       first = engine.queue.next();
       if (!first) return;
       state.nowPlaying.set(saved.guildId, first);
-      await player.play({ track: first, clientTrack: first, position: saved.position || 0 });
+      const pos = (saved.position || 0) > 0 && first?.info?.duration ? Math.min(saved.position, first.info.duration - 1000) : 0;
+      await player.play({ track: first, clientTrack: first, position: pos });
     });
     if (first) {
       restoredGuilds.add(saved.guildId);
