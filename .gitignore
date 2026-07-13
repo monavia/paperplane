@@ -368,3 +368,5 @@ FodyWeavers.xsd
 /application123.yml
 /.env
 /dist
+/AGENTS.md
+/package-lock.json
