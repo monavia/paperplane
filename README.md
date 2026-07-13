@@ -35,9 +35,9 @@ npm run build && npm start  # production
 
 ## Commands
 
-All 22 commands available as both **slash** (`/`) and **prefix** (`PREFIX`, default `-`):
+All 23 commands available as both **slash** (`/`) and **prefix** (`PREFIX`, default `-`):
 
-`play` `search` `skip` `stop` `pause` `resume` `queue` `nowplaying` `loop` `shuffle` `clear` `volume` `seek` `lyrics` `remove` `move` `swap` `jump` `autoplay` `filter` `equalizer` `help`
+`play` `search` `skip` `stop` `pause` `resume` `queue` `nowplaying` `loop` `shuffle` `clear` `volume` `seek` `lyrics` `remove` `move` `swap` `jump` `autoplay` `filter` `equalizer` `help` `prefix`
 
 ## Stack
 

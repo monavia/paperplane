@@ -4,6 +4,8 @@ import { runAIAsk } from "../ai/services/AITaskQueue";
 import { checkPrompt } from "../ai/services/PromptFilter";
 import Logger from "../core/utils/Logger";
 import Colors from "../core/constants/Colors";
+import * as ErrorEmbed from "../ui/embeds/ErrorEmbed";
+import { getPrefix } from "../database/repositories/GuildRepository";
 
 export function start(client: any): void {
   client.on("messageCreate", async (message: any) => {
@@ -13,11 +15,12 @@ export function start(client: any): void {
     const botMentionNick = `<@!${client.user?.id}>`;
     const content = message.content;
     const isMention = content.startsWith(botMention) || content.startsWith(botMentionNick);
-    const isPrefix = content.startsWith(Config.prefix);
+    const guildPrefix = await getPrefix(message.guildId);
+    const isPrefix = content.startsWith(guildPrefix);
 
     // Prefix command handling
     if (isPrefix) {
-      const args = content.slice(Config.prefix.length).trim().split(/ +/);
+      const args = content.slice(guildPrefix.length).trim().split(/ +/);
       const commandName = args.shift()?.toLowerCase();
       if (!commandName) return;
 
@@ -54,7 +57,23 @@ export function start(client: any): void {
     await message.channel.sendTyping().catch(() => {});
 
     try {
-      const reply = await runAIAsk(message.author.id, prompt, "");
+      // Pre-check: prefix change requires ManageGuild
+      if (/\b(prefix|ganti|change|set|ubah)\b/i.test(prompt) && !message.member?.permissions?.has("ManageGuild")) {
+        return message.channel.send({ embeds: [ErrorEmbed.build("Changing prefix requires `Manage Server` permission.")] });
+      }
+
+      const prefix = await getPrefix(message.guildId);
+      const sysPrompt = `Current bot prefix for this server is: "${prefix}". ` +
+        `User can type "${prefix}help" or "/help" to see commands. ` +
+        `To change prefix, reply with: PREFIX: <new prefix> (e.g., "PREFIX: !") — I will execute it.`;
+      const reply = await runAIAsk(message.author.id, prompt, sysPrompt);
+      const prefixExec = reply.match(/^PREFIX:\s*(\S+)/im);
+      if (prefixExec) {
+        const newP = prefixExec[1].substring(0, 3);
+        const { setPrefix } = require("../database/repositories/GuildRepository");
+        await setPrefix(message.guildId, newP);
+        return message.channel.send({ embeds: [new EmbedBuilder().setDescription(`Prefix changed to \`${newP}\``).setColor(Colors.INFO)] });
+      }
       const chunks = reply.match(/[\s\S]{1,3800}/g) || [reply];
       const embeds = chunks.map((text: string) => new EmbedBuilder().setDescription(text).setColor(Colors.INFO));
       for (const embed of embeds) {
@@ -62,7 +81,7 @@ export function start(client: any): void {
       }
     } catch (err: any) {
       Logger.error(`AI error: ${err.message}`);
-      message.channel.send("Sorry, I couldn't process that. Try again later.");
+      message.channel.send({ embeds: [ErrorEmbed.build("Sorry, I couldn't process that. Try again later.")] });
     }
   });
 }
