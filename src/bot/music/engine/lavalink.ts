@@ -4,33 +4,69 @@ import Logger from "../../core/utils/Logger";
 let lavalink: LavalinkManager | null = null;
 let clientRef: any = null;
 const lastReconnectAttempt = new Map<string, number>();
+const failoverGuilds = new Set<string>();
 
-async function failoverFromNode(nodeId: string) {
+export function isFailoverGuild(guildId: string): boolean {
+  return failoverGuilds.has(guildId);
+}
+export function clearFailoverGuild(guildId: string): void {
+  failoverGuilds.delete(guildId);
+}
+
+export async function failoverFromNode(nodeId: string) {
   if (!lavalink?.nodeManager) return;
-  const nodes = Array.from(lavalink.nodeManager.nodes.values());
-  const healthy = nodes.filter((n: any) => n.connected && n.id !== nodeId);
-  if (!healthy.length) return;
-  const target = healthy[0];
   const state = require("../../core/state/StateManager");
   const { getTextChannelId } = require("../services/TextChannelStore");
+  const failoverLocks = new Set<string>();
+
   for (const [guildId, player] of lavalink.players) {
     if (player.node?.id !== nodeId) continue;
+    if (failoverLocks.has(guildId)) continue;
+    failoverLocks.add(guildId);
+    failoverGuilds.add(guildId);
+
+    // Find a healthy target node now (not cached from before loop)
+    const nodes = Array.from(lavalink.nodeManager.nodes.values());
+    const healthy = nodes.filter((n: any) => n.connected && n.id !== nodeId);
+    if (!healthy.length) {
+      Logger.warn(`[NodeLink] Failover: no healthy nodes for guild ${guildId}`);
+      continue;
+    }
+    const target = healthy[0];
+
+    // Double-check target is actually usable (connected + has sessionId)
+    if (!target.sessionId) {
+      Logger.warn(`[NodeLink] Failover: target ${target.id} seems connected but no session yet — skipping failover for ${guildId}`);
+      continue;
+    }
+
     try {
-      await player.changeNode(target.id);
+      await player.changeNode(target.id, false);
       Logger.info(`[NodeLink] Failover: moved player ${guildId} to ${target.id}`);
+      // Re-resolve current track — old encoded may not work on new node
+      const curTrack = state.nowPlaying.get(guildId);
+      if (curTrack?.info?.uri && !player.playing) {
+        const search = await player.search({ query: curTrack.info.uri }, { id: "system" }).catch(() => null);
+        const resolved = search?.tracks?.[0];
+        if (resolved) await player.play({ track: resolved, clientTrack: resolved, position: player.position || 0 }).catch(() => {});
+      }
     } catch {
       Logger.warn(`[NodeLink] Failover: changeNode failed for ${guildId} — recreating on ${target.id}`);
       try {
         const savedPos = player.position || 0;
-        await player.destroy().catch(() => {});
+        const track = state.nowPlaying.get(guildId);
         const vcId = player.voiceChannelId;
         if (!vcId) continue;
-        const newPlayer = lavalink.createPlayer({ guildId, voiceChannelId: vcId, textChannelId: getTextChannelId(guildId) || "", selfDeaf: true, selfMute: false, node: target.id });
+        const newPlayer = lavalink.createPlayer({ guildId, voiceChannelId: vcId, textChannelId: getTextChannelId(guildId) || "", selfDeaf: true, selfMute: false });
         await newPlayer.connect();
-        const nowPlaying = state.nowPlaying.get(guildId);
-        if (nowPlaying?.encoded) { state.nowPlaying.set(guildId, nowPlaying); await newPlayer.play({ track: nowPlaying, clientTrack: nowPlaying, position: savedPos }); }
-        Logger.info(`[NodeLink] Failover: recreated player ${guildId} on ${target.id}`);
-      } catch (err2: any) { Logger.error(`[NodeLink] Failover: recreate failed for ${guildId}: ${err2.message}`); }
+        if (track?.info?.uri) {
+          // Resolve via URI — works across different NodeLink/Lavalink instances
+          const search = await newPlayer.search({ query: track.info.uri }, { id: "system" }).catch(() => null);
+          const resolved = search?.tracks?.[0] || track;
+          await newPlayer.play({ track: resolved, clientTrack: resolved, position: savedPos });
+        }
+        Logger.info(`[NodeLink] Failover: recreated player ${guildId} (auto node)`);
+      } catch (err2: any) { Logger.warn(`[NodeLink] Failover: recreate failed for ${guildId}: ${err2.message}`); }
     }
   }
 }
@@ -51,6 +87,7 @@ export async function init(client: any): Promise<boolean> {
       region: process.env[`NODELINK_REGION${i > 1 ? `_${i}` : ""}`] || "asia",
       nodeType: NodeType.NodeLink,
       closeOnError: false,
+      heartBeatInterval: 1000,
     });
   }
 
@@ -97,21 +134,10 @@ export async function init(client: any): Promise<boolean> {
     Logger.info(`[NodeLink] Node ${node.id} (${node.options?.region || "?"}) reconnecting`);
   });
 
-  // Session resuming — enable on node connect
-  if (lavalink?.nodeManager) {
-    lavalink.nodeManager.on("connect", (node: any) => {
-      node.updateSession(true, 300_000);
-      Logger.info(`[NodeLink] Session resuming enabled for ${node.id} (${node.options?.region || "?"})`);
-    });
-
-    lavalink.nodeManager.on("resumed", (node: any, _payload: any, fetchedPlayers: any) => {
-      const players = Array.isArray(fetchedPlayers) ? fetchedPlayers : [];
-      Logger.info(`[NodeLink] Node ${node.id} resumed — ${players.length} player(s) restored`);
-      for (const p of players) {
-        Logger.info(`[NodeLink] Resumed player ${p.guildId} on ${node.id}`);
-      }
-    });
-  }
+  // Enable SponsorBlock on player creation
+  l.on("playerCreate", (player: any) => {
+    player.setSponsorBlock(["sponsor", "intro", "outro", "selfpromo", "interaction", "preview", "music_offtopic"]).catch(() => {});
+  });
 
   l.on("trackStart", () => {});
   l.on("queueEnd", () => {});
@@ -136,15 +162,16 @@ export async function init(client: any): Promise<boolean> {
         await failoverFromNode(node.id);
 
         const last = lastReconnectAttempt.get(node.id) || 0;
-        if (now - last < 60000) continue;
+        if (now - last < 15000) continue;
         lastReconnectAttempt.set(node.id, now);
         Logger.info(`[NodeLink] Health check: reconnecting ${node.id} (${(node.options as any)?.region || "?"})...`);
-        try { await node.connect(); if (node.connected && node.sessionId) Logger.info(`[NodeLink] Node ${node.id} (${(node.options as any)?.region || "?"}) reconnected`); } catch (err: any) {
-          Logger.warn(`[NodeLink] Health reconnect failed for ${node.id}: ${err?.message || err}`);
+        const connectTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000));
+        try { await Promise.race([node.connect(), connectTimeout]); if (node.connected && node.sessionId) Logger.info(`[NodeLink] Node ${node.id} (${(node.options as any)?.region || "?"}) reconnected`); } catch (err: any) {
+          Logger.warn(`[NodeLink] Health reconnect failed for ${node.id}: ${err?.message || "timeout"}`);
         }
       }
     }
-  }, 5000);
+  }, 1000);
 
   client.on("raw", (d: any) => l.sendRawData(d));
   return true;

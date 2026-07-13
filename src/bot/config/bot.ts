@@ -8,4 +8,5 @@ export default {
   apiPort: parseInt(process.env.API_PORT || process.env.BOT_API_PORT || "3001"),
   apiHost: process.env.API_HOST || "127.0.0.1",
   deployCommands: process.env.DEPLOY_COMMANDS !== "false",
+  maxQueue: parseInt(process.env.MAX_QUEUE || "150"),
 };

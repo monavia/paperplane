@@ -10,7 +10,7 @@ export function getSourceEmoji(source: string): string {
 export function build(track: any, _player: any): EmbedBuilder {
   const title = track.info?.title || "Unknown";
   const author = track.info?.author || "Unknown";
-  const url = track.info?.originalUrl || track.info?.uri || "";
+  const url = track.info?.spotifyUrl || track.info?.originalUrl || track.info?.uri || "";
   const source = track.info?.source || "youtube";
   const emoji = getSourceEmoji(source);
   return new EmbedBuilder()
@@ -20,7 +20,7 @@ export function build(track: any, _player: any): EmbedBuilder {
 
 export function addedToQueue(track: any, position: number): EmbedBuilder {
   const title = track.info?.title || "Unknown";
-  const url = track.info?.originalUrl || track.info?.uri || "";
+  const url = track.info?.spotifyUrl || track.info?.originalUrl || track.info?.uri || "";
   const source = track.info?.source || "youtube";
   const emoji = getSourceEmoji(source);
   return new EmbedBuilder()

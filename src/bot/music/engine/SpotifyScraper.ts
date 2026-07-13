@@ -60,6 +60,14 @@ class SpotifyScraper {
     const cached = this.getCache(cacheKey);
     if (cached) return cached;
 
+    // Full page — contains ALL tracks (up to ~1000)
+    const html = await this._fetchPage(`https://open.spotify.com/playlist/${id}`).catch(() => null);
+    if (html) {
+      const htmlTracks = this._extractFromHtml(html);
+      if (htmlTracks?.length) { this.setCache(cacheKey, htmlTracks); return htmlTracks; }
+    }
+
+    // Fallback: embed pagination (max 50 tracks)
     const allTracks: any[] = [];
     let offset = 0;
     while (allTracks.length < 500) {
@@ -79,10 +87,6 @@ class SpotifyScraper {
 
     const unique = this._deduplicate(allTracks);
     if (unique.length) { this.setCache(cacheKey, unique); return unique; }
-
-    const html = await this._fetchPage(`https://open.spotify.com/playlist/${id}`);
-    const htmlTracks = this._extractFromHtml(html);
-    if (htmlTracks?.length) { this.setCache(cacheKey, htmlTracks); return htmlTracks; }
 
     throw new Error("Could not extract playlist data from Spotify");
   }

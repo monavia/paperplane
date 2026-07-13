@@ -179,7 +179,9 @@ function register(client: any): void {
     const isManualAdvance = manualAdvances.has(player.guildId);
     const suppress = suppressTrackStart.has(player.guildId);
     if (suppress) suppressTrackStart.delete(player.guildId);
-    const shouldSendEmbed = !restored && !isManualAdvance && !suppress && !startupPhase;
+    const isFailover = require("./lavalink").isFailoverGuild?.(player.guildId);
+    if (isFailover) { require("./lavalink").clearFailoverGuild(player.guildId); }
+    const shouldSendEmbed = !restored && !isManualAdvance && !suppress && !startupPhase && !isFailover;
     const textChannelId2 = getTextChannelId(player.guildId);
     if (textChannelId2 && shouldSendEmbed) {
       const channel = client.channels.cache.get(textChannelId2);

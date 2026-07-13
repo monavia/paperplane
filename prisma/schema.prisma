@@ -1,0 +1,113 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Guild {
+  guildId       String   @id
+  prefix        String   @default("-")
+  volume        Int      @default(80)
+  lastFilter    String   @default("none")
+  lastEqualizer Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model PlayerState {
+  guildId       String   @id
+  voiceChannelId String
+  textChannelId String?
+  queue         Json?
+  nowPlaying    Json?
+  position      Int      @default(0)
+  nodeId        String?
+  updatedAt     DateTime @default(now()) @updatedAt
+}
+
+model Conversation {
+  id        String   @id @default(cuid())
+  userId    String
+  messages  Json?
+  expiresAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Memory {
+  id        String   @id @default(cuid())
+  userId    String
+  entry     String?
+  timestamp DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Activity {
+  id        String   @id @default(cuid())
+  guildId   String
+  userId    String
+  userName  String?
+  action    String?
+  detail    String?
+  songTitle String?
+  artist    String?
+  timestamp DateTime @default(now())
+
+  @@index([guildId])
+}
+
+model SongRequest {
+  id        String   @id @default(cuid())
+  guildId   String
+  userId    String
+  userName  String?
+  query     String?
+  status    String   @default("pending")
+  createdAt DateTime @default(now())
+}
+
+model HistoryEntry {
+  id        String   @id @default(cuid())
+  guildId   String
+  userId    String
+  songTitle String?
+  artist    String?
+  timestamp DateTime @default(now())
+
+  @@index([guildId])
+}
+
+// Dashboard tables (managed by Dashboard Discord/, NOT by bot)
+model team_tags {
+  name      String @id
+  color_key String @default("amber")
+  priority  Int    @default(0)
+}
+
+model team_specialists {
+  id        String @id @default(uuid()) @db.Uuid
+  name      String
+  color_key String @default("amber")
+}
+
+model team_members {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  role        String   @default("")
+  image       String?
+  color_key   String   @default("amber")
+  tag         String   @default("")
+  description String?
+  github      String?
+  discord     String?
+  sort_order  Int      @default(0)
+  specialist  String?
+  socials     Json?    @default("{}")
+  created_at  DateTime @default(now()) @db.Timestamptz
+
+  @@index([sort_order])
+}

@@ -4,6 +4,7 @@ import * as SpotifyScraper from "../engine/SpotifyScraper";
 import SpotifyResolver from "../engine/SpotifyResolver";
 import { searchWithRetry } from "./SearchService";
 import ActivityService from "../../services/ActivityService";
+import botConfig from "../../config/bot";
 
 function normalize(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, "").trim();
@@ -125,12 +126,17 @@ async function processTracks(engine: any, player: any, guildId: string, scrapedT
   if (targetTracks.length === 0 && deduped.length === 0) throw new Error("All tracks are already in the queue.");
 
   const wasPlaying = player.playing || player.paused || engine.queue.getAll().length > 0;
+  const currentLen = engine.queue.getAll().length;
+  const space = botConfig.maxQueue - currentLen;
+  const addable = space < targetTracks.length ? targetTracks.slice(0, space) : targetTracks;
+  if (addable.length === 0) throw new Error("Queue full.");
+
   if (wasPlaying) {
-    engine.queue.addMultiple(targetTracks);
+    engine.queue.addMultiple(addable);
    } else {
      await withQueueLock(guildId, async () => {
        engine.queue.clear();
-       engine.queue.addMultiple(targetTracks);
+       engine.queue.addMultiple(addable);
        const first = engine.queue.next();
        if (first) await player.play({ track: first, clientTrack: first });
      });

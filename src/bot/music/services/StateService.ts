@@ -5,6 +5,7 @@ import { getTextChannelId, setTextChannelId } from "./TextChannelStore";
 import state from "../../core/state/StateManager";
 import { withQueueLock } from "../../core/state/QueueLock";
 import * as lavalink from "../engine/lavalink";
+import { isUsingPrisma } from "../../database/connection";
 
 const restoredGuilds = new Set<string>();
 let restoreRetryTimer: NodeJS.Timeout | null = null;
@@ -17,6 +18,62 @@ export function clearRestoredGuild(guildId: string): void {
   restoredGuilds.delete(guildId);
 }
 
+// Hybrid helpers
+let _prisma: any = null;
+async function getPrisma() {
+  if (!_prisma) _prisma = (await import("../../database/prisma")).default;
+  return _prisma;
+}
+
+function usePg() { return isUsingPrisma(); }
+
+async function upsertPlayerState(guildId: string, data: any) {
+  if (usePg()) {
+    const p = await getPrisma();
+    return p.playerState.upsert({
+      where: { guildId },
+      update: data,
+      create: { guildId, ...data },
+    });
+  }
+  return PlayerState.findOneAndUpdate({ guildId }, data, { upsert: true });
+}
+
+async function deletePlayerState(guildId: string) {
+  if (usePg()) {
+    const p = await getPrisma();
+    await p.playerState.delete({ where: { guildId } }).catch(() => {});
+  } else {
+    await PlayerState.deleteOne({ guildId }).catch(() => {});
+  }
+}
+
+async function deleteOldPlayerStates(cutoff: Date) {
+  if (usePg()) {
+    const p = await getPrisma();
+    await p.playerState.deleteMany({ where: { updatedAt: { lt: cutoff } } });
+  } else {
+    await PlayerState.deleteMany({ updatedAt: { $lt: cutoff } }).catch(() => {});
+  }
+}
+
+async function findRecentPlayerStates(cutoff: Date) {
+  if (usePg()) {
+    const p = await getPrisma();
+    return p.playerState.findMany({ where: { updatedAt: { gte: cutoff } } });
+  }
+  return PlayerState.find({ updatedAt: { $gte: cutoff } });
+}
+
+async function updatePlayerState(guildId: string, data: any) {
+  if (usePg()) {
+    const p = await getPrisma();
+    await p.playerState.updateMany({ where: { guildId }, data }).catch(() => {});
+  } else {
+    await PlayerState.updateOne({ guildId }, { $set: data }).catch(() => {});
+  }
+}
+
 const positionSyncTimers = new Map<string, any>();
 
 export function startPositionSync(guildId: string): void {
@@ -26,7 +83,7 @@ export function startPositionSync(guildId: string): void {
       const engine = getEngine(guildId);
       const player = engine.player;
       if (!player?.playing) return;
-      await PlayerState.updateOne({ guildId }, { $set: { position: player.position || 0, nodeId: player.node?.id || null, updatedAt: new Date() } });
+      await updatePlayerState(guildId, { position: player.position || 0, nodeId: player.node?.id || null, updatedAt: new Date() });
     } catch {}
   }, 5000);
   positionSyncTimers.set(guildId, timer);
@@ -54,10 +111,7 @@ async function saveState(guildId: string) {
 
     const textChannelId = getTextChannelId(guildId);
 
-      await PlayerState.findOneAndUpdate(
-      { guildId },
-      {
-        guildId,
+      await upsertPlayerState(guildId, {
         voiceChannelId,
         textChannelId,
         queue: queue.map((t: any) => JSON.parse(JSON.stringify(t))),
@@ -65,9 +119,7 @@ async function saveState(guildId: string) {
         position: player.position || 0,
         nodeId: player.node?.id || null,
         updatedAt: new Date(),
-      },
-      { upsert: true },
-    );
+      });
   } catch (err: any) {
     Logger.error(`Failed to save player state for ${guildId}:`, err.message);
   }
@@ -75,9 +127,7 @@ async function saveState(guildId: string) {
 
 async function deleteState(guildId: string) {
   stopPositionSync(guildId);
-  try {
-    await PlayerState.deleteOne({ guildId });
-  } catch {}
+  await deletePlayerState(guildId);
   state.loop.delete(guildId);
   state.nowPlaying.delete(guildId);
   state.queues.clear(guildId);
@@ -216,9 +266,9 @@ async function restoreAllStates(client: any, retryCount = 0) {
 
   try {
     const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000);
-    await PlayerState.deleteMany({ updatedAt: { $lt: tenMinAgo } });
+    await deleteOldPlayerStates(tenMinAgo);
 
-    const states = await PlayerState.find({ updatedAt: { $gte: tenMinAgo } });
+    const states = await findRecentPlayerStates(tenMinAgo);
     if (!states.length) { return; }
 
     if (!isLavalinkReady()) {
@@ -245,7 +295,7 @@ async function restoreAllStates(client: any, retryCount = 0) {
         else {
           const guild = client.guilds.cache.get(saved.guildId);
           if (!guild) { uncachedGuilds.push(saved); }
-          else { await PlayerState.deleteOne({ guildId: saved.guildId }); }
+          else { await deletePlayerState(saved.guildId); }
         }
       } catch (err: any) {
         Logger.error(`[StateRestore] Failed for guild ${saved.guildId}:`, err.message);
@@ -267,7 +317,7 @@ async function restoreAllStates(client: any, retryCount = 0) {
                 else {
                   const guild = client.guilds.cache.get(saved.guildId);
                   if (!guild) { }
-                  else await PlayerState.deleteOne({ guildId: saved.guildId });
+                  else await deletePlayerState(saved.guildId);
                 }
               } catch (err: any) { Logger.error(`[StateRestore] Deferred restore failed for ${saved.guildId}:`, err.message); }
             }
@@ -277,7 +327,7 @@ async function restoreAllStates(client: any, retryCount = 0) {
         Logger.warn(`[StateRestore] ${uncachedGuilds.length} guild(s) still uncached after ${uncachedRetries} retries — giving up`);
         for (const saved of uncachedGuilds) {
           const guild = client.guilds.cache.get(saved.guildId);
-          if (!guild) { await PlayerState.deleteOne({ guildId: saved.guildId }); }
+          if (!guild) { await deletePlayerState(saved.guildId); }
         }
         uncachedRetries = 0;
       }
