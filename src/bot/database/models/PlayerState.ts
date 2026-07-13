@@ -6,6 +6,7 @@ const playerStateSchema = new Schema({
   textChannelId: { type: String, default: null },
   queue: { type: [Schema.Types.Mixed], default: [] },
   nowPlaying: { type: Schema.Types.Mixed, default: null },
+  position: { type: Number, default: 0 },
   updatedAt: { type: Date, default: Date.now },
 });
 

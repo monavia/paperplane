@@ -132,7 +132,9 @@ function register(client: any): void {
     lyricsMessages.delete(player.guildId);
     state.nowPlaying.set(player.guildId, track);
 
-  
+    const { startPositionSync } = require("../services/StateService");
+    startPositionSync(player.guildId);
+
     if (player.voiceChannelId) {
       const textChannelId = getTextChannelId(player.guildId);
       if (textChannelId) {
@@ -288,6 +290,9 @@ function register(client: any): void {
 
       Logger.info(`[queueEnd] guild=${player.guildId}/${guildName} members=${memberCount} humans=${humanCount} timeout=${timeoutLabel}`);
 
+      const { stopPositionSync } = require("../services/StateService");
+      stopPositionSync(player.guildId);
+
       const timerId = setTimeout(() => {
         const textChannelId = getTextChannelId(player.guildId);
         if (textChannelId) {
@@ -420,6 +425,9 @@ function register(client: any): void {
     try {
       const guildId = player.guildId;
       const is247 = state.twentyFourSeven.isEnabled(guildId);
+
+      const { stopPositionSync } = require("../services/StateService");
+      stopPositionSync(guildId);
 
       LyricsSyncManager.stop(guildId);
       const prevLyrics = lyricsMessages.get(guildId);

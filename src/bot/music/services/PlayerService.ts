@@ -55,6 +55,8 @@ export function getEngine(guildId: string): Engine {
 }
 
 export async function destroyEngine(guildId: string): Promise<void> {
+  const { stopPositionSync } = require("./StateService");
+  stopPositionSync(guildId);
   const e = engines.get(guildId);
   if (e?.player) {
     try { await e.player.destroy(); } catch {}

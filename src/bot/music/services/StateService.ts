@@ -20,6 +20,29 @@ export function clearRestoredGuild(guildId: string): void {
   restoredGuilds.delete(guildId);
 }
 
+const positionSyncTimers = new Map<string, any>();
+
+export function startPositionSync(guildId: string): void {
+  if (positionSyncTimers.has(guildId)) return;
+  const timer = setInterval(async () => {
+    try {
+      const engine = getEngine(guildId);
+      const player = engine.player;
+      if (!player?.playing) return;
+      await PlayerState.updateOne({ guildId }, { $set: { position: player.position || 0, updatedAt: new Date() } });
+    } catch {}
+  }, 5000);
+  positionSyncTimers.set(guildId, timer);
+}
+
+export function stopPositionSync(guildId: string): void {
+  const timer = positionSyncTimers.get(guildId);
+  if (timer) {
+    clearInterval(timer);
+    positionSyncTimers.delete(guildId);
+  }
+}
+
 async function saveState(guildId: string) {
   try {
     const engine = getEngine(guildId);
@@ -34,7 +57,7 @@ async function saveState(guildId: string) {
 
     const textChannelId = getTextChannelId(guildId);
 
-    await PlayerState.findOneAndUpdate(
+      await PlayerState.findOneAndUpdate(
       { guildId },
       {
         guildId,
@@ -42,6 +65,7 @@ async function saveState(guildId: string) {
         textChannelId,
         queue: queue.map((t: any) => JSON.parse(JSON.stringify(t))),
         nowPlaying: nowPlaying ? JSON.parse(JSON.stringify(nowPlaying)) : null,
+        position: player.position || 0,
         updatedAt: new Date(),
       },
       { upsert: true },
@@ -52,6 +76,7 @@ async function saveState(guildId: string) {
 }
 
 async function deleteState(guildId: string) {
+  stopPositionSync(guildId);
   try {
     await PlayerState.deleteOne({ guildId });
   } catch {}
@@ -142,7 +167,7 @@ async function restoreGuildState(client: any, saved: any): Promise<boolean> {
       first = engine.queue.next();
       if (!first) return;
       state.nowPlaying.set(saved.guildId, first);
-      await player.play({ track: first, clientTrack: first });
+      await player.play({ track: first, clientTrack: first, position: saved.position || 0 });
     });
     if (first) {
       restoredGuilds.add(saved.guildId);
