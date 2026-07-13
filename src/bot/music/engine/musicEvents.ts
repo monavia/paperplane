@@ -213,8 +213,7 @@ function register(client: any): void {
 
       const guildName = player.guildId ? getGuildName(player.guildId) : "?";
       const reason = typeof payload === "object" ? payload?.reason : payload;
-      Logger.info(`[queueEnd] guild=${player.guildId}/${guildName} reason=${reason || "?"} queueBefore=${state.queues.get(player.guildId)?.length || 0}`);
-
+      
       const manualMark = manualAdvances.get(player.guildId);
       if (manualMark && Date.now() - manualMark < MANUAL_ADVANCE_WINDOW_MS) {
         manualAdvances.delete(player.guildId);

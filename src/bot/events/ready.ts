@@ -2,15 +2,25 @@ import { ActivityType } from "discord.js";
 import Logger from "../core/utils/Logger";
 import { init as initLavalink, get as getLavalink } from "../music/engine/lavalink";
 import { register } from "../music/engine/musicEvents";
+import botConfig from "../config/bot";
 
 export function start(client: any): void {
   client.once("clientReady", async () => {
     Logger.ready(`Logged in as ${client.user?.tag}`);
 
-    client.user?.setPresence({
-      activities: [{ name: "music", type: ActivityType.Listening }],
-      status: "online",
-    });
+    const activity = () => ({ name: `${botConfig.prefix}help | music`, type: ActivityType.Listening });
+    client.user?.setPresence({ activities: [activity()], status: "online" });
+
+    // Cycle status every 10s
+    const statuses: any[] = ["online", "idle", "dnd"];
+    let i = 0;
+    setInterval(() => {
+      i++;
+      client.user?.setPresence({
+        activities: [activity()],
+        status: statuses[i % statuses.length],
+      });
+    }, 10000);
 
     try {
       const ready = await initLavalink(client);

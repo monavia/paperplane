@@ -94,7 +94,7 @@ async function main() {
     const okTag = `\x1b[32m[OK]\x1b[0m`;
     const failTag = `\x1b[31m[FAILED]\x1b[0m`;
     console.log(`[${t}] ${aiReady ? okTag : failTag} AI Assistant : ${aiReady ? `enabled (${AIConfig.model})` : "disabled"}`);
-    console.log(`[${t}] ${okTag} Commands:     ${slashCount} slash, ${prefixCount} prefix`);
+    console.log(`[${t}] ${okTag} Commands: ${slashCount} slash, ${prefixCount} prefix`);
 
     // Start API
     try {
