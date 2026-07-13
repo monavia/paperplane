@@ -7,7 +7,14 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "pm2:start": "pm2 start ecosystem.config.cjs",
+    "pm2:stop": "pm2 stop paperplane",
+    "pm2:restart": "pm2 restart paperplane",
+    "pm2:logs": "pm2 logs paperplane",
+    "deploy": "npm run build && pm2 restart paperplane",
+    "prisma:generate": "npx prisma generate",
+    "prisma:push": "npx prisma db push"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",

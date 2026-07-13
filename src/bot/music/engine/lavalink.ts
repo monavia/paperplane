@@ -32,7 +32,13 @@ export async function failoverFromNode(nodeId: string) {
       Logger.warn(`[NodeLink] Failover: no healthy nodes for guild ${guildId}`);
       continue;
     }
-    const target = healthy[0];
+    // Pick least-loaded node
+    const playerCounts = new Map<string, number>();
+    for (const [, p] of lavalink.players) {
+      const nid = p.node?.id;
+      if (nid) playerCounts.set(nid, (playerCounts.get(nid) || 0) + 1);
+    }
+    const target = healthy.sort((a: any, b: any) => (playerCounts.get(a.id) || 0) - (playerCounts.get(b.id) || 0))[0];
 
     // Double-check target is actually usable (connected + has sessionId)
     if (!target.sessionId) {
