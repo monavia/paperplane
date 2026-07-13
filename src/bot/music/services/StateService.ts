@@ -1,0 +1,235 @@
+import { EmbedBuilder } from "discord.js";
+import Logger from "../../core/utils/Logger";
+import PlayerState from "../../database/models/PlayerState";
+import { getEngine, destroyEngine } from "./PlayerService";
+import { getTextChannelId, setTextChannelId } from "./TextChannelStore";
+import state from "../../core/state/StateManager";
+import { withQueueLock } from "../../core/state/QueueLock";
+import { getSourceEmoji } from "../../ui/embeds/NowPlayingEmbed";
+import Colors from "../../core/constants/Colors";
+import * as lavalink from "../engine/lavalink";
+
+const restoredGuilds = new Set<string>();
+let restoreRetryTimer: NodeJS.Timeout | null = null;
+let uncachedRetries = 0;
+
+export function isRestoredGuild(guildId: string): boolean {
+  return restoredGuilds.has(guildId);
+}
+export function clearRestoredGuild(guildId: string): void {
+  restoredGuilds.delete(guildId);
+}
+
+async function saveState(guildId: string) {
+  try {
+    const engine = getEngine(guildId);
+    const player = engine.player;
+    if (!player) return;
+
+    const voiceChannelId = player.voiceChannelId;
+    if (!voiceChannelId) return;
+
+    const nowPlaying = state.nowPlaying.get(guildId) || engine.getCurrentTrack();
+    const queue = engine.queue.getAll();
+
+    const textChannelId = getTextChannelId(guildId);
+
+    await PlayerState.findOneAndUpdate(
+      { guildId },
+      {
+        guildId,
+        voiceChannelId,
+        textChannelId,
+        queue: queue.map((t: any) => JSON.parse(JSON.stringify(t))),
+        nowPlaying: nowPlaying ? JSON.parse(JSON.stringify(nowPlaying)) : null,
+        updatedAt: new Date(),
+      },
+      { upsert: true },
+    );
+  } catch (err: any) {
+    Logger.error(`Failed to save player state for ${guildId}:`, err.message);
+  }
+}
+
+async function deleteState(guildId: string) {
+  try {
+    await PlayerState.deleteOne({ guildId });
+  } catch {}
+  state.loop.delete(guildId);
+  state.nowPlaying.delete(guildId);
+  state.queues.clear(guildId);
+}
+
+function isLavalinkReady(): boolean {
+  const manager = lavalink.get();
+  if (!manager) return false;
+  try {
+    const nodes = manager.nodeManager?.nodes;
+    if (!nodes || nodes.size === 0) return false;
+    return Array.from(nodes.values()).some((n: any) => n.connected);
+  } catch { return false; }
+}
+
+async function saveAllStates(): Promise<number> {
+  const manager = lavalink.get();
+  if (!manager?.players) return 0;
+  let saved = 0;
+  const guildIds = Array.from(manager.players.keys()) as string[];
+  for (const guildId of guildIds) {
+    try { await saveState(guildId); saved++; }
+    catch (err: any) { Logger.error(`Failed to save state for guild ${guildId}:`, err.message); }
+  }
+  return saved;
+}
+
+async function restoreGuildState(client: any, saved: any): Promise<boolean> {
+  if (restoredGuilds.has(saved.guildId)) return true;
+
+  const guild = client.guilds.cache.get(saved.guildId);
+  if (!guild) return false;
+
+  const voiceChannel = guild.channels.cache.get(saved.voiceChannelId);
+  if (!voiceChannel?.isVoiceBased()) return false;
+
+  if (saved.textChannelId) setTextChannelId(saved.guildId, saved.textChannelId);
+
+  const engine = getEngine(saved.guildId);
+  const player = await engine.join(saved.voiceChannelId, saved.textChannelId);
+  if (!player) return false;
+
+  const node = player?.node;
+  if (!node?.connected) return false;
+
+  let resumedTrackActive = false;
+  try {
+    const remote = await node.fetchPlayer(saved.guildId);
+    resumedTrackActive = remote?.track?.encoded != null;
+  } catch {}
+
+  if (resumedTrackActive) {
+    if (saved.queue?.length) {
+      for (const t of saved.queue) engine.queue.add(t);
+    }
+    Logger.info(`Resume active for ${saved.guildId}, restored ${engine.queue.size()} queued tracks`);
+    state.nowPlaying.set(saved.guildId, player.queue.current || saved.nowPlaying);
+
+    if (saved.textChannelId) {
+      const channel = guild.channels.cache.get(saved.textChannelId);
+      if (channel) {
+        const track = player.queue.current || saved.nowPlaying;
+        if (track?.info) {
+          const emoji = getSourceEmoji(track.info.source || "youtube");
+          const embed = new EmbedBuilder()
+            .setDescription(`${emoji} Resumed [${track.info.author || "Unknown"} - ${track.info.title || "Unknown"}](${track.info.originalUrl || track.info.uri || ""})`)
+            .setColor(Colors.NOWPLAYING);
+          (channel as any).send({ embeds: [embed] }).catch(() => {});
+        }
+      }
+    }
+    restoredGuilds.add(saved.guildId);
+    return true;
+  }
+
+  const tracks = [];
+  if (saved.nowPlaying) tracks.push(saved.nowPlaying);
+  if (saved.queue?.length) tracks.push(...saved.queue);
+
+  for (const track of tracks) engine.queue.add(track);
+
+  let first: any = null;
+  try {
+    await withQueueLock(saved.guildId, async () => {
+      first = engine.queue.next();
+      if (!first) return;
+      state.nowPlaying.set(saved.guildId, first);
+      await player.play({ track: first, clientTrack: first });
+    });
+    if (first) {
+      restoredGuilds.add(saved.guildId);
+      Logger.info(`Restored playback for ${saved.guildId}`);
+      return true;
+    }
+  } catch (err: any) {
+    Logger.error(`Restore playback failed for ${saved.guildId}:`, err.message);
+  }
+  return false;
+}
+
+async function restoreAllStates(client: any, retryCount = 0) {
+  const MAX_RETRIES = 10;
+  const RETRY_DELAY = 3000;
+
+  try {
+    const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000);
+    await PlayerState.deleteMany({ updatedAt: { $lt: tenMinAgo } });
+
+    const states = await PlayerState.find({ updatedAt: { $gte: tenMinAgo } });
+    if (!states.length) { return; }
+
+    if (!isLavalinkReady()) {
+      if (retryCount < MAX_RETRIES) {
+        Logger.warn(`[StateRestore] Lavalink not ready, retry ${retryCount + 1}/${MAX_RETRIES} in ${RETRY_DELAY}ms...`);
+        restoreRetryTimer = setTimeout(() => { restoreAllStates(client, retryCount + 1); }, RETRY_DELAY);
+      } else {
+        Logger.error(`[StateRestore] Lavalink still not ready after ${MAX_RETRIES} retries, giving up`);
+      }
+      return;
+    }
+
+    if (restoreRetryTimer) { clearTimeout(restoreRetryTimer); restoreRetryTimer = null; }
+
+    Logger.info(`[StateRestore] Restoring ${states.length} player state(s)...`);
+
+    let restored = 0;
+    const uncachedGuilds: any[] = [];
+
+    for (const saved of states) {
+      try {
+        const success = await restoreGuildState(client, saved);
+        if (success) { restored++; }
+        else {
+          const guild = client.guilds.cache.get(saved.guildId);
+          if (!guild) { uncachedGuilds.push(saved); }
+          else { await PlayerState.deleteOne({ guildId: saved.guildId }); }
+        }
+      } catch (err: any) {
+        Logger.error(`[StateRestore] Failed for guild ${saved.guildId}:`, err.message);
+      }
+    }
+
+    Logger.info(`[StateRestore] Restored ${restored}/${states.length} player(s) from saved state`);
+
+    if (uncachedGuilds.length) {
+      Logger.info(`[StateRestore] ${uncachedGuilds.length} guild(s) not yet cached — scheduling retry in 12s`);
+      if (uncachedRetries < 3) {
+        uncachedRetries++;
+        setTimeout(async () => {
+          try {
+            for (const saved of uncachedGuilds) {
+              try {
+                const ok = await restoreGuildState(client, saved);
+                if (ok) Logger.info(`[StateRestore] Deferred restore succeeded for ${saved.guildId}`);
+                else {
+                  const guild = client.guilds.cache.get(saved.guildId);
+                  if (!guild) { }
+                  else await PlayerState.deleteOne({ guildId: saved.guildId });
+                }
+              } catch (err: any) { Logger.error(`[StateRestore] Deferred restore failed for ${saved.guildId}:`, err.message); }
+            }
+          } finally { uncachedRetries = 0; }
+        }, 12000);
+      } else {
+        Logger.warn(`[StateRestore] ${uncachedGuilds.length} guild(s) still uncached after ${uncachedRetries} retries — giving up`);
+        for (const saved of uncachedGuilds) {
+          const guild = client.guilds.cache.get(saved.guildId);
+          if (!guild) { await PlayerState.deleteOne({ guildId: saved.guildId }); }
+        }
+        uncachedRetries = 0;
+      }
+    }
+  } catch (err: any) {
+    Logger.error("Failed to restore player states:", err.message);
+  }
+}
+
+export { saveState, saveAllStates, deleteState, restoreAllStates, restoreGuildState };
