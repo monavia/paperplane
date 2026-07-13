@@ -22,6 +22,9 @@ export function start(client: any): void {
         return;
       }
 
+      // Skip embed if bot just started (fresh restart after crash — stale session)
+      if (!client.readyAt) return;
+
       const channelId = getTextChannelId(guildId);
       if (channelId) {
         const channel = client.channels.cache.get(channelId);

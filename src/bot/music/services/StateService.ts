@@ -1,12 +1,9 @@
-import { EmbedBuilder } from "discord.js";
 import Logger from "../../core/utils/Logger";
 import PlayerState from "../../database/models/PlayerState";
 import { getEngine, destroyEngine } from "./PlayerService";
 import { getTextChannelId, setTextChannelId } from "./TextChannelStore";
 import state from "../../core/state/StateManager";
 import { withQueueLock } from "../../core/state/QueueLock";
-import { getSourceEmoji } from "../../ui/embeds/NowPlayingEmbed";
-import Colors from "../../core/constants/Colors";
 import * as lavalink from "../engine/lavalink";
 
 const restoredGuilds = new Set<string>();
@@ -137,20 +134,6 @@ async function restoreGuildState(client: any, saved: any): Promise<boolean> {
     }
     Logger.info(`Resume active for ${saved.guildId}, restored ${engine.queue.size()} queued tracks`);
     state.nowPlaying.set(saved.guildId, player.queue.current || saved.nowPlaying);
-
-    if (saved.textChannelId) {
-      const channel = guild.channels.cache.get(saved.textChannelId);
-      if (channel) {
-        const track = player.queue.current || saved.nowPlaying;
-        if (track?.info) {
-          const emoji = getSourceEmoji(track.info.source || "youtube");
-          const embed = new EmbedBuilder()
-            .setDescription(`${emoji} Resumed [${track.info.author || "Unknown"} - ${track.info.title || "Unknown"}](${track.info.originalUrl || track.info.uri || ""})`)
-            .setColor(Colors.NOWPLAYING);
-          (channel as any).send({ embeds: [embed] }).catch(() => {});
-        }
-      }
-    }
     restoredGuilds.add(saved.guildId);
     return true;
   }
