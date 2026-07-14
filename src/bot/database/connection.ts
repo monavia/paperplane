@@ -14,7 +14,7 @@ export function isUsingPrisma(): boolean {
 
 export async function connect(): Promise<void> {
   const pgUrl = process.env.DATABASE_URL;
-  if (pgUrl) {
+  if (pgUrl && (pgUrl.startsWith("postgresql://") || pgUrl.startsWith("postgres://"))) {
     _usingPrisma = true;
     try {
       const prisma = (await import("./prisma")).default;
