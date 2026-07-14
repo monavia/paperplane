@@ -3,8 +3,11 @@ import Logger from "../../core/utils/Logger";
 const STUCK_TIMEOUT_MS = 15000;
 const CHECK_INTERVAL_MS = 30000;
 const MAX_STUCK = 3;
+const MAX_RECONNECT_ATTEMPTS = 3;
+const RECONNECT_BACKOFF_MS = 5000;
 
 const stuckCounts = new Map<string, number>();
+const reconnectAttempts = new Map<string, number>();
 
 function startWatchdog(manager: any, clientRef: any): void {
   if (!manager) return;
@@ -51,10 +54,35 @@ async function checkPlayer(guildId: string, player: any, clientRef: any): Promis
     return;
   }
 
-  // Voice disconnected — try reconnect
+  // Voice disconnected — try reconnect with backoff
   if (player.voiceChannelId && !player.connected) {
-    Logger.info(`[Watchdog] Player ${guildId} disconnected, attempting reconnect`);
-    try { await player.connect(); } catch {}
+    // Check node health first
+    if (node && !node.connected) {
+      Logger.warn(`[Watchdog] Node ${node.id} not connected, skipping voice reconnect for ${guildId}`);
+      return;
+    }
+
+    const attempts = (reconnectAttempts.get(guildId) || 0) + 1;
+    reconnectAttempts.set(guildId, attempts);
+
+    if (attempts > MAX_RECONNECT_ATTEMPTS) {
+      Logger.error(`[Watchdog] Player ${guildId} failed to reconnect after ${MAX_RECONNECT_ATTEMPTS} attempts — destroying player`);
+      reconnectAttempts.delete(guildId);
+      await player.destroy().catch(() => {});
+      return;
+    }
+
+    const backoff = RECONNECT_BACKOFF_MS * attempts;
+    Logger.info(`[Watchdog] Player ${guildId} disconnected, attempting reconnect (${attempts}/${MAX_RECONNECT_ATTEMPTS}) after ${backoff}ms`);
+    
+    await new Promise(r => setTimeout(r, backoff));
+    
+    try { 
+      await player.connect(); 
+      reconnectAttempts.delete(guildId); // success - reset counter
+    } catch (err: any) {
+      Logger.error(`[Watchdog] Player ${guildId} reconnect failed (attempt ${attempts}): ${err.message}`);
+    }
     return;
   }
 

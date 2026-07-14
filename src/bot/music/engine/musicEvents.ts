@@ -29,6 +29,7 @@ const MANUAL_ADVANCE_WINDOW_MS = 5000;
 const idleDisconnects = new Set<string>();
 let startupPhase = true;
 setTimeout(() => { startupPhase = false; }, 15000);
+const restoredGuilds = new Set<string>();
 export function markIdleDisconnect(guildId: string): void { idleDisconnects.add(guildId); }
 export function isIdleDisconnect(guildId: string): boolean { return idleDisconnects.has(guildId); }
 export function clearIdleDisconnect(guildId: string): void { idleDisconnects.delete(guildId); }
@@ -171,6 +172,7 @@ function register(client: any): void {
     const { isRestoredGuild } = require("../services/StateService");
     const restored = isRestoredGuild(player.guildId);
     if (restored) {
+      restoredGuilds.add(player.guildId);
       setTimeout(() => {
         const { clearRestoredGuild } = require("../services/StateService");
         clearRestoredGuild(player.guildId);
@@ -181,7 +183,10 @@ function register(client: any): void {
     if (suppress) suppressTrackStart.delete(player.guildId);
     const isFailover = require("./lavalink").isFailoverGuild?.(player.guildId);
     if (isFailover) { require("./lavalink").clearFailoverGuild(player.guildId); }
-    const shouldSendEmbed = !restored && !isManualAdvance && !suppress && !startupPhase && !isFailover;
+    // Only suppress for first track after restore (not all tracks during startup)
+    const isFirstRestored = restoredGuilds.has(player.guildId);
+    if (isFirstRestored) restoredGuilds.delete(player.guildId);
+    const shouldSendEmbed = !isFirstRestored && !isManualAdvance && !suppress && !isFailover;
     const textChannelId2 = getTextChannelId(player.guildId);
     if (textChannelId2 && shouldSendEmbed) {
       const channel = client.channels.cache.get(textChannelId2);
