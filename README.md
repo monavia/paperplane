@@ -62,29 +62,6 @@ All 23 commands available as **slash** (`/`) and **prefix** (`-`):
 | **API** | Express (health, nowplaying, queue, stats) |
 | **AI** | OpenRouter (configurable endpoint, any OpenAI-compatible API) |
 
-<details>
-<summary><b>📁 Architecture</b></summary>
-
-```
-src/
-├── index.ts                      ← Entry point
-├── bot/
-│   ├── config/                   ← Env-driven config
-│   ├── core/state/               ← RAM stores (queues, nowPlaying, loop, queue lock)
-│   ├── core/utils/               ← Logger, ShutdownManager
-│   ├── core/bootstrap/           ← Startup: load commands, events, shutdown tasks
-│   ├── music/
-│   │   ├── engine/               ← NodeLink client, PlaybackEngine, QueueEngine, PlayerWatchdog
-│   │   ├── services/             ← PlayerService, QueueService, SearchService, StateService
-│   │   └── commands/             ← Slash + prefix (auto-loaded by filename)
-│   ├── ai/                       ← AIEngine, AITaskQueue, ConversationMemory
-│   ├── events/                   ← Discord event handlers
-│   ├── api/apiServer.ts          ← Express API (auth: TRUSTED_IPS + BOT_API_TOKEN)
-│   ├── database/                 ← Prisma (PostgreSQL) + Mongoose models + hybrid repositories
-│   └── ui/                       ← Embed builders, button components
-```
-
-</details>
 
 ## 🌐 Environment
 

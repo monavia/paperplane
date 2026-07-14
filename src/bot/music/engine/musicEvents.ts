@@ -289,8 +289,8 @@ function register(client: any): void {
       const voiceChannel = clientRef?.channels?.cache?.get(player.voiceChannelId);
       const memberCount = voiceChannel?.members?.size || 1;
       const humanCount = memberCount - 1;
-      const timeout = humanCount <= 1 ? 60000 : 180000;
-      const timeoutLabel = humanCount <= 1 ? "1m" : "3m";
+      const timeout = 180000;
+      const timeoutLabel = "3m";
 
       Logger.info(`[queueEnd] guild=${player.guildId}/${guildName} members=${memberCount} humans=${humanCount} timeout=${timeoutLabel}`);
 
@@ -303,7 +303,7 @@ function register(client: any): void {
           const channel = clientRef?.channels?.cache?.get(textChannelId);
           if (channel) {
             const embed = new EmbedBuilder()
-              .setDescription(`**Queue ended — no more tracks to play.**\n\nLeaving voice channel due to inactivity.\nAdd more tracks to keep the music going!`)
+              .setDescription(`Leaving voice channel due to inactivity.\nAdd more tracks to keep the music going!`)
               .setColor(Colors.ERROR);
             (channel as any).send({ embeds: [embed] }).catch(() => {});
           }
