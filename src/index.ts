@@ -41,6 +41,7 @@ async function main() {
       Logger.ready("Database connected");
     } catch (err) {
       Logger.error("Database connection failed:", err);
+      process.exit(1);
     }
 
     // Load event handlers
@@ -119,8 +120,11 @@ async function main() {
 }
 
 process.on("unhandledRejection", (err: any) => {
-  if (!(err instanceof Error)) return;
-  Logger.error("Unhandled rejection:", err?.message || String(err));
+  if (err instanceof Error) {
+    Logger.error("Unhandled rejection:", err?.message || String(err));
+  } else {
+    Logger.warn("Unhandled rejection (non-Error):", String(err));
+  }
 });
 process.on("uncaughtException", (err: any) => {
   if (!(err instanceof Error)) return;

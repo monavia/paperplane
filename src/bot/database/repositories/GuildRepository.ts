@@ -87,9 +87,9 @@ export async function getLastEqualizer(guildId: string): Promise<any> {
     if (usePg()) {
       const p = await getPrisma();
       const g = await p.guild.findUnique({ where: { guildId }, select: { lastEqualizer: true } });
-      return g?.lastEqualizer || "none";
+      return g?.lastEqualizer ?? null;
     }
     const guild = await Guild.findOne({ guildId }).lean();
-    return (guild as any)?.lastEqualizer || "none";
-  } catch { return "none"; }
+    return (guild as any)?.lastEqualizer ?? null;
+  } catch { return null; }
 }

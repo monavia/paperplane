@@ -57,11 +57,6 @@ export function start(client: any): void {
     await message.channel.sendTyping().catch(() => {});
 
     try {
-      // Pre-check: prefix change requires ManageGuild
-      if (/\b(prefix|ganti|change|set|ubah)\b/i.test(prompt) && !message.member?.permissions?.has("ManageGuild")) {
-        return message.channel.send({ embeds: [ErrorEmbed.build("Changing prefix requires `Manage Server` permission.")] });
-      }
-
       const prefix = await getPrefix(message.guildId);
       const sysPrompt = `Current bot prefix for this server is: "${prefix}". ` +
         `User can type "${prefix}help" or "/help" to see commands. ` +
@@ -69,6 +64,9 @@ export function start(client: any): void {
       const reply = await runAIAsk(message.author.id, prompt, sysPrompt);
       const prefixExec = reply.match(/^PREFIX:\s*(\S+)/im);
       if (prefixExec) {
+        if (!message.member?.permissions?.has("ManageGuild")) {
+          return message.channel.send({ embeds: [ErrorEmbed.build("Changing prefix requires `Manage Server` permission.")] });
+        }
         const newP = prefixExec[1].substring(0, 3);
         const { setPrefix } = require("../database/repositories/GuildRepository");
         await setPrefix(message.guildId, newP);
@@ -76,8 +74,9 @@ export function start(client: any): void {
       }
       const chunks = reply.match(/[\s\S]{1,3800}/g) || [reply];
       const embeds = chunks.map((text: string) => new EmbedBuilder().setDescription(text).setColor(Colors.INFO));
-      for (const embed of embeds) {
-        await message.channel.send({ embeds: [embed] });
+      for (let i = 0; i < embeds.length; i++) {
+        await message.channel.send({ embeds: [embeds[i]] });
+        if (i < embeds.length - 1) await new Promise(r => setTimeout(r, 500));
       }
     } catch (err: any) {
       Logger.error(`AI error: ${err.message}`);

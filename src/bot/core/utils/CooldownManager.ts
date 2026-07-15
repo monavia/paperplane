@@ -30,7 +30,13 @@ class CooldownManager {
 
   reset(userId: string, command?: string): void {
     if (command) { this._cooldowns.delete(this._key(userId, command)); }
-    else { for (const key of this._cooldowns.keys()) { if (key.startsWith(`${userId}:`)) this._cooldowns.delete(key); } }
+    else {
+      const keysToDelete: string[] = [];
+      for (const key of this._cooldowns.keys()) {
+        if (key.startsWith(`${userId}:`)) keysToDelete.push(key);
+      }
+      for (const key of keysToDelete) this._cooldowns.delete(key);
+    }
   }
 
   getUses(userId: string, command: string): number {

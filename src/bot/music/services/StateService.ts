@@ -266,10 +266,13 @@ async function restoreAllStates(client: any, retryCount = 0) {
 
   try {
     const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000);
-    await deleteOldPlayerStates(tenMinAgo);
 
     const states = await findRecentPlayerStates(tenMinAgo);
-    if (!states.length) { return; }
+    if (!states.length) {
+      // No recent states — clean up old ones
+      await deleteOldPlayerStates(tenMinAgo);
+      return;
+    }
 
     if (!isLavalinkReady()) {
       if (retryCount < MAX_RETRIES) {
@@ -303,6 +306,9 @@ async function restoreAllStates(client: any, retryCount = 0) {
     }
 
     Logger.info(`[StateRestore] Restored ${restored}/${states.length} player(s) from saved state`);
+
+    // Clean up old states AFTER successful restore
+    await deleteOldPlayerStates(tenMinAgo);
 
     if (uncachedGuilds.length) {
       Logger.info(`[StateRestore] ${uncachedGuilds.length} guild(s) not yet cached — scheduling retry in 12s`);

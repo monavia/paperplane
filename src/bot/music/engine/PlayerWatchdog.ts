@@ -16,11 +16,12 @@ function startWatchdog(manager: any, clientRef: any): void {
     const players = manager.players;
     if (!players?.size) return;
 
+    // Process all guilds concurrently (no blocking)
+    const checks: Promise<void>[] = [];
     for (const [guildId, player] of players) {
-      try {
-        await checkPlayer(guildId, player, clientRef);
-      } catch {}
+      checks.push(checkPlayer(guildId, player, clientRef).catch(() => {}));
     }
+    await Promise.allSettled(checks);
   }, CHECK_INTERVAL_MS);
 
   Logger.info("[Watchdog] Player watchdog started (30s interval)");
@@ -33,7 +34,10 @@ async function checkPlayer(guildId: string, player: any, clientRef: any): Promis
   const guild = clientRef?.guilds?.cache?.get(guildId);
   if (!guild) {
     Logger.info(`[Watchdog] Guild ${guildId} not found, destroying player`);
-    await player.destroy().catch(() => {});
+    const { destroyEngine } = require("../services/PlayerService");
+    await destroyEngine(guildId).catch(() => {});
+    stuckCounts.delete(guildId);
+    reconnectAttempts.delete(guildId);
     return;
   }
 
@@ -41,7 +45,10 @@ async function checkPlayer(guildId: string, player: any, clientRef: any): Promis
     const vc = guild.channels.cache.get(player.voiceChannelId);
     if (!vc || !vc.isVoiceBased()) {
       Logger.info(`[Watchdog] Voice channel ${player.voiceChannelId} gone for guild ${guildId}, destroying player`);
-      await player.destroy().catch(() => {});
+      const { destroyEngine } = require("../services/PlayerService");
+      await destroyEngine(guildId).catch(() => {});
+      stuckCounts.delete(guildId);
+      reconnectAttempts.delete(guildId);
       return;
     }
   }
@@ -54,9 +61,8 @@ async function checkPlayer(guildId: string, player: any, clientRef: any): Promis
     return;
   }
 
-  // Voice disconnected — try reconnect with backoff
+  // Voice disconnected — try reconnect with backoff (non-blocking)
   if (player.voiceChannelId && !player.connected) {
-    // Check node health first
     if (node && !node.connected) {
       Logger.warn(`[Watchdog] Node ${node.id} not connected, skipping voice reconnect for ${guildId}`);
       return;
@@ -68,21 +74,23 @@ async function checkPlayer(guildId: string, player: any, clientRef: any): Promis
     if (attempts > MAX_RECONNECT_ATTEMPTS) {
       Logger.error(`[Watchdog] Player ${guildId} failed to reconnect after ${MAX_RECONNECT_ATTEMPTS} attempts — destroying player`);
       reconnectAttempts.delete(guildId);
-      await player.destroy().catch(() => {});
+      stuckCounts.delete(guildId);
+      const { destroyEngine } = require("../services/PlayerService");
+      await destroyEngine(guildId).catch(() => {});
       return;
     }
 
     const backoff = RECONNECT_BACKOFF_MS * attempts;
     Logger.info(`[Watchdog] Player ${guildId} disconnected, attempting reconnect (${attempts}/${MAX_RECONNECT_ATTEMPTS}) after ${backoff}ms`);
-    
-    await new Promise(r => setTimeout(r, backoff));
-    
-    try { 
-      await player.connect(); 
-      reconnectAttempts.delete(guildId); // success - reset counter
-    } catch (err: any) {
-      Logger.error(`[Watchdog] Player ${guildId} reconnect failed (attempt ${attempts}): ${err.message}`);
-    }
+
+    // Fire reconnect without blocking the watchdog loop
+    const reconnectPromise = new Promise(r => setTimeout(r, backoff))
+      .then(() => player.connect())
+      .then(() => { reconnectAttempts.delete(guildId); })
+      .catch((err: any) => {
+        Logger.error(`[Watchdog] Player ${guildId} reconnect failed (attempt ${attempts}): ${err.message}`);
+      });
+    // Don't await — let watchdog continue checking other guilds
     return;
   }
 

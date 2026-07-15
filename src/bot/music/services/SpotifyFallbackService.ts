@@ -5,6 +5,7 @@ import SpotifyResolver from "../engine/SpotifyResolver";
 import { searchWithRetry } from "./SearchService";
 import ActivityService from "../../services/ActivityService";
 import botConfig from "../../config/bot";
+import { applySpotifyMeta } from "./TitleResolver";
 
 function normalize(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, "").trim();
@@ -42,11 +43,18 @@ function pickBestMatch(tracks: any[], expectedMs: number | null, expectedTitle: 
 }
 
 async function searchWithFallback(player: any, item: any, user: any) {
-  for (const prefix of ["ytmsearch", "ytsearch", "scsearch"]) {
+  for (const prefix of ["ytsearch", "ytmsearch", "scsearch"]) {
     const result = await searchWithRetry(player, { query: `${prefix}:${item.query}` }, user, 0);
     if (result?.tracks?.length) {
       const best = pickBestMatch(result.tracks, item.duration, item.query);
-      if (best) best._spotifyUri = item.spotifyUri;
+      if (best) {
+        best._spotifyUri = item.spotifyUri;
+        applySpotifyMeta(best, {
+          title: item.name || null,
+          author: item.artists?.join(", ") || null,
+          spotifyUrl: item.spotifyUri || null,
+        });
+      }
       return best;
     }
   }
@@ -109,7 +117,6 @@ async function processTracks(engine: any, player: any, guildId: string, scrapedT
       if (r.status === "fulfilled" && r.value) {
         const track = r.value;
         if (!track.info) track.info = {};
-        track.info.source = "spotify";
         const individualUrl = spotifyUriToUrl(track._spotifyUri) || query;
         track.info.originalUrl = individualUrl;
         delete track._spotifyUri;
@@ -132,7 +139,9 @@ async function processTracks(engine: any, player: any, guildId: string, scrapedT
   if (addable.length === 0) throw new Error("Queue full.");
 
   if (wasPlaying) {
-    engine.queue.addMultiple(addable);
+    await withQueueLock(guildId, async () => {
+      engine.queue.addMultiple(addable);
+    });
    } else {
      await withQueueLock(guildId, async () => {
        engine.queue.clear();

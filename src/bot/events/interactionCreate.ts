@@ -11,10 +11,11 @@ export function start(client: any): void {
       await cmd.execute(interaction);
     } catch (err: any) {
       Logger.error(`Command ${interaction.commandName} error: ${err.message}`);
+      const reply = { content: "An error occurred while executing this command.", ephemeral: true };
       if (interaction.deferred || interaction.replied) {
-        await interaction.editReply({ content: `Error: ${err.message}` }).catch(() => {});
+        await interaction.editReply(reply).catch(() => {});
       } else {
-        await interaction.reply({ content: `Error: ${err.message}`, ephemeral: true }).catch(() => {});
+        await interaction.reply(reply).catch(() => {});
       }
     }
   });

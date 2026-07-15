@@ -1,8 +1,10 @@
 import { LavalinkManager, NodeType } from "lavalink-client";
 import Logger from "../../core/utils/Logger";
+import { saveSpotifyMeta, applySpotifyMeta } from "../services/TitleResolver";
 
 let lavalink: LavalinkManager | null = null;
 let clientRef: any = null;
+let healthCheckInterval: NodeJS.Timeout | null = null;
 const lastReconnectAttempt = new Map<string, number>();
 const failoverGuilds = new Set<string>();
 
@@ -52,9 +54,24 @@ export async function failoverFromNode(nodeId: string) {
       // Re-resolve current track — old encoded may not work on new node
       const curTrack = state.nowPlaying.get(guildId);
       if (curTrack?.info?.uri && !player.playing) {
-        const search = await player.search({ query: curTrack.info.uri }, { id: "system" }).catch(() => null);
-        const resolved = search?.tracks?.[0];
-        if (resolved) await player.play({ track: resolved, clientTrack: resolved, position: player.position || 0 }).catch(() => {});
+        const uri = curTrack.info.uri;
+        const isSpotify = /^spotify:(track|album|playlist):/.test(uri) || /open\.spotify\.com/i.test(uri);
+        const savedMeta = saveSpotifyMeta(curTrack);
+        let resolved: any = null;
+        if (isSpotify) {
+          const q = `${curTrack.info.author || ""} ${curTrack.info.title || ""}`.trim();
+          for (const prefix of ["ytmsearch", "ytsearch", "scsearch"]) {
+            const search = await player.search({ query: `${prefix}:${q}` }, { id: "system" }).catch(() => null);
+            if (search?.tracks?.[0]) { resolved = search.tracks[0]; break; }
+          }
+        } else {
+          const search = await player.search({ query: uri }, { id: "system" }).catch(() => null);
+          resolved = search?.tracks?.[0];
+        }
+        if (resolved) {
+          applySpotifyMeta(resolved, savedMeta);
+          await player.play({ track: resolved, clientTrack: resolved, position: player.position || 0 }).catch(() => {});
+        }
       }
     } catch {
       Logger.warn(`[NodeLink] Failover: changeNode failed for ${guildId} — recreating on ${target.id}`);
@@ -66,9 +83,21 @@ export async function failoverFromNode(nodeId: string) {
         const newPlayer = lavalink.createPlayer({ guildId, voiceChannelId: vcId, textChannelId: getTextChannelId(guildId) || "", selfDeaf: true, selfMute: false });
         await newPlayer.connect();
         if (track?.info?.uri) {
-          // Resolve via URI — works across different NodeLink/Lavalink instances
-          const search = await newPlayer.search({ query: track.info.uri }, { id: "system" }).catch(() => null);
-          const resolved = search?.tracks?.[0] || track;
+          const uri = track.info.uri;
+          const isSpotify = /^spotify:(track|album|playlist):/.test(uri) || /open\.spotify\.com/i.test(uri);
+          const savedMeta = saveSpotifyMeta(track);
+          let resolved: any = track;
+          if (isSpotify) {
+            const q = `${track.info.author || ""} ${track.info.title || ""}`.trim();
+            for (const prefix of ["ytmsearch", "ytsearch", "scsearch"]) {
+              const search = await newPlayer.search({ query: `${prefix}:${q}` }, { id: "system" }).catch(() => null);
+              if (search?.tracks?.[0]) { resolved = search.tracks[0]; break; }
+            }
+          } else {
+            const search = await newPlayer.search({ query: uri }, { id: "system" }).catch(() => null);
+            if (search?.tracks?.[0]) resolved = search.tracks[0];
+          }
+          applySpotifyMeta(resolved, savedMeta);
           await newPlayer.play({ track: resolved, clientTrack: resolved, position: savedPos });
         }
         Logger.info(`[NodeLink] Failover: recreated player ${guildId} (auto node)`);
@@ -157,7 +186,8 @@ export async function init(client: any): Promise<boolean> {
   }
 
   // Periodic node health check — reconnect disconnected nodes + failover players every 30s
-  setInterval(async () => {
+  if (healthCheckInterval) clearInterval(healthCheckInterval);
+  healthCheckInterval = setInterval(async () => {
     if (!lavalink?.nodeManager) return;
     const nodes = Array.from(lavalink.nodeManager.nodes.values());
     const now = Date.now();
@@ -177,10 +207,14 @@ export async function init(client: any): Promise<boolean> {
         }
       }
     }
-  }, 1000);
+  }, 15000);
 
   client.on("raw", (d: any) => l.sendRawData(d));
   return true;
+}
+
+export function cleanup(): void {
+  if (healthCheckInterval) { clearInterval(healthCheckInterval); healthCheckInterval = null; }
 }
 
 export function get(): LavalinkManager | null {

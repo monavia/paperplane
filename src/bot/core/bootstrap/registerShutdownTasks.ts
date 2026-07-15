@@ -12,7 +12,7 @@ export function registerShutdownTasks(deps: {
     timeout: 10000,
     description: "Save all player states to database",
     execute: async () => {
-      const { saveAllStates } = require("../music/services/StateService");
+      const { saveAllStates } = require("../../../music/services/StateService");
       const saved = await saveAllStates();
       Logger.info(`Saved ${saved} player state(s)`);
     },

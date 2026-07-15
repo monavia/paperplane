@@ -40,12 +40,16 @@ export class ShutdownManager extends EventEmitter {
       const tasks = this.tasks.filter((t) => t.priority === pri);
       for (const task of tasks) {
         try {
-          await Promise.race([
-            task.execute(),
-            new Promise((_, r) =>
-              setTimeout(() => r(new Error(`${task.name} timed out`)), task.timeout)
-            ),
-          ]);
+          await new Promise<void>((resolve, reject) => {
+            const timer = setTimeout(() => {
+              reject(new Error(`${task.name} timed out`));
+            }, task.timeout);
+
+            task.execute().then(
+              () => { clearTimeout(timer); resolve(); },
+              (err) => { clearTimeout(timer); reject(err); },
+            );
+          });
         } catch (err: any) {
           Logger.error(`[Shutdown] ${task.name} failed: ${err.message}`);
         }
@@ -53,6 +57,6 @@ export class ShutdownManager extends EventEmitter {
     }
 
     Logger.info("[Shutdown] All tasks completed.");
-    setTimeout(() => process.exit(0), 5000);
+    process.exit(0);
   }
 }

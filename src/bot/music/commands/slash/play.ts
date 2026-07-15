@@ -12,8 +12,8 @@ import botConfig from "../../../config/bot";
 async function resolveSpotifyTrack(player: any, spotifyItem: any, user: any): Promise<any> {
   const q = spotifyItem.query || `${spotifyItem.artists?.join(" ") || ""} ${spotifyItem.name}`.trim();
   if (!q) return null;
-  let result = await player.search({ query: `ytmsearch:${q}` }, user);
-  if (!result?.tracks?.length) result = await player.search({ query: `ytsearch:${q}` }, user);
+  let result = await player.search({ query: `ytsearch:${q}` }, user);
+  if (!result?.tracks?.length) result = await player.search({ query: `ytmsearch:${q}` }, user);
   if (!result?.tracks?.length) result = await player.search({ query: `scsearch:${q}` }, user);
   if (result?.tracks?.length) {
     const track = pickBestTrack(result.tracks);
@@ -22,7 +22,6 @@ async function resolveSpotifyTrack(player: any, spotifyItem: any, user: any): Pr
     const artistStr = spotifyItem.artists?.join(", ") || track.info.author || "";
     track.info.author = artistStr;
     track.info.title = spotifyItem.name || track.info.title;
-    track.info.source = "spotify";
     track.info.originalUrl = track.info.uri;
     track.info.spotifyUrl = spotifyItem.spotifyUri || null;
     return track;
@@ -104,13 +103,15 @@ export default {
         if (!resolvedTracks.length) throw new Error("No tracks could be resolved from Spotify.");
 
         if (player.playing || player.paused) {
-          const curQueue = state.queues.get(interaction.guildId) || [];
-          const space = botConfig.maxQueue - curQueue.length;
-          if (space <= 0) return interaction.editReply({ embeds: [ErrorEmbed.build("Queue full.")] });
-          const addable = space < resolvedTracks.length ? resolvedTracks.slice(0, space) : resolvedTracks;
-          state.queues.set(interaction.guildId, [...curQueue, ...addable]);
-          return interaction.editReply({
-            embeds: [new EmbedBuilder().setDescription(`Added ${addable.length} of ${resolvedTracks.length} tracks to queue.`).setColor(Colors.SUCCESS)],
+          return await withQueueLock(interaction.guildId, async () => {
+            const curQueue = state.queues.get(interaction.guildId) || [];
+            const space = botConfig.maxQueue - curQueue.length;
+            if (space <= 0) return interaction.editReply({ embeds: [ErrorEmbed.build("Queue full.")] });
+            const addable = space < resolvedTracks.length ? resolvedTracks.slice(0, space) : resolvedTracks;
+            state.queues.set(interaction.guildId, [...curQueue, ...addable]);
+            return interaction.editReply({
+              embeds: [new EmbedBuilder().setDescription(`Added ${addable.length} of ${resolvedTracks.length} tracks to queue.`).setColor(Colors.SUCCESS)],
+            });
           });
         }
 
@@ -119,15 +120,19 @@ export default {
         const curQueue = state.queues.get(interaction.guildId) || [];
         const space = botConfig.maxQueue - curQueue.length;
         const addable = space < resolvedTracks.length ? resolvedTracks.slice(0, space) : resolvedTracks;
+        const addedCount = addable.length + 1;
         await withQueueLock(interaction.guildId, async () => {
           state.queues.set(interaction.guildId, [...curQueue, ...addable]);
           state.nowPlaying.set(interaction.guildId, first);
-          await player.play({ track: first, clientTrack: first });
+          markTrackStartSuppressed(interaction.guildId);
           await MusicService.saveState(interaction.guildId);
         });
-        return interaction.editReply({
-          embeds: [new EmbedBuilder().setDescription(`Added ${addable.length} tracks from Spotify.`).setColor(Colors.SUCCESS)],
+        await interaction.editReply({
+          embeds: [new EmbedBuilder().setDescription(`Added ${addedCount} tracks from Spotify.`).setColor(Colors.SUCCESS)],
         });
+        await player.play({ track: first, clientTrack: first }).catch(() => {});
+        await interaction.followUp({ embeds: [NowPlayingEmbed.build(first, null)] });
+        return;
       }
 
       // Regular search
@@ -158,19 +163,26 @@ export default {
         const addedMsg = playlistTracks.length > space ? ` (${space} of ${playlistTracks.length})` : "";
 
         if (player.playing || player.paused || q.length) {
-          state.queues.set(interaction.guildId, [...q, ...addable]);
-          return interaction.editReply({
-            embeds: [new EmbedBuilder().setDescription(`Added ${addable.length} tracks from **${playlistName}**${addedMsg}`).setColor(Colors.SUCCESS)],
+          return await withQueueLock(interaction.guildId, async () => {
+            const q2 = state.queues.get(interaction.guildId) || [];
+            const addable2 = space < playlistTracks.length ? playlistTracks.slice(0, space) : playlistTracks;
+            state.queues.set(interaction.guildId, [...q2, ...addable2]);
+            return interaction.editReply({
+              embeds: [new EmbedBuilder().setDescription(`Added ${addable2.length} tracks from **${playlistName}**${addedMsg}`).setColor(Colors.SUCCESS)],
+            });
           });
         }
 
         const first = addable.shift();
         if (!first) throw new Error("No tracks in playlist.");
-        state.queues.set(interaction.guildId, [...q, ...addable]);
-        state.nowPlaying.set(interaction.guildId, first);
-        markTrackStartSuppressed(interaction.guildId);
-        await player.play({ track: first, clientTrack: first });
-        await MusicService.saveState(interaction.guildId);
+        await withQueueLock(interaction.guildId, async () => {
+          const q2 = state.queues.get(interaction.guildId) || [];
+          state.queues.set(interaction.guildId, [...q2, ...addable]);
+          state.nowPlaying.set(interaction.guildId, first);
+          markTrackStartSuppressed(interaction.guildId);
+          await player.play({ track: first, clientTrack: first });
+          await MusicService.saveState(interaction.guildId);
+        });
         return interaction.editReply({
           embeds: [new EmbedBuilder().setDescription(`Playing **${playlistName}** — ${addable.length + 1} tracks${addedMsg}`).setColor(Colors.SUCCESS)],
         });
@@ -187,9 +199,12 @@ export default {
       const queue = state.queues.get(interaction.guildId) || [];
 
       if (player.playing || player.paused) {
-        state.queues.set(interaction.guildId, [...queue, track]);
-        return interaction.editReply({
-          embeds: [NowPlayingEmbed.addedToQueue(track, queue.length + 1)],
+        return await withQueueLock(interaction.guildId, async () => {
+          const queue2 = state.queues.get(interaction.guildId) || [];
+          state.queues.set(interaction.guildId, [...queue2, track]);
+          return interaction.editReply({
+            embeds: [NowPlayingEmbed.addedToQueue(track, queue2.length + 1)],
+          });
         });
       }
 
@@ -206,6 +221,7 @@ export default {
         embeds: [NowPlayingEmbed.build(track, null)],
       });
     } catch (err: any) {
+      if (String(err?.message || "").includes("spotify")) return;
       await interaction.editReply({
         embeds: [ErrorEmbed.build(err.message)],
       });

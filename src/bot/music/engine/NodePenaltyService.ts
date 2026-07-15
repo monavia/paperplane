@@ -87,7 +87,7 @@ function startDecay(intervalMs = 300000): void {
   decayTimer = setInterval(decay, intervalMs);
 }
 
-function stopDecay(): void { if (decayTimer) { clearTimeout(decayTimer); decayTimer = null; } }
+function stopDecay(): void { if (decayTimer) { clearInterval(decayTimer); decayTimer = null; } }
 
 export {
   recordFailedLoad, recordDisconnect, recordError, recordResponseTime,

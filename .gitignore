@@ -371,3 +371,4 @@ FodyWeavers.xsd
 /AGENTS.md
 /package-lock.json
 /bun.lock
+/plugins

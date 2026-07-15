@@ -12,15 +12,23 @@ export interface ActivityLog {
 }
 
 const SKIP_ACTIONS = new Set(['queue_add', 'queue_remove']);
-const BATCH_INTERVAL_MS = 30000;
+const BASE_INTERVAL_MS = 30000;
 const MAX_BUFFER_SIZE = 500;
+const MAX_BACKOFF_MS = 300000; // 5 min max
 
 class ActivityService {
   private buffer: ActivityLog[] = [];
   private flushTimer: NodeJS.Timeout | null = null;
+  private consecutiveFailures = 0;
 
   constructor() {
-    this.flushTimer = setInterval(() => this.flush(), BATCH_INTERVAL_MS);
+    this.scheduleNext();
+  }
+
+  private scheduleNext(): void {
+    if (this.flushTimer) clearTimeout(this.flushTimer);
+    const delay = Math.min(BASE_INTERVAL_MS * Math.pow(2, this.consecutiveFailures), MAX_BACKOFF_MS);
+    this.flushTimer = setTimeout(() => this.flush(), delay);
   }
 
   async log(data: ActivityLog) {
@@ -30,18 +38,22 @@ class ActivityService {
   }
 
   private async flush() {
-    if (this.buffer.length === 0) return;
+    if (this.buffer.length === 0) { this.scheduleNext(); return; }
     const batch = this.buffer.splice(0, MAX_BUFFER_SIZE);
     try {
       await ActivityRepository.insertMany(batch);
+      this.consecutiveFailures = 0;
     } catch {
+      this.consecutiveFailures++;
       this.buffer = batch.concat(this.buffer).slice(0, MAX_BUFFER_SIZE);
+      Logger.warn(`[ActivityService] Flush failed (${this.consecutiveFailures}x), backoff: ${Math.min(BASE_INTERVAL_MS * Math.pow(2, this.consecutiveFailures), MAX_BACKOFF_MS)}ms`);
     }
+    this.scheduleNext();
   }
 
   async cleanup() {
     try {
-      const result = await ActivityRepository.clearOldActivities(30);
+      await ActivityRepository.clearOldActivities(30);
     } catch {}
   }
 }

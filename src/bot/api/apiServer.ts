@@ -28,6 +28,15 @@ function requireApiAuth(req: any, res: any, next: any) {
   res.status(401).json({ success: false, error: "Unauthorized" });
 }
 
+const SNOWFLAKE_RE = /^\d{17,20}$/;
+function validateGuildId(req: any, res: any, next: any) {
+  const guildId = req.params.guildId;
+  if (guildId && !SNOWFLAKE_RE.test(guildId)) {
+    return res.status(400).json({ success: false, error: "Invalid guildId" });
+  }
+  next();
+}
+
 function formatUptime(ms: number): string {
   const hours = Math.floor(ms / 3600000);
   const minutes = Math.floor((ms % 3600000) / 60000);
@@ -42,12 +51,13 @@ function getRequesterId(track: any): string | null {
 
 function formatTrack(track: any) {
   if (!track) return null;
-  const thumb = track.info.artworkUrl || (track.info.identifier?.length === 11 ? `https://img.youtube.com/vi/${track.info.identifier}/maxresdefault.jpg` : null);
+  const info = track.info || {};
+  const thumb = info.artworkUrl || (info.identifier?.length === 11 ? `https://img.youtube.com/vi/${info.identifier}/maxresdefault.jpg` : null);
   return {
-    title: track.info.title,
-    artist: track.info.artist,
-    duration: track.info.duration || 0,
-    uri: track.info.uri,
+    title: info.title,
+    artist: info.artist,
+    duration: info.duration || 0,
+    uri: info.uri,
     thumbnail: thumb,
     requester: getRequesterId(track),
   };
@@ -57,6 +67,8 @@ export async function startApiServer(_status?: any): Promise<void> {
   const app = express();
   app.use(express.json());
   app.use(requireApiAuth);
+  app.use("/api/guild/:guildId", validateGuildId);
+  app.use("/api/activities/:guildId", validateGuildId);
 
   app.get("/api/health", (_req, res) => {
     const client = getClient();
@@ -113,8 +125,8 @@ export async function startApiServer(_status?: any): Promise<void> {
     try {
       const { guildId } = req.params;
       const { preset } = req.body;
-      const userId = req.body.userId || "dashboard";
-      const userName = req.body.userName || "Dashboard";
+      const userId = "dashboard";
+      const userName = "Dashboard";
       const { setEqualizer } = require("../music/services/PlayerService");
       const { setLastEqualizer } = require("../database/repositories/GuildRepository");
 
@@ -264,8 +276,8 @@ export async function startApiServer(_status?: any): Promise<void> {
     try {
       const { guildId } = req.params;
       const { filter } = req.body;
-      const userId = req.body.userId || "dashboard";
-      const userName = req.body.userName || "Dashboard";
+      const userId = "dashboard";
+      const userName = "Dashboard";
       const { setFilter, resetFilters } = require("../music/services/PlayerService");
       const { setLastFilter } = require("../database/repositories/GuildRepository");
 
@@ -439,8 +451,9 @@ export async function startApiServer(_status?: any): Promise<void> {
     try {
       const { guildId } = req.params;
       const { action, value } = req.body;
-      const userId = req.body.userId || "dashboard";
-      const userName = req.body.userName || "Dashboard";
+      // Ignore userId/userName from body — prevents impersonation via API
+      const userId = "dashboard";
+      const userName = "Dashboard";
 
       const playerService = require("../music/services/PlayerService");
       const { getEngine } = playerService;
@@ -585,10 +598,13 @@ export async function startApiServer(_status?: any): Promise<void> {
       ? Array.from(lavalink.nodeManager.nodes.values()).filter((n: any) => n.connected).length
       : 0;
 
+    const mongoose = require("mongoose");
+    const dbReady = mongoose.connection?.readyState === 1;
+
     res.json({
       api: { status: "ok", label: "Online", ok: true },
       websocket: { status: "ok", label: "Connected", ok: true },
-      database: { status: "ok", label: "Connected", ok: true },
+      database: { status: dbReady ? "ok" : "error", label: dbReady ? "Connected" : "Disconnected", ok: dbReady },
       lavalink: {
         status: connectedNodes > 0 ? "ok" : "error",
         label: connectedNodes > 0 ? `${connectedNodes} node(s)` : "Disconnected",

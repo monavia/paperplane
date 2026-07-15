@@ -13,13 +13,14 @@ export function start(client: any): void {
     // Cycle status every 10s
     const statuses: any[] = ["online", "idle", "dnd"];
     let i = 0;
-    setInterval(() => {
+    const cycleTimer = setInterval(() => {
       i++;
       client.user?.setPresence({
         activities: [activity()],
         status: statuses[i % statuses.length],
       });
     }, 10000);
+    cycleTimer.unref();
 
     try {
       const ready = await initLavalink(client);
@@ -38,6 +39,7 @@ export function start(client: any): void {
     // Periodic history cleanup
     const { cleanupOldEntries } = require("../music/services/HistoryService");
     cleanupOldEntries().catch(() => {});
-    setInterval(() => cleanupOldEntries().catch(() => {}), 86400000);
+    const historyCleanupTimer = setInterval(() => cleanupOldEntries().catch(() => {}), 86400000);
+    historyCleanupTimer.unref();
   });
 }

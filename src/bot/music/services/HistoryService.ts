@@ -34,7 +34,7 @@ export async function getHistory(guildId: string, limit = 15): Promise<any[]> {
       const p = await getPrisma();
       return p.historyEntry.findMany({ where: { guildId }, orderBy: { timestamp: "desc" }, take: limit });
     }
-    return await HistoryEntry.find({ guildId }).sort({ playedAt: -1 }).limit(limit).lean();
+    return await HistoryEntry.find({ guildId }).sort({ timestamp: -1 }).limit(limit).lean();
   } catch { return []; }
 }
 
@@ -55,7 +55,7 @@ export async function cleanupOldEntries(): Promise<void> {
       const p = await getPrisma();
       await p.historyEntry.deleteMany({ where: { timestamp: { lt: cutoff } } });
     } else {
-      await HistoryEntry.deleteMany({ playedAt: { $lt: cutoff } }).catch(() => {});
+      await HistoryEntry.deleteMany({ timestamp: { $lt: cutoff } }).catch(() => {});
     }
   } catch {}
 }

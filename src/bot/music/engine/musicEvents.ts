@@ -15,6 +15,7 @@ import { getPrefix } from "../../database/repositories/GuildRepository";
 import botConfig from "../../config/bot";
 import metrics from "../../telemetry/MetricsCollector";
 import { playerState } from "../services/RedisPlayerState";
+import { saveSpotifyMeta, applySpotifyMeta } from "../services/TitleResolver";
 
 const disconnectTimers = new Map<string, any>();
 const errorTimestamps = new Map<string, number[]>();
@@ -73,9 +74,24 @@ async function advanceQueue(player: any): Promise<any> {
 
       if (!next.encoded && next.info?.uri) {
         try {
-          const res = await player.search({ query: next.info.uri }, clientRef?.user);
-          if (res?.tracks?.length) {
-            Object.assign(next, res.tracks[0]);
+          const uri = next.info.uri;
+          const isSpotify = /^spotify:(track|album|playlist):/.test(uri) || /open\.spotify\.com/i.test(uri);
+          const savedMeta = saveSpotifyMeta(next);
+          if (isSpotify) {
+            const q = `${next.info.author || ""} ${next.info.title || ""}`.trim();
+            for (const prefix of ["ytmsearch", "ytsearch", "scsearch"]) {
+              const res = await player.search({ query: `${prefix}:${q}` }, clientRef?.user).catch(() => null);
+              if (res?.tracks?.length) {
+                Object.assign(next, res.tracks[0]);
+                applySpotifyMeta(next, savedMeta);
+                break;
+              }
+            }
+          } else {
+            const res = await player.search({ query: uri }, clientRef?.user).catch(() => null);
+            if (res?.tracks?.length) {
+              Object.assign(next, res.tracks[0]);
+            }
           }
         } catch {}
       }
@@ -195,7 +211,7 @@ function register(client: any): void {
         const author = track.info.author || "Unknown";
         const url = track.info.originalUrl || track.info.uri || "";
         const source = track.info.source || "youtube";
-        const emoji = getSourceEmoji(source);
+        const emoji = getSourceEmoji(source, track.info?.spotifyUrl);
         const embed = new EmbedBuilder()
           .setDescription(`${emoji} Started playing [${author} - ${title}](${url})`)
           .setColor(Colors.NOWPLAYING);
@@ -278,6 +294,8 @@ function register(client: any): void {
       errorTimestamps.delete(player.guildId);
       retryTracks.delete(player.guildId);
       playerState.deleteState(player.guildId);
+      const { default: RecommendationEngine } = require("./RecommendationEngine");
+      new RecommendationEngine().clearPlayed(player.guildId);
       const prevLyrics = lyricsMessages.get(player.guildId);
       if (prevLyrics && clientRef) {
         const ch = clientRef.channels.cache.get(prevLyrics.channelId);
@@ -303,6 +321,14 @@ function register(client: any): void {
       stopPositionSync(player.guildId);
 
       const timerId = setTimeout(() => {
+        // Check if the player is still the active one (not destroyed/recreated)
+        const currentPlayer = lavalink.get()?.players?.get(player.guildId);
+        if (currentPlayer && currentPlayer !== player) {
+          // Player was recreated — don't touch the new session
+          disconnectTimers.delete(player.guildId);
+          return;
+        }
+
         const textChannelId = getTextChannelId(player.guildId);
         if (textChannelId) {
           const channel = clientRef?.channels?.cache?.get(textChannelId);
@@ -315,6 +341,8 @@ function register(client: any): void {
         }
         markIdleDisconnect(player.guildId);
         clearVoiceJoinTime(player.guildId);
+        const { deleteState } = require("../services/StateService");
+        deleteState(player.guildId).catch(() => {});
         player.disconnect();
         player.destroy();
         state.queues.clear(player.guildId);
@@ -357,19 +385,21 @@ function register(client: any): void {
         retried.add(trackId);
         retryTracks.set(player.guildId, retried);
 
+        const savedMeta = saveSpotifyMeta(track);
         const title = track?.info?.title || "";
         const author = track?.info?.author || "";
         const q = `${author} ${title}`.trim();
         if (q) {
-          for (const prefix of ["scsearch", "ytmsearch"]) {
+          for (const prefix of ["ytsearch", "ytmsearch", "scsearch"]) {
             try {
               const res = await player.search({ query: `${prefix}:${q}` }, clientRef?.user);
               const found = res?.tracks?.find((t: any) => t.encoded && t.encoded !== track?.encoded);
               if (found) {
                 if (!found.info) found.info = {};
-                found.info.source = prefix === "scsearch" ? "soundcloud" : "youtube";
+                found.info.source = track?.info?.source || (prefix === "scsearch" ? "soundcloud" : "youtube");
                 found.info.originalUrl = found.info.uri;
                 found.info.requester = track?.info?.requester;
+                applySpotifyMeta(found, savedMeta);
                 alt = found;
                 Logger.info(`[trackError] Source fallback via ${prefix}: "${q}"`);
                 break;
@@ -458,6 +488,8 @@ function register(client: any): void {
       state.nowPlaying.delete(guildId);
       state.queues.clear(guildId);
       state.loop.delete(guildId);
+      const { default: RecommendationEngine } = require("./RecommendationEngine");
+      new RecommendationEngine().clearPlayed(guildId);
       const timer = disconnectTimers.get(guildId);
       if (timer) {
         clearTimeout(timer);

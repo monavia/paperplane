@@ -12,8 +12,8 @@ import * as MusicService from "../../services/MusicService";
 async function resolveSpotifyTrack(player: any, spotifyItem: any, user: any): Promise<any> {
   const q = spotifyItem.query || `${spotifyItem.artists?.join(" ") || ""} ${spotifyItem.name}`.trim();
   if (!q) return null;
-  let result = await player.search({ query: `ytmsearch:${q}` }, user);
-  if (!result?.tracks?.length) result = await player.search({ query: `ytsearch:${q}` }, user);
+  let result = await player.search({ query: `ytsearch:${q}` }, user);
+  if (!result?.tracks?.length) result = await player.search({ query: `ytmsearch:${q}` }, user);
   if (!result?.tracks?.length) result = await player.search({ query: `scsearch:${q}` }, user);
   if (result?.tracks?.length) {
     const track = pickBestTrack(result.tracks);
@@ -21,7 +21,6 @@ async function resolveSpotifyTrack(player: any, spotifyItem: any, user: any): Pr
     const artistStr = spotifyItem.artists?.join(", ") || track.info.author || "";
     track.info.author = artistStr;
     track.info.title = spotifyItem.name || track.info.title;
-    track.info.source = "spotify";
     track.info.originalUrl = track.info.uri;
     track.info.spotifyUrl = spotifyItem.spotifyUri || null;
     return track;
@@ -76,10 +75,13 @@ export default {
           const resolved = await resolveSpotifyTrack(player, items[0], message.author);
           if (!resolved) throw new Error("Could not resolve Spotify track on YouTube.");
           const queue = state.queues.get(message.guildId) || [];
-          if (player.playing || player.paused || queue.length) {
-            state.queues.set(message.guildId, [...queue, resolved]);
-            return message.channel.send({ embeds: [NowPlayingEmbed.addedToQueue(resolved, queue.length + 1)] });
-          }
+           if (player.playing || player.paused || queue.length) {
+             return await withQueueLock(message.guildId, async () => {
+               const q2 = state.queues.get(message.guildId) || [];
+               state.queues.set(message.guildId, [...q2, resolved]);
+               return message.channel.send({ embeds: [NowPlayingEmbed.addedToQueue(resolved, q2.length + 1)] });
+             });
+           }
            await withQueueLock(message.guildId, async () => {
              state.nowPlaying.set(message.guildId, resolved);
              markTrackStartSuppressed(message.guildId);
@@ -104,13 +106,15 @@ export default {
         if (!resolvedTracks.length) throw new Error("No tracks could be resolved from Spotify.");
 
         if (player.playing || player.paused) {
-          const curQueue = state.queues.get(message.guildId) || [];
-          const space = botConfig.maxQueue - curQueue.length;
-          if (space <= 0) return message.channel.send({ embeds: [ErrorEmbed.build("Queue full.")] });
-          const addable = space < resolvedTracks.length ? resolvedTracks.slice(0, space) : resolvedTracks;
-          state.queues.set(message.guildId, [...curQueue, ...addable]);
-          return message.channel.send({
-            embeds: [new EmbedBuilder().setDescription(`Added ${addable.length} of ${resolvedTracks.length} tracks to queue.`).setColor(Colors.SUCCESS)],
+          return await withQueueLock(message.guildId, async () => {
+            const curQueue = state.queues.get(message.guildId) || [];
+            const space = botConfig.maxQueue - curQueue.length;
+            if (space <= 0) return message.channel.send({ embeds: [ErrorEmbed.build("Queue full.")] });
+            const addable = space < resolvedTracks.length ? resolvedTracks.slice(0, space) : resolvedTracks;
+            state.queues.set(message.guildId, [...curQueue, ...addable]);
+            return message.channel.send({
+              embeds: [new EmbedBuilder().setDescription(`Added ${addable.length} of ${resolvedTracks.length} tracks to queue.`).setColor(Colors.SUCCESS)],
+            });
           });
         }
 
@@ -118,15 +122,19 @@ export default {
          const curQueue = state.queues.get(message.guildId) || [];
          const space = botConfig.maxQueue - curQueue.length;
          const addable = space < resolvedTracks.length ? resolvedTracks.slice(0, space) : resolvedTracks;
+         const addedCount = addable.length + 1;
          await withQueueLock(message.guildId, async () => {
            state.queues.set(message.guildId, [...curQueue, ...addable]);
            state.nowPlaying.set(message.guildId, first);
-           await player.play({ track: first, clientTrack: first });
+           markTrackStartSuppressed(message.guildId);
            await MusicService.saveState(message.guildId);
           });
-         return message.channel.send({
-           embeds: [new EmbedBuilder().setDescription(`Added ${addable.length} tracks from Spotify.`).setColor(Colors.SUCCESS)],
+         await message.channel.send({
+           embeds: [new EmbedBuilder().setDescription(`Added ${addedCount} tracks from Spotify.`).setColor(Colors.SUCCESS)],
          });
+         await player.play({ track: first, clientTrack: first }).catch(() => {});
+         await message.channel.send({ embeds: [NowPlayingEmbed.build(first, null)] });
+         return;
       }
 
       // Regular search
@@ -158,19 +166,26 @@ export default {
         const addedMsg = playlistTracks.length > space ? ` (${space} of ${playlistTracks.length})` : "";
 
         if (player.playing || player.paused || q.length) {
-          state.queues.set(message.guildId, [...q, ...addable]);
-          return message.channel.send({
-            embeds: [new EmbedBuilder().setDescription(`Added ${addable.length} tracks from **${playlistName}**${addedMsg}`).setColor(Colors.SUCCESS)],
+          return await withQueueLock(message.guildId, async () => {
+            const q2 = state.queues.get(message.guildId) || [];
+            const addable2 = space < playlistTracks.length ? playlistTracks.slice(0, space) : playlistTracks;
+            state.queues.set(message.guildId, [...q2, ...addable2]);
+            return message.channel.send({
+              embeds: [new EmbedBuilder().setDescription(`Added ${addable2.length} tracks from **${playlistName}**${addedMsg}`).setColor(Colors.SUCCESS)],
+            });
           });
         }
 
         const first = addable.shift();
         if (!first) throw new Error("No tracks in playlist.");
-        state.queues.set(message.guildId, [...q, ...addable]);
-        state.nowPlaying.set(message.guildId, first);
-        markTrackStartSuppressed(message.guildId);
-        await player.play({ track: first, clientTrack: first });
-        await MusicService.saveState(message.guildId);
+        await withQueueLock(message.guildId, async () => {
+          const q2 = state.queues.get(message.guildId) || [];
+          state.queues.set(message.guildId, [...q2, ...addable]);
+          state.nowPlaying.set(message.guildId, first);
+          markTrackStartSuppressed(message.guildId);
+          await player.play({ track: first, clientTrack: first });
+          await MusicService.saveState(message.guildId);
+        });
         return message.channel.send({
           embeds: [new EmbedBuilder().setDescription(`Playing **${playlistName}** — ${addable.length + 1} tracks${addedMsg}`).setColor(Colors.SUCCESS)],
         });
@@ -185,8 +200,11 @@ export default {
       const queue = state.queues.get(message.guildId) || [];
 
       if (player.playing || player.paused) {
-        state.queues.set(message.guildId, [...queue, track]);
-        return message.channel.send({ embeds: [NowPlayingEmbed.addedToQueue(track, queue.length + 1)] });
+        return await withQueueLock(message.guildId, async () => {
+          const queue2 = state.queues.get(message.guildId) || [];
+          state.queues.set(message.guildId, [...queue2, track]);
+          return message.channel.send({ embeds: [NowPlayingEmbed.addedToQueue(track, queue2.length + 1)] });
+        });
       }
 
        await withQueueLock(message.guildId, async () => {
@@ -200,6 +218,7 @@ export default {
         });
        await message.channel.send({ embeds: [NowPlayingEmbed.build(track, null)] });
     } catch (err: any) {
+      if (String(err?.message || "").includes("spotify")) return;
       message.channel.send({ embeds: [ErrorEmbed.build(err.message)] });
     }
   },

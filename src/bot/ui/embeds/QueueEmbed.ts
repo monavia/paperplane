@@ -16,7 +16,7 @@ function build(tracks: any[], page: number = 1) {
 
   const currentTrack = tracks[0];
   const nowPlaying = currentTrack
-    ? `Now Playing: ${currentTrack.info.title || "Unknown"} — ${currentTrack.info.author || "Unknown"}`
+    ? `Now Playing: ${currentTrack.info?.title || "Unknown"} — ${currentTrack.info?.author || "Unknown"}`
     : "";
 
   const embed = new EmbedBuilder()

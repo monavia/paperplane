@@ -44,6 +44,9 @@ export function start(client: any): void {
         return;
       }
 
+      const { deleteState } = require("../music/services/StateService");
+      await deleteState(guildId).catch(() => {});
+
       const { getEngine } = require("../music/services/PlayerService");
       const engine = getEngine(guildId);
       if (!engine.player?.voiceChannelId) return;
@@ -64,8 +67,8 @@ export function start(client: any): void {
     // Non-bot member left a voice channel
     if (oldState.channelId && !newState.channelId && oldState.member?.id !== botId) {
       const guildId = oldState.guild.id;
-      const vc = oldState.channel;
-      if (!vc?.members) return;
+      const vc = oldState.guild.channels.cache.get(oldState.channelId);
+      if (!vc?.isVoiceBased() || !vc.members) return;
       const botInVc = vc.members.has(botId);
       if (!botInVc) return;
       if (vc.members.size === 1) { // only bot left

@@ -17,7 +17,9 @@ export function loadSlash(client: any, _pluginManager?: any): number {
         client.slashCommands?.set?.(cmd.data.name, cmd);
       }
     }
-  } catch {}
+  } catch (err) {
+    Logger.warn(`[loadSlash] Failed to load slash commands from ${slashDir}: ${err}`);
+  }
   return slashCommands.size;
 }
 
@@ -33,7 +35,9 @@ export function loadPrefix(client: any): number {
         client.prefixCommands.set(cmd.name, cmd);
       }
     }
-  } catch {}
+  } catch (err) {
+    Logger.warn(`[loadPrefix] Failed to load prefix commands from ${prefixDir}: ${err}`);
+  }
   return prefixCommands.size;
 }
 

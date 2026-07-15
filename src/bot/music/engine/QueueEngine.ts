@@ -1,5 +1,13 @@
 import state from "../../core/state/StateManager";
 
+/**
+ * QueueEngine — thin wrapper over state.queues for a single guild.
+ *
+ * IMPORTANT: These methods do NOT acquire withQueueLock internally.
+ * All callers MUST hold the lock before calling mutating methods
+ * (add, addMultiple, next, remove, swap, shuffle, move, removeRange, clear)
+ * to prevent races with advanceQueue / skip / trackError.
+ */
 class QueueEngine {
   guildId: string;
 

@@ -29,6 +29,14 @@ class SpotifyScraper {
 
   private setCache(key: string, data: any): void {
     this.cache.set(key, { data, expiry: Date.now() + CACHE_TTL });
+    if (this.cache.size > 500) this.pruneCache();
+  }
+
+  private pruneCache(): void {
+    const now = Date.now();
+    for (const [k, v] of this.cache) {
+      if (now > v.expiry) this.cache.delete(k);
+    }
   }
 
   _getDurationMs(item: any): any {

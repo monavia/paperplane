@@ -1,6 +1,5 @@
 import { get } from "./lavalink";
 
-const players = new Map<string, any>();
 const voiceJoinTimes = new Map<string, number>();
 
 export function getPlayer(guildId: string): any {
@@ -20,12 +19,10 @@ export function createPlayer(guildId: string, voiceChannelId: string | null, tex
     selfDeaf: true,
     selfMute: false,
   });
-  players.set(guildId, true);
   return player;
 }
 
 export function destroyPlayer(guildId: string): Promise<any> {
-  players.delete(guildId);
   const mgr = get();
   const player = mgr?.players?.get(guildId);
   if (player) return player.destroy();

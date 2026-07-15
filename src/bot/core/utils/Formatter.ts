@@ -1,17 +1,17 @@
 import { parseDuration } from "./Duration";
 
 function formatTrack(track: any, index: number) {
-  const title = track.info.title || "Unknown";
-  const url = track.info.originalUrl || track.info.uri;
-  const duration = parseDuration(track.info.duration);
-  const author = track.info.author || "Unknown";
+  const title = track.info?.title || "Unknown";
+  const url = track.info?.originalUrl || track.info?.uri;
+  const duration = parseDuration(track.info?.duration ?? 0);
+  const author = track.info?.author || "Unknown";
   return `\`${String(index).padStart(2, " ")}\` ${url ? `[${title}](${url})` : title} — ${author} \`[${duration}]\``;
 }
 
 function formatTrackCompact(track: any) {
-  const title = track.info.title || "Unknown";
-  const url = track.info.originalUrl || track.info.uri;
-  const duration = parseDuration(track.info.duration);
+  const title = track.info?.title || "Unknown";
+  const url = track.info?.originalUrl || track.info?.uri;
+  const duration = parseDuration(track.info?.duration ?? 0);
   return `[${title}](${url}) \`[${duration}]\``;
 }
 

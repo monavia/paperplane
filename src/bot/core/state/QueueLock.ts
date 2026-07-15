@@ -35,14 +35,17 @@ export function withQueueLock<T>(
         state!.locked = false;
         const next = state!.queue.shift();
         if (next) next();
+        // Clean up entry when idle (no lock, no waiters)
+        else if (!state!.locked && state!.queue.length === 0) locks.delete(guildId);
       };
 
+      // Timeout = warning only. Do NOT release/reject — fn() owns the lock
+      // until it finishes. Releasing early would let a second caller in
+      // while the first is still mutating the queue.
       const timer = setTimeout(() => {
-        Logger.error(
-          `[QueueLock] guild=${guildId} fn exceeded ${timeoutMs}ms — force-releasing lock`,
+        Logger.warn(
+          `[QueueLock] guild=${guildId} fn exceeded ${timeoutMs}ms — still waiting for completion`,
         );
-        release();
-        reject(new Error("QueueLock timeout"));
       }, timeoutMs);
 
       Promise.resolve().then(async () => {

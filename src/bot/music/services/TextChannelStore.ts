@@ -7,3 +7,7 @@ export function getTextChannelId(guildId: string): string | null {
 export function setTextChannelId(guildId: string, channelId: string): void {
   textChannels.set(guildId, channelId);
 }
+
+export function deleteTextChannelId(guildId: string): void {
+  textChannels.delete(guildId);
+}

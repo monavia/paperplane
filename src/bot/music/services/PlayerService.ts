@@ -1,6 +1,7 @@
 import state from "../../core/state/StateManager";
 import QueueEngine from "../engine/QueueEngine";
 import { PlaybackEngine } from "../engine/PlaybackEngine";
+import { deleteTextChannelId } from "./TextChannelStore";
 
 interface Engine {
   guildId: string;
@@ -12,6 +13,15 @@ interface Engine {
 }
 
 const engines = new Map<string, Engine>();
+
+// Periodic cleanup: remove engines with no player and no queue (idle)
+setInterval(() => {
+  for (const [guildId, e] of engines) {
+    if (!e.player && e.queue.size() === 0) {
+      engines.delete(guildId);
+    }
+  }
+}, 300000); // every 5 min
 
 export function getEngine(guildId: string): Engine {
   let e = engines.get(guildId);
@@ -55,13 +65,15 @@ export function getEngine(guildId: string): Engine {
 }
 
 export async function destroyEngine(guildId: string): Promise<void> {
-  const { stopPositionSync } = require("./StateService");
+  const { stopPositionSync, deleteState } = require("./StateService");
   stopPositionSync(guildId);
+  await deleteState(guildId).catch(() => {});
   const e = engines.get(guildId);
   if (e?.player) {
     try { await e.player.destroy(); } catch {}
   }
   engines.delete(guildId);
+  deleteTextChannelId(guildId);
   state.nowPlaying.delete(guildId);
   state.queues.clear(guildId);
   state.loop.delete(guildId);
@@ -71,12 +83,21 @@ export async function destroyEngine(guildId: string): Promise<void> {
 export async function play(_guildId: string, _query: string, _user: any): Promise<any> {}
 export async function skip(guildId: string, userId: string, userName: string): Promise<any> {
   const engine = getEngine(guildId);
+  const player = engine.player;
   const nextTrack = await engine.playback.skip();
-  const { saveState } = require("./StateService");
+  const { saveState, deleteState } = require("./StateService");
+  const { stopPositionSync } = require("./StateService");
   if (nextTrack) {
     const ActivityService = require("../../services/ActivityService").default;
     await ActivityService.log({ guildId, userId, userName, action: "skip", detail: `Skipped to ${nextTrack.info?.title || "next track"}`, songTitle: nextTrack?.info?.title, artist: nextTrack?.info?.artist });
     await saveState(guildId);
+  } else {
+    await deleteState(guildId).catch(() => {});
+    stopPositionSync(guildId);
+    if (player) {
+      try { player.disconnect(); } catch {}
+      try { player.destroy(); } catch {}
+    }
   }
   return nextTrack;
 }
