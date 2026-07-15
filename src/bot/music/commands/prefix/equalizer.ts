@@ -71,7 +71,7 @@ export default {
       const bands = EQ_PRESETS[preset];
       if (!bands) return i.update({ embeds: [ErrorEmbed.build("Invalid preset.")], components: [] });
 
-      const ok = await MusicService.setEqualizer(message.guildId, bands, message.author.id, message.author.username);
+      const ok = await MusicService.setEqualizer(message.guildId, bands, message.author.id, message.member?.displayName || message.author.username);
       if (!ok) return i.update({ embeds: [ErrorEmbed.build("Failed to set equalizer.")], components: [] });
       await setLastEqualizer(message.guildId, preset);
 

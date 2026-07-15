@@ -14,7 +14,7 @@ export default {
     const level = parseInt(args[0]);
     if (isNaN(level) || level < 1 || level > 100) return (message.channel as any).send({ embeds: [ErrorEmbed.build("Volume must be 1-100.")] });
 
-    MusicService.setVolume(message.guildId!, level, message.author.id, message.author.username);
+    MusicService.setVolume(message.guildId!, level, message.author.id, message.member?.displayName || message.author.username);
     updateVolume(message.guildId!, level);
     await (message.channel as any).send({ embeds: [SuccessEmbed.build(`Volume set to ${formatVolume(level)}`)] });
   },

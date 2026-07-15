@@ -77,7 +77,7 @@ export default {
       await ActivityService.log({
         guildId,
         userId: interaction.user.id,
-        userName: interaction.user.username,
+        userName: interaction.member?.displayName || interaction.user.username,
         action: `loop_${newMode}`,
         detail: `Loop set to ${newMode}`
       });

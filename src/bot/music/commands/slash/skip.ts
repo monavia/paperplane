@@ -14,7 +14,7 @@ export default {
     if (!player) return interaction.reply({ embeds: [ErrorEmbed.build("No track is currently playing.")], ephemeral: true });
     await interaction.deferReply();
     try {
-      const nextTrack = await MusicService.skip(interaction.guildId!, interaction.user.id, interaction.user.username);
+      const nextTrack = await MusicService.skip(interaction.guildId!, interaction.user.id, interaction.member?.displayName || interaction.user.username);
       if (nextTrack) await interaction.editReply({ embeds: [NowPlayingEmbed.build(nextTrack, null)] });
       else await interaction.editReply({ embeds: [new EmbedBuilder().setDescription("Queue empty.").setColor(Colors.INFO)] });
     } catch (err: any) {

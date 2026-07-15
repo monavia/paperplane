@@ -15,7 +15,7 @@ export default {
       return message.channel.send({ embeds: [ErrorEmbed.build("Nothing to stop.")] });
     }
     try {
-      await MusicService.stop(message.guildId!, message.author.id, message.author.username);
+      await MusicService.stop(message.guildId!, message.author.id, message.member?.displayName || message.author.username);
       return message.channel.send({ embeds: [new EmbedBuilder().setDescription("Playback stopped.").setColor(Colors.INFO)] });
     } catch (err: any) {
       await message.channel.send({ embeds: [ErrorEmbed.build(err.message)] });

@@ -12,7 +12,7 @@ export default {
     const player = MusicService.getEngine(message.guildId!).player;
     if (!player) return (message.channel as any).send({ embeds: [ErrorEmbed.build("No track is currently playing.")] });
 
-    const resumed = await MusicService.resume(message.guildId!, message.author.id, message.author.username);
+    const resumed = await MusicService.resume(message.guildId!, message.author.id, message.member?.displayName || message.author.username);
     if (!resumed) return (message.channel as any).send({ embeds: [ErrorEmbed.build("Failed to resume playback.")] });
 
     await (message.channel as any).send({ embeds: [SuccessEmbed.build("Playback resumed.")] });

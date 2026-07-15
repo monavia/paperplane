@@ -62,7 +62,7 @@ export default {
           }
           state.queues.set(guildId, tracks);
         }
-        await ActivityService.log({ guildId, userId: interaction.user.id, userName: interaction.user.username, action: "shuffle_on", detail: "Shuffle ON" });
+        await ActivityService.log({ guildId, userId: interaction.user.id, userName: interaction.member?.displayName || interaction.user.username, action: "shuffle_on", detail: "Shuffle ON" });
         const result = new EmbedBuilder()
           .setDescription("Shuffle is **ON**")
           .setColor(Colors.SUCCESS);
@@ -71,7 +71,7 @@ export default {
 
       if (i.customId === "shuffle_off") {
         state.shuffle.set(guildId, false);
-        await ActivityService.log({ guildId, userId: interaction.user.id, userName: interaction.user.username, action: "shuffle_off", detail: "Shuffle OFF" });
+        await ActivityService.log({ guildId, userId: interaction.user.id, userName: interaction.member?.displayName || interaction.user.username, action: "shuffle_off", detail: "Shuffle OFF" });
         const result = new EmbedBuilder()
           .setDescription("Shuffle is **OFF**")
           .setColor(Colors.ERROR);

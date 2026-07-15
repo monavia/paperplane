@@ -5,6 +5,8 @@ export interface IHistoryEntry extends Document {
   userId: string;
   songTitle: string;
   artist: string;
+  identifier: string;
+  artworkUrl: string | null;
   timestamp: Date;
 }
 
@@ -13,6 +15,8 @@ const HistoryEntrySchema = new Schema<IHistoryEntry>({
   userId: { type: String, required: true },
   songTitle: { type: String, default: "Unknown" },
   artist: { type: String, default: "" },
+  identifier: { type: String, default: "" },
+  artworkUrl: { type: String, default: null },
   timestamp: { type: Date, default: Date.now, index: { expires: 7 * 24 * 60 * 60 } },
 });
 

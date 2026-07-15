@@ -17,7 +17,7 @@ export default {
     }
     await interaction.deferReply();
     try {
-      await MusicService.stop(interaction.guildId!, interaction.user.id, interaction.user.username);
+      await MusicService.stop(interaction.guildId!, interaction.user.id, interaction.member?.displayName || interaction.user.username);
       await interaction.editReply({ embeds: [new EmbedBuilder().setDescription("Playback stopped.").setColor(Colors.INFO)] });
     } catch (err: any) {
       await interaction.editReply({ embeds: [ErrorEmbed.build(err.message)] });

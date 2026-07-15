@@ -73,7 +73,7 @@ export default {
       await ActivityService.log({
         guildId,
         userId: message.author.id,
-        userName: message.author.username,
+        userName: message.member?.displayName || message.author.username,
         action: `loop_${newMode}`,
         detail: `Loop set to ${newMode}`
       });

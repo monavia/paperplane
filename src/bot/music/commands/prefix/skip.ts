@@ -13,7 +13,7 @@ export default {
     const player = MusicService.getEngine(message.guildId!).player;
     if (!player) return message.channel.send({ embeds: [ErrorEmbed.build("No track is currently playing.")] });
     try {
-      const nextTrack = await MusicService.skip(message.guildId!, message.author.id, message.author.username);
+      const nextTrack = await MusicService.skip(message.guildId!, message.author.id, message.member?.displayName || message.author.username);
       if (nextTrack) return message.channel.send({ embeds: [NowPlayingEmbed.build(nextTrack, null)] });
       return message.channel.send({ embeds: [new EmbedBuilder().setDescription("Queue empty.").setColor(Colors.INFO)] });
     } catch (err: any) {

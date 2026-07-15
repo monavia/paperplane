@@ -68,10 +68,10 @@ export default {
     collector.on("collect", async (i: any) => {
       const filterValue = i.customId.replace("filter_", "");
       if (filterValue === MusicModes.FILTERS.NONE) {
-        await MusicService.resetFilters(guildId, message.author.id, message.author.username);
+        await MusicService.resetFilters(guildId, message.author.id, message.member?.displayName || message.author.username);
         await setLastFilter(guildId, "none");
       } else {
-        const ok = await MusicService.setFilter(guildId, filterValue, message.author.id, message.author.username);
+        const ok = await MusicService.setFilter(guildId, filterValue, message.author.id, message.member?.displayName || message.author.username);
         if (!ok) return i.update({ embeds: [ErrorEmbed.build("Failed to apply filter. Is the bot playing?")], components: [] });
         await setLastFilter(guildId, filterValue);
       }

@@ -207,10 +207,10 @@ export async function startApiServer(_status?: any): Promise<void> {
       // Top tracks
       const trackMap: Record<string, { title: string; author: string; plays: number; thumbnail: string | null }> = {};
       filtered.forEach((h: any) => {
-        const title = h.track?.info?.title || h.songTitle || "Unknown";
-        const author = h.track?.info?.author || h.artist || "";
-        const identifier = h.track?.info?.identifier || "";
-        const artworkUrl = h.track?.info?.artworkUrl || null;
+        const title = h.songTitle || h.track?.info?.title || "Unknown";
+        const author = h.artist || h.track?.info?.author || "";
+        const identifier = h.identifier || h.track?.info?.identifier || "";
+        const artworkUrl = h.artworkUrl || h.track?.info?.artworkUrl || null;
         const thumbnail = artworkUrl || (identifier && identifier.length === 11 ? `https://img.youtube.com/vi/${identifier}/mqdefault.jpg` : null);
         if (!trackMap[title]) trackMap[title] = { title, author, plays: 0, thumbnail };
         trackMap[title].plays++;
@@ -547,8 +547,14 @@ export async function startApiServer(_status?: any): Promise<void> {
       const data = await Promise.all(history.map(async (h: any) => {
         let userName = null;
         if (client?.users?.cache) {
-          const user = client.users.cache.get(h.userId) || await client.users.fetch(h.userId).catch(() => null);
-          userName = user?.global_name || user?.username || null;
+          const guild = client.guilds?.cache?.get(guildId);
+          const member = guild?.members?.cache?.get(h.userId) || await guild?.members?.fetch(h.userId).catch(() => null);
+          if (member?.displayName) {
+            userName = member.displayName;
+          } else {
+            const user = client.users.cache.get(h.userId) || await client.users.fetch(h.userId).catch(() => null);
+            userName = user?.globalName || user?.username || null;
+          }
         }
         return {
           userId: h.userId,

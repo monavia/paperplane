@@ -15,6 +15,8 @@ export async function addEntry(guildId: string, userId: string, track: any): Pro
       guildId, userId,
       songTitle: track.info?.title || "Unknown",
       artist: track.info?.author || "",
+      identifier: track.info?.identifier || "",
+      artworkUrl: track.info?.artworkUrl || null,
       timestamp: new Date(),
     };
     if (usePg()) {

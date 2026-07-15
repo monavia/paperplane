@@ -154,7 +154,7 @@ async function processTracks(engine: any, player: any, guildId: string, scrapedT
   await ActivityService.log({
     guildId,
     userId: user.id,
-    userName: user.username,
+    userName: user.displayName || user.username,
     action: wasPlaying ? "queue" : "play",
     detail: allTracks.length > 1 ? `Added playlist (${allTracks.length} songs)` : (wasPlaying ? `Queued ${allTracks[0]?.info?.title || "unknown track"}` : `Played ${allTracks[0]?.info?.title || "unknown track"}`),
     songTitle: allTracks[0]?.info?.title,
