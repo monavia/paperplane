@@ -12,6 +12,10 @@ model Guild {
   volume        Int      @default(80)
   lastFilter    String   @default("none")
   lastEqualizer Json?
+  autoplay      Boolean  @default(false)
+  loop          String   @default("off")
+  shuffle       Boolean  @default(false)
+  is247         Boolean  @default(false)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }

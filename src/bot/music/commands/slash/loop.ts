@@ -5,8 +5,9 @@ import * as ErrorEmbed from "../../../ui/embeds/ErrorEmbed";
 import ActivityService from "../../../services/ActivityService";
 import * as MusicService from "../../services/MusicService";
 import { checkSameVoice } from "../../../core/utils/VoiceCheck";
+import { setLoop } from "../../../database/repositories/GuildRepository";
 
-const TIMEOUT = 60000;
+const TIMEOUT = 30000;
 
 type LoopMode = "off" | "track" | "playlist";
 
@@ -73,11 +74,12 @@ export default {
     collector.on("collect", async (i: any) => {
       const newMode = i.customId.replace("loop_", "") as LoopMode;
       state.loop.set(guildId, newMode);
+      await setLoop(guildId, newMode);
 
       await ActivityService.log({
         guildId,
         userId: interaction.user.id,
-        userName: interaction.member?.displayName || interaction.user.username,
+        userName: (interaction.member as any)?.displayName || interaction.user.username,
         action: `loop_${newMode}`,
         detail: `Loop set to ${newMode}`
       });
@@ -89,10 +91,8 @@ export default {
       await i.update({ embeds: [result], components: [] });
     });
 
-    collector.on("end", async (collected: any) => {
-      if (collected.size === 0) {
-        await msg.delete().catch(() => {});
-      }
+    collector.on("end", async () => {
+      await msg.edit({ components: [] }).catch(() => {});
     });
   },
 };

@@ -5,8 +5,9 @@ import * as ErrorEmbed from "../../../ui/embeds/ErrorEmbed";
 import ActivityService from "../../../services/ActivityService";
 import * as MusicService from "../../services/MusicService";
 import { checkSameVoice } from "../../../core/utils/VoiceCheck";
+import { setLoop } from "../../../database/repositories/GuildRepository";
 
-const TIMEOUT = 60000;
+const TIMEOUT = 30000;
 
 type LoopMode = "off" | "track" | "playlist";
 
@@ -62,13 +63,14 @@ export default {
 
     const collector = msg.createMessageComponentCollector({
       filter: (i: any) => i.user.id === message.author.id,
-      time: 60000,
+      time: TIMEOUT,
       max: 1,
     });
 
     collector.on("collect", async (i: any) => {
       const newMode = i.customId.replace("loop_", "") as LoopMode;
       state.loop.set(guildId, newMode);
+      await setLoop(guildId, newMode);
 
       await ActivityService.log({
         guildId,
@@ -85,10 +87,8 @@ export default {
       await i.update({ embeds: [result], components: [] });
     });
 
-    collector.on("end", async (collected: any) => {
-      if (collected.size === 0) {
-        await msg.delete().catch(() => {});
-      }
+    collector.on("end", async () => {
+      await msg.edit({ components: [] }).catch(() => {});
     });
   },
 };

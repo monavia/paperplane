@@ -189,10 +189,8 @@ function register(client: any): void {
     const restored = isRestoredGuild(player.guildId);
     if (restored) {
       restoredGuilds.add(player.guildId);
-      setTimeout(() => {
-        const { clearRestoredGuild } = require("../services/StateService");
-        clearRestoredGuild(player.guildId);
-      }, 5000);
+      const { clearRestoredGuild } = require("../services/StateService");
+      clearRestoredGuild(player.guildId);
     }
     const isManualAdvance = manualAdvances.has(player.guildId);
     const suppress = suppressTrackStart.has(player.guildId);
@@ -204,6 +202,7 @@ function register(client: any): void {
     if (isFirstRestored) restoredGuilds.delete(player.guildId);
     const shouldSendEmbed = !isFirstRestored && !isManualAdvance && !suppress && !isFailover;
     const textChannelId2 = getTextChannelId(player.guildId);
+    Logger.info(`[DBUG-trackStart] guild=${player.guildId} track=${track?.info?.title?.slice(0, 40) || "?"} restored=${restored} isFirstRest=${isFirstRestored} manual=${isManualAdvance} suppr=${suppress} fail=${isFailover} send=${shouldSendEmbed} ch=${textChannelId2 || "none"}`);
     if (textChannelId2 && shouldSendEmbed) {
       const channel = client.channels.cache.get(textChannelId2);
       if (channel) {
@@ -275,15 +274,15 @@ function register(client: any): void {
 
       if (!player.playing && !player.paused) {
       try {
-        const { getEngine } = require("../services/MusicService");
-        const engine = getEngine(player.guildId);
-        if (engine?.playback?.autoplay) {
+        if (state.autoplay.get(player.guildId)) {
           const AutoplayEngine = require("./AutoplayEngine").default;
           const autoplay = new AutoplayEngine();
           const autoTrack = await autoplay.getNextTrack(player, track, player.guildId);
           if (autoTrack) {
             state.nowPlaying.set(player.guildId, autoTrack);
-            await player.play({ track: autoTrack, clientTrack: autoTrack }).catch(() => {});
+            await player.play({ track: autoTrack, clientTrack: autoTrack }).catch((err: any) => Logger.warn(`[autoplay] Play failed: ${err.message}`));
+            const { saveState } = require("../services/StateService");
+            await saveState(player.guildId).catch(() => {});
             return;
           }
         }

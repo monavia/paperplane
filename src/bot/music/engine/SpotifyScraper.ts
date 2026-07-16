@@ -66,7 +66,7 @@ class SpotifyScraper {
   async scrapePlaylist(id: any): Promise<any> {
     const cacheKey = `playlist:${id}`;
     const cached = this.getCache(cacheKey);
-    if (cached) return cached;
+    if (cached) { Logger.info(`[SpotifyScraper] Cache hit playlist/${id}`); return cached; }
 
     const allTracks: any[] = [];
     let offset = 0;
@@ -86,11 +86,12 @@ class SpotifyScraper {
     }
 
     const unique = this._deduplicate(allTracks);
-    if (unique.length) { this.setCache(cacheKey, unique); return unique; }
+    if (unique.length) { Logger.info(`[SpotifyScraper] Embed path: ${unique.length} tracks`); this.setCache(cacheKey, unique); return unique; }
 
+    Logger.info(`[SpotifyScraper] Embed path empty, trying HTML scrape`);
     const html = await this._fetchPage(`https://open.spotify.com/playlist/${id}`);
     const htmlTracks = this._extractFromHtml(html);
-    if (htmlTracks?.length) { this.setCache(cacheKey, htmlTracks); return htmlTracks; }
+    if (htmlTracks?.length) { Logger.info(`[SpotifyScraper] HTML scrape: ${htmlTracks.length} tracks`); this.setCache(cacheKey, htmlTracks); return htmlTracks; }
 
     throw new Error("Could not extract playlist data from Spotify");
   }
@@ -146,6 +147,9 @@ class SpotifyScraper {
       if (match) {
         try { const json = JSON.parse(match[1]); const d = json.props?.pageProps?.state?.data; if (d) return d; } catch {}
       }
+      Logger.info(`[SpotifyScraper] Embed ${type}/${id}: html ${embedHtml.length}B, __NEXT_DATA__ ${match ? "found" : "missing"}`);
+    } else {
+      Logger.info(`[SpotifyScraper] Embed ${type}/${id}: fetch failed`);
     }
     if (type === "track") return this.fetchOEmbed(id);
     return null;
@@ -174,9 +178,23 @@ class SpotifyScraper {
       const c = new AbortController(); const t = setTimeout(() => c.abort(), 20000);
       try {
         const r = await fetch(url, { headers: this.headers, signal: c.signal });
-        if (!r.ok) { if (a < MAX_RETRIES) { await new Promise(r => setTimeout(r, RETRY_DELAY * (a + 1))); continue; } throw new Error(`Spotify ${r.status}`); }
-        return await r.text();
-      } catch (e: any) { if (a < MAX_RETRIES && (e.name === "AbortError" || e.message.includes("fetch"))) { await new Promise(r => setTimeout(r, RETRY_DELAY * (a + 1))); continue; } throw e; }
+        if (!r.ok) {
+          if (a < MAX_RETRIES) {
+            await new Promise(res => setTimeout(res, RETRY_DELAY * (a + 1)));
+            continue;
+          }
+          throw new Error(`Spotify ${r.status}`);
+        }
+        const text = await r.text();
+        Logger.info(`[SpotifyScraper] FETCH ${url} → ${r.status} ${text.length}B`);
+        return text;
+      } catch (e: any) {
+        if (a < MAX_RETRIES && (e.name === "AbortError" || e.message.includes("fetch"))) {
+          await new Promise(res => setTimeout(res, RETRY_DELAY * (a + 1)));
+          continue;
+        }
+        throw e;
+      }
       finally { clearTimeout(t); }
     }
   }

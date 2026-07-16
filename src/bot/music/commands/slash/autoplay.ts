@@ -3,8 +3,10 @@ import Colors from "../../../core/constants/Colors";
 import * as MusicService from "../../services/MusicService";
 import { checkSameVoice } from "../../../core/utils/VoiceCheck";
 import * as ErrorEmbed from "../../../ui/embeds/ErrorEmbed";
+import { setAutoplay } from "../../../database/repositories/GuildRepository";
+import state from "../../../core/state/StateManager";
 
-const TIMEOUT = 60000;
+const TIMEOUT = 30000;
 
 function buildButtons(isAutoplayOn: boolean) {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -30,11 +32,11 @@ export default {
     const vc = checkSameVoice(interaction);
     if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], ephemeral: true });
 
-    const guildId = interaction.guildId;
-    const engine = MusicService.getEngine(guildId!);
+    const guildId = interaction.guildId!;
+    const engine = MusicService.getEngine(guildId);
     if (!engine) return interaction.reply({ embeds: [ErrorEmbed.build("No active player.")], ephemeral: true });
 
-    const isAutoplayOn = engine.playback.autoplay;
+    const isAutoplayOn = state.autoplay.get(guildId);
 
     const embed = new EmbedBuilder()
       .setDescription(`Current autoplay: **${isAutoplayOn ? "ON" : "OFF"}**`)
@@ -52,7 +54,8 @@ export default {
 
     collector.on("collect", async (i: any) => {
       if (i.customId === "autoplay_on") {
-        engine.playback.autoplay = true;
+        state.autoplay.set(guildId, true);
+        await setAutoplay(guildId, true);
         const result = new EmbedBuilder()
           .setDescription("Autoplay is **ON**")
           .setColor(Colors.SUCCESS);
@@ -60,7 +63,8 @@ export default {
       }
 
       if (i.customId === "autoplay_off") {
-        engine.playback.autoplay = false;
+        state.autoplay.set(guildId, false);
+        await setAutoplay(guildId, false);
         const result = new EmbedBuilder()
           .setDescription("Autoplay is **OFF**")
           .setColor(Colors.ERROR);
@@ -68,10 +72,8 @@ export default {
       }
     });
 
-    collector.on("end", async (collected: any) => {
-      if (collected.size === 0) {
-        await msg.delete().catch(() => {});
-      }
+    collector.on("end", async () => {
+      await msg.edit({ components: [] }).catch(() => {});
     });
   },
 };

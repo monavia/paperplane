@@ -5,6 +5,7 @@ import * as ErrorEmbed from "../../../ui/embeds/ErrorEmbed";
 import * as SuccessEmbed from "../../../ui/embeds/SuccessEmbed";
 import Colors from "../../../core/constants/Colors";
 import { checkSameVoice } from "../../../core/utils/VoiceCheck";
+import state from "../../../core/state/StateManager";
 import MusicModes from "../../../core/constants/MusicModes";
 
 const FILTERS = [
@@ -69,6 +70,7 @@ export default {
 
     collector.on("collect", async (i: any) => {
       const filterValue = i.customId.replace("filter_", "");
+      state.filter.set(guildId, filterValue);
       if (filterValue === MusicModes.FILTERS.NONE) {
         await MusicService.resetFilters(guildId, interaction.user.id, interaction.member?.displayName || interaction.user.username);
         await setLastFilter(guildId, "none");

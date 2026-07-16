@@ -5,8 +5,9 @@ import * as ErrorEmbed from "../../../ui/embeds/ErrorEmbed";
 import ActivityService from "../../../services/ActivityService";
 import * as MusicService from "../../services/MusicService";
 import { checkSameVoice } from "../../../core/utils/VoiceCheck";
+import { setShuffle } from "../../../database/repositories/GuildRepository";
 
-const TIMEOUT = 60000;
+const TIMEOUT = 30000;
 
 function buildButtons(isShuffleOn: boolean) {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -50,6 +51,7 @@ export default {
     collector.on("collect", async (i: any) => {
       if (i.customId === "shuffle_on") {
         state.shuffle.set(guildId, true);
+        await setShuffle(guildId, true);
         const tracks = state.queues.get(guildId);
         if (tracks.length > 1) {
           for (let idx = tracks.length - 1; idx > 0; idx--) {
@@ -67,6 +69,7 @@ export default {
 
       if (i.customId === "shuffle_off") {
         state.shuffle.set(guildId, false);
+        await setShuffle(guildId, false);
         await ActivityService.log({ guildId, userId: message.author.id, userName: message.member?.displayName || message.author.username, action: "shuffle_off", detail: "Shuffle OFF" });
         const result = new EmbedBuilder()
           .setDescription("Shuffle is **OFF**")
@@ -75,10 +78,8 @@ export default {
       }
     });
 
-    collector.on("end", async (collected: any) => {
-      if (collected.size === 0) {
-        await msg.delete().catch(() => {});
-      }
+    collector.on("end", async () => {
+      await msg.edit({ components: [] }).catch(() => {});
     });
   },
 };

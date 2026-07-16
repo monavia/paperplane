@@ -1,11 +1,13 @@
 import { EmbedBuilder } from "discord.js";
 import Config from "../config/bot";
-import { runAIAsk } from "../ai/services/AITaskQueue";
+import { runAIAsk, runAIInterpret } from "../ai/services/AITaskQueue";
 import { checkPrompt } from "../ai/services/PromptFilter";
 import Logger from "../core/utils/Logger";
 import Colors from "../core/constants/Colors";
 import * as ErrorEmbed from "../ui/embeds/ErrorEmbed";
 import { getPrefix } from "../database/repositories/GuildRepository";
+import * as MusicService from "../music/services/MusicService";
+import { getQueue } from "../music/services/QueueService";
 
 export function start(client: any): void {
   client.on("messageCreate", async (message: any) => {
@@ -57,11 +59,124 @@ export function start(client: any): void {
     await message.channel.sendTyping().catch(() => {});
 
     try {
-      const prefix = await getPrefix(message.guildId);
-      const sysPrompt = `Current bot prefix for this server is: "${prefix}". ` +
-        `User can type "${prefix}help" or "/help" to see commands. ` +
-        `To change prefix, reply with: PREFIX: <new prefix> (e.g., "PREFIX: !") — I will execute it.`;
-      const reply = await runAIAsk(message.author.id, prompt, sysPrompt);
+      const interpreted = await runAIInterpret(prompt);
+      if (interpreted.type !== "chat") {
+        const guildId = message.guildId;
+        const voice = message.member?.voice?.channel;
+        const name = message.member?.displayName || message.author.username;
+        const state = require("../core/state/StateManager");
+
+        if (interpreted.type === "play" || interpreted.type === "playlist") {
+          if (!voice) return message.channel.send({ embeds: [ErrorEmbed.build("You must be in a voice channel.")] });
+          const { get } = require("../music/engine/lavalink");
+          const lavalink = get();
+          if (!lavalink) return message.channel.send({ embeds: [ErrorEmbed.build("Music system not ready.")] });
+          let player = lavalink.players.get(guildId);
+          if (!player) {
+            player = lavalink.createPlayer({ guildId, voiceChannelId: voice.id, textChannelId: message.channelId, selfDeaf: true, selfMute: false });
+            await player.connect();
+          }
+          MusicService.getEngine(guildId).player = player;
+          const { setTextChannelId } = require("../music/services/TextChannelStore");
+          setTextChannelId(guildId, message.channelId);
+
+          const queries = interpreted.type === "playlist" ? interpreted.songs : [interpreted.query];
+          const { withQueueLock } = require("../core/state/QueueLock");
+          const { markTrackStartSuppressed } = require("../music/engine/musicEvents");
+
+          for (let i = 0; i < queries.length; i++) {
+            const q = queries[i];
+            const result = await player.search({ query: `ytmsearch:${q}` }, message.author);
+            const track = result?.tracks?.[0];
+            if (!track) continue;
+            if (i === 0 && !player.playing && !player.paused) {
+              await withQueueLock(guildId, async () => {
+                state.nowPlaying.set(guildId, track);
+                markTrackStartSuppressed(guildId);
+                await player.play({ track, clientTrack: track });
+                const { saveState } = require("../music/services/StateService");
+                await saveState(guildId);
+              });
+            } else {
+              await withQueueLock(guildId, async () => {
+                const q2 = state.queues.get(guildId) || [];
+                state.queues.set(guildId, [...q2, track]);
+              });
+            }
+          }
+          return message.channel.send({ embeds: [new EmbedBuilder().setDescription(queries.length > 1 ? `Queued ${queries.length} tracks.` : `Playing **${queries[0]}**`).setColor(Colors.SUCCESS)] });
+        }
+
+        if (!voice) return message.channel.send({ embeds: [ErrorEmbed.build("You must be in a voice channel.")] });
+
+        switch (interpreted.type) {
+          case "skip": {
+            const player = MusicService.getEngine(guildId).player;
+            if (!player) return message.channel.send({ embeds: [ErrorEmbed.build("No track playing.")] });
+            const NowPlayingEmbed = require("../ui/embeds/NowPlayingEmbed");
+            const nextTrack = await MusicService.skip(guildId, message.author.id, name);
+            if (nextTrack) return message.channel.send({ embeds: [NowPlayingEmbed.build(nextTrack, null)] });
+            return message.channel.send({ embeds: [new EmbedBuilder().setDescription("Queue empty.").setColor(Colors.INFO)] });
+          }
+          case "stop": {
+            const engine = MusicService.getEngine(guildId);
+            if (!engine.player) return message.channel.send({ embeds: [ErrorEmbed.build("Nothing to stop.")] });
+            await MusicService.stop(guildId, message.author.id, name);
+            return message.channel.send({ embeds: [new EmbedBuilder().setDescription("Playback stopped.").setColor(Colors.INFO)] });
+          }
+          case "pause": {
+            if (!MusicService.getEngine(guildId).player) return message.channel.send({ embeds: [ErrorEmbed.build("No track playing.")] });
+            const paused = await MusicService.pause(guildId, message.author.id, name);
+            if (!paused) return message.channel.send({ embeds: [ErrorEmbed.build("Failed to pause.")] });
+            return message.channel.send({ embeds: [new EmbedBuilder().setDescription("Playback paused.").setColor(Colors.SUCCESS)] });
+          }
+          case "resume": {
+            if (!MusicService.getEngine(guildId).player) return message.channel.send({ embeds: [ErrorEmbed.build("No track playing.")] });
+            const resumed = await MusicService.resume(guildId, message.author.id, name);
+            if (!resumed) return message.channel.send({ embeds: [ErrorEmbed.build("Failed to resume.")] });
+            return message.channel.send({ embeds: [new EmbedBuilder().setDescription("Playback resumed.").setColor(Colors.SUCCESS)] });
+          }
+          case "queue": {
+            const tracks = getQueue(guildId);
+            if (!tracks?.length) return message.channel.send({ embeds: [new EmbedBuilder().setDescription("Queue is empty.").setColor(Colors.INFO)] });
+            const { build: buildQueueEmbed } = require("../ui/embeds/QueueEmbed");
+            const { embed } = buildQueueEmbed(tracks, 1);
+            return message.channel.send({ embeds: [embed] });
+          }
+          case "nowplaying": {
+            const nowPlaying = state.nowPlaying.get(guildId);
+            if (!nowPlaying) return message.channel.send({ embeds: [new EmbedBuilder().setDescription("Nothing is playing right now.").setColor(Colors.INFO)] });
+            const { build: buildNP } = require("../ui/embeds/NowPlayingEmbed");
+            return message.channel.send({ embeds: [buildNP(nowPlaying, null)] });
+          }
+          case "volume": {
+            const player = MusicService.getEngine(guildId).player;
+            if (!player) return message.channel.send({ embeds: [new EmbedBuilder().setDescription("No track playing.").setColor(Colors.INFO)] });
+            const vol = player.volume ?? 80;
+            return message.channel.send({ embeds: [new EmbedBuilder().setDescription(`Current volume: **${vol}%**`).setColor(Colors.INFO)] });
+          }
+          case "help":
+            return message.channel.send({
+              embeds: [new EmbedBuilder()
+                .setTitle("AI Command Help")
+                .setDescription("Say **play**, **skip**, **stop**, **pause**, **resume**, **queue**, **nowplaying**, **volume**, or **help**.")
+                .setColor(Colors.INFO)]
+            });
+          default:
+            return message.channel.send({ embeds: [ErrorEmbed.build("Command not supported via AI yet.")] });
+        }
+      }
+
+      let reply: string;
+      if (interpreted.reply) {
+        reply = interpreted.reply;
+      } else {
+        const prefix = await getPrefix(message.guildId);
+        const sysPrompt = `Current bot prefix for this server is: "${prefix}". ` +
+          `User can type "${prefix}help" or "/help" to see commands. ` +
+          `To change prefix, reply with: PREFIX: <new prefix> (e.g., "PREFIX: !") — I will execute it.`;
+        reply = await runAIAsk(message.author.id, prompt, sysPrompt);
+      }
       const prefixExec = reply.match(/^PREFIX:\s*(\S+)/im);
       if (prefixExec) {
         if (!message.member?.permissions?.has("ManageGuild")) {

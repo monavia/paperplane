@@ -25,7 +25,7 @@ const Logger = {
   warn: (msg: string, ...args: any[]) =>
     console.warn(`[${ts()}] ${color("[WARN]", "yellow")} ${msg}`, ...args),
   error: (msg: string, ...args: any[]) =>
-    console.error(`[${ts()}] [ERROR] ${msg}`, ...args),
+    console.error(`[${ts()}] ${color("[ERROR]", "red")} ${msg}`, ...args),
   ready: (msg: string) =>
     console.log(`[${ts()}] ${color("[OK]", "green")} ${msg}`),
 };

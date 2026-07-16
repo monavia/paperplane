@@ -167,6 +167,15 @@ async function restoreGuildState(client: any, saved: any): Promise<boolean> {
   if (saved.textChannelId) setTextChannelId(saved.guildId, saved.textChannelId);
 
   const engine = getEngine(saved.guildId);
+  const state = require("../../core/state/StateManager");
+  const { getAutoplay, getLoop, getShuffle, get247 } = require("../../database/repositories/GuildRepository");
+  state.autoplay.set(saved.guildId, await getAutoplay(saved.guildId));
+  state.loop.set(saved.guildId, await getLoop(saved.guildId));
+  state.shuffle.set(saved.guildId, await getShuffle(saved.guildId));
+  state.twentyFourSeven.set(saved.guildId, await get247(saved.guildId), "");
+  const { getLastFilter, getLastEqualizer } = require("../../database/repositories/GuildRepository");
+  state.filter.set(saved.guildId, await getLastFilter(saved.guildId));
+  state.equalizer.set(saved.guildId, await getLastEqualizer(saved.guildId));
   let player = await engine.join(saved.voiceChannelId, saved.textChannelId);
   if (!player) return false;
 
@@ -247,10 +256,25 @@ async function restoreGuildState(client: any, saved: any): Promise<boolean> {
       if (!first) return;
       state.nowPlaying.set(saved.guildId, first);
       const pos = (saved.position || 0) > 0 && first?.info?.duration ? Math.min(saved.position, first.info.duration - 1000) : 0;
+      restoredGuilds.add(saved.guildId);
       await player.play({ track: first, clientTrack: first, position: pos });
     });
     if (first) {
-      restoredGuilds.add(saved.guildId);
+      // Apply saved filter/equalizer
+      const savedFilter = state.filter.get(saved.guildId);
+      if (savedFilter && savedFilter !== "none") {
+        const { setFilter } = require("../../music/services/MusicService");
+        setFilter(saved.guildId, savedFilter, "system", "System").catch(() => {});
+      }
+      const savedBands = state.equalizer.get(saved.guildId);
+      if (savedBands) {
+        const presetName = typeof savedBands === "string" ? savedBands : null;
+        const bands = presetName ? null : savedBands;
+        if (bands) {
+          const { setEqualizer } = require("../../music/services/MusicService");
+          setEqualizer(saved.guildId, bands, "system", "System").catch(() => {});
+        }
+      }
       Logger.info(`Restored playback for ${saved.guildId}`);
       return true;
     }

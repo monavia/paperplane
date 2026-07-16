@@ -4,6 +4,7 @@ import * as NowPlayingEmbed from "../../../ui/embeds/NowPlayingEmbed";
 import * as ErrorEmbed from "../../../ui/embeds/ErrorEmbed";
 import Colors from "../../../core/constants/Colors";
 import { checkSameVoice } from "../../../core/utils/VoiceCheck";
+import state from "../../../core/state/StateManager";
 
 export default {
   name: "skip", aliases: ["s"],
@@ -15,6 +16,7 @@ export default {
     try {
       const nextTrack = await MusicService.skip(message.guildId!, message.author.id, message.member?.displayName || message.author.username);
       if (nextTrack) return message.channel.send({ embeds: [NowPlayingEmbed.build(nextTrack, null)] });
+      if (state.autoplay.get(message.guildId)) return message.channel.send({ embeds: [new EmbedBuilder().setDescription("Skipped. Finding next track...").setColor(Colors.INFO)] });
       return message.channel.send({ embeds: [new EmbedBuilder().setDescription("Queue empty.").setColor(Colors.INFO)] });
     } catch (err: any) {
       await message.channel.send({ embeds: [ErrorEmbed.build(err.message)] });

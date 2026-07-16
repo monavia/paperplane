@@ -5,6 +5,7 @@ import * as SuccessEmbed from "../../../ui/embeds/SuccessEmbed";
 import * as ErrorEmbed from "../../../ui/embeds/ErrorEmbed";
 import Colors from "../../../core/constants/Colors";
 import { checkSameVoice } from "../../../core/utils/VoiceCheck";
+import state from "../../../core/state/StateManager";
 
 const EQ_PRESETS: Record<string, { band: number; gain: number }[]> = {
   flat: Array.from({ length: 15 }, (_, i) => ({ band: i, gain: 0.0 })),
@@ -71,6 +72,7 @@ export default {
       const bands = EQ_PRESETS[preset];
       if (!bands) return i.update({ embeds: [ErrorEmbed.build("Invalid preset.")], components: [] });
 
+      state.equalizer.set(message.guildId, bands);
       const ok = await MusicService.setEqualizer(message.guildId, bands, message.author.id, message.member?.displayName || message.author.username);
       if (!ok) return i.update({ embeds: [ErrorEmbed.build("Failed to set equalizer.")], components: [] });
       await setLastEqualizer(message.guildId, preset);

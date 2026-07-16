@@ -5,8 +5,9 @@ import * as ErrorEmbed from "../../../ui/embeds/ErrorEmbed";
 import ActivityService from "../../../services/ActivityService";
 import * as MusicService from "../../services/MusicService";
 import { checkSameVoice } from "../../../core/utils/VoiceCheck";
+import { setShuffle } from "../../../database/repositories/GuildRepository";
 
-const TIMEOUT = 60000;
+const TIMEOUT = 30000;
 
 function buildButtons(isShuffleOn: boolean) {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -54,6 +55,7 @@ export default {
     collector.on("collect", async (i: any) => {
       if (i.customId === "shuffle_on") {
         state.shuffle.set(guildId, true);
+        await setShuffle(guildId, true);
         const tracks = state.queues.get(guildId);
         if (tracks.length > 1) {
           for (let idx = tracks.length - 1; idx > 0; idx--) {
@@ -62,7 +64,7 @@ export default {
           }
           state.queues.set(guildId, tracks);
         }
-        await ActivityService.log({ guildId, userId: interaction.user.id, userName: interaction.member?.displayName || interaction.user.username, action: "shuffle_on", detail: "Shuffle ON" });
+        await ActivityService.log({ guildId, userId: interaction.user.id, userName: (interaction.member as any)?.displayName || interaction.user.username, action: "shuffle_on", detail: "Shuffle ON" });
         const result = new EmbedBuilder()
           .setDescription("Shuffle is **ON**")
           .setColor(Colors.SUCCESS);
@@ -71,7 +73,8 @@ export default {
 
       if (i.customId === "shuffle_off") {
         state.shuffle.set(guildId, false);
-        await ActivityService.log({ guildId, userId: interaction.user.id, userName: interaction.member?.displayName || interaction.user.username, action: "shuffle_off", detail: "Shuffle OFF" });
+        await setShuffle(guildId, false);
+        await ActivityService.log({ guildId, userId: interaction.user.id, userName: (interaction.member as any)?.displayName || interaction.user.username, action: "shuffle_off", detail: "Shuffle OFF" });
         const result = new EmbedBuilder()
           .setDescription("Shuffle is **OFF**")
           .setColor(Colors.ERROR);
@@ -79,10 +82,8 @@ export default {
       }
     });
 
-    collector.on("end", async (collected: any) => {
-      if (collected.size === 0) {
-        await msg.delete().catch(() => {});
-      }
+    collector.on("end", async () => {
+      await msg.edit({ components: [] }).catch(() => {});
     });
   },
 };

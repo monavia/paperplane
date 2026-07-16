@@ -8,15 +8,18 @@ import { markTrackStartSuppressed } from "../../../music/engine/musicEvents";
 import { withQueueLock } from "../../../core/state/QueueLock";
 import Colors from "../../../core/constants/Colors";
 import * as MusicService from "../../services/MusicService";
+import Logger from "../../../core/utils/Logger";
 
 async function resolveSpotifyTrack(player: any, spotifyItem: any, user: any): Promise<any> {
   const q = spotifyItem.query || `${spotifyItem.artists?.join(" ") || ""} ${spotifyItem.name}`.trim();
   if (!q) return null;
-  let result = await player.search({ query: `ytsearch:${q}` }, user);
-  if (!result?.tracks?.length) result = await player.search({ query: `ytmsearch:${q}` }, user);
-  if (!result?.tracks?.length) result = await player.search({ query: `scsearch:${q}` }, user);
-  if (result?.tracks?.length) {
-    const track = pickBestTrack(result.tracks);
+  const yt = await player.search({ query: `ytsearch:${q}` }, user);
+  let tracks: any = yt?.tracks;
+  let ytm: any, sc: any;
+  if (!tracks?.length) { ytm = await player.search({ query: `ytmsearch:${q}` }, user); tracks = ytm?.tracks; }
+  if (!tracks?.length) { sc = await player.search({ query: `scsearch:${q}` }, user); tracks = sc?.tracks; }
+  if (tracks?.length) {
+    const track = pickBestTrack(tracks);
     if (!track.info) track.info = {};
     const artistStr = spotifyItem.artists?.join(", ") || track.info.author || "";
     track.info.author = artistStr;
@@ -26,6 +29,28 @@ async function resolveSpotifyTrack(player: any, spotifyItem: any, user: any): Pr
     return track;
   }
   return null;
+}
+
+async function resolveSpotifyBatch(items: any[], player: any, guildId: string, user: any): Promise<any[]> {
+  const resolved: any[] = [];
+  for (let b = 0; b < items.length; b += 5) {
+    const results = await Promise.allSettled(
+      items.slice(b, b + 5).map((item: any) => resolveSpotifyTrack(player, item, user))
+    );
+    for (const r of results) {
+      if (r.status === "fulfilled" && r.value) resolved.push(r.value);
+    }
+  }
+  const state = require("../../../core/state/StateManager");
+  const curQueue = state.queues.get(guildId) || [];
+  const space = botConfig.maxQueue - curQueue.length;
+  if (space <= 0) return resolved;
+  const addable = space < resolved.length ? resolved.slice(0, space) : resolved;
+  const { withQueueLock } = require("../../../core/state/QueueLock");
+  await withQueueLock(guildId, async () => {
+    state.queues.set(guildId, [...curQueue, ...addable]);
+  });
+  return addable;
 }
 
 export default {
@@ -70,71 +95,42 @@ export default {
           throw new Error(`Spotify: ${err.message}`);
         });
         if (!items?.length) throw new Error("No tracks found on Spotify.");
+        Logger.info(`[Spotify] Scraped ${items.length} items. First query: "${items[0]?.query?.slice(0, 80)}"`);
 
-        if (items.length === 1) {
-          const resolved = await resolveSpotifyTrack(player, items[0], message.author);
-          if (!resolved) throw new Error("Could not resolve Spotify track on YouTube.");
-          const queue = state.queues.get(message.guildId) || [];
-           if (player.playing || player.paused || queue.length) {
-             return await withQueueLock(message.guildId, async () => {
-               const q2 = state.queues.get(message.guildId) || [];
-               state.queues.set(message.guildId, [...q2, resolved]);
-               return message.channel.send({ embeds: [NowPlayingEmbed.addedToQueue(resolved, q2.length + 1)] });
-             });
-           }
-           await withQueueLock(message.guildId, async () => {
-             state.nowPlaying.set(message.guildId, resolved);
-             markTrackStartSuppressed(message.guildId);
-            await player.play({ track: resolved, clientTrack: resolved });
-            await MusicService.saveState(message.guildId);
-          });
-           return message.channel.send({ embeds: [NowPlayingEmbed.build(resolved, null)] });
+        if (player.playing || player.paused || state.queues.get(message.guildId)?.length) {
+          // Already playing — queue all in background
+          const statusMsg = await message.channel.send({
+            embeds: [new EmbedBuilder().setDescription(`Added ${items.length} tracks from Spotify.`).setColor(Colors.INFO)]
+          }).catch(() => null);
+          resolveSpotifyBatch(items, player, message.guildId, message.author).then((added) => {
+            statusMsg?.edit({ embeds: [new EmbedBuilder().setDescription(`Added ${added.length} tracks from Spotify.`).setColor(Colors.SUCCESS)] }).catch(() => {});
+            Logger.info(`[Spotify] Resolved ${added.length}/${items.length} tracks`);
+          }).catch((err) => Logger.error(`[Spotify] Background resolve error: ${err.message}`));
+          return;
         }
 
-        // Resolve all tracks (parallel batches)
-        const resolvedTracks: any[] = [];
-        const BATCH = 20;
-        for (let b = 0; b < items.length; b += BATCH) {
-          const batch = items.slice(b, b + BATCH);
-          const results = await Promise.allSettled(
-            batch.map((item: any) => resolveSpotifyTrack(player, item, message.author))
-          );
-          for (const r of results) {
-            if (r.status === "fulfilled" && r.value) resolvedTracks.push(r.value);
-          }
-        }
-        if (!resolvedTracks.length) throw new Error("No tracks could be resolved from Spotify.");
+        // Nothing playing — play first track now, queue rest in background
+        const firstResolved = await resolveSpotifyTrack(player, items[0], message.author);
+        if (!firstResolved) throw new Error("Could not resolve Spotify track on YouTube.");
+        const rest = items.slice(1);
+        await withQueueLock(message.guildId, async () => {
+          state.nowPlaying.set(message.guildId, firstResolved);
+          markTrackStartSuppressed(message.guildId);
+          await player.play({ track: firstResolved, clientTrack: firstResolved });
+          await MusicService.saveState(message.guildId);
+        });
+        await message.channel.send({ embeds: [NowPlayingEmbed.build(firstResolved, null)] });
 
-        if (player.playing || player.paused) {
-          return await withQueueLock(message.guildId, async () => {
-            const curQueue = state.queues.get(message.guildId) || [];
-            const space = botConfig.maxQueue - curQueue.length;
-            if (space <= 0) return message.channel.send({ embeds: [ErrorEmbed.build("Queue full.")] });
-            const addable = space < resolvedTracks.length ? resolvedTracks.slice(0, space) : resolvedTracks;
-            state.queues.set(message.guildId, [...curQueue, ...addable]);
-            return message.channel.send({
-              embeds: [new EmbedBuilder().setDescription(`Added ${addable.length} of ${resolvedTracks.length} tracks to queue.`).setColor(Colors.SUCCESS)],
-            });
-          });
+        if (rest.length) {
+          const statusMsg = await message.channel.send({
+            embeds: [new EmbedBuilder().setDescription(`Added ${rest.length} tracks from Spotify.`).setColor(Colors.INFO)]
+          }).catch(() => null);
+          resolveSpotifyBatch(rest, player, message.guildId, message.author).then((added) => {
+            statusMsg?.edit({ embeds: [new EmbedBuilder().setDescription(`Added ${added.length} tracks from Spotify.`).setColor(Colors.SUCCESS)] }).catch(() => {});
+            Logger.info(`[Spotify] Resolved ${added.length}/${rest.length} tracks`);
+          }).catch((err) => Logger.error(`[Spotify] Background resolve error: ${err.message}`));
         }
-
-         const first = resolvedTracks.shift();
-         const curQueue = state.queues.get(message.guildId) || [];
-         const space = botConfig.maxQueue - curQueue.length;
-         const addable = space < resolvedTracks.length ? resolvedTracks.slice(0, space) : resolvedTracks;
-         const addedCount = addable.length + 1;
-         await withQueueLock(message.guildId, async () => {
-           state.queues.set(message.guildId, [...curQueue, ...addable]);
-           state.nowPlaying.set(message.guildId, first);
-           markTrackStartSuppressed(message.guildId);
-           await MusicService.saveState(message.guildId);
-          });
-         await message.channel.send({
-           embeds: [new EmbedBuilder().setDescription(`Added ${addedCount} tracks from Spotify.`).setColor(Colors.SUCCESS)],
-         });
-         await player.play({ track: first, clientTrack: first }).catch(() => {});
-         await message.channel.send({ embeds: [NowPlayingEmbed.build(first, null)] });
-         return;
+        return;
       }
 
       // Regular search
@@ -178,6 +174,7 @@ export default {
 
         const first = addable.shift();
         if (!first) throw new Error("No tracks in playlist.");
+        const sourceLabel = /youtube\.|youtu\.be/i.test(query) ? "from YouTube" : /soundcloud\./i.test(query) ? "from SoundCloud" : "";
         await withQueueLock(message.guildId, async () => {
           const q2 = state.queues.get(message.guildId) || [];
           state.queues.set(message.guildId, [...q2, ...addable]);
@@ -186,8 +183,9 @@ export default {
           await player.play({ track: first, clientTrack: first });
           await MusicService.saveState(message.guildId);
         });
+        await message.channel.send({ embeds: [NowPlayingEmbed.build(first, null)] });
         return message.channel.send({
-          embeds: [new EmbedBuilder().setDescription(`Playing **${playlistName}** — ${addable.length + 1} tracks${addedMsg}`).setColor(Colors.SUCCESS)],
+          embeds: [new EmbedBuilder().setDescription(`Playing **${playlistName}** — ${addable.length + 1} tracks ${sourceLabel}`.trim()).setColor(Colors.SUCCESS)],
         });
       }
 
@@ -218,7 +216,7 @@ export default {
         });
        await message.channel.send({ embeds: [NowPlayingEmbed.build(track, null)] });
     } catch (err: any) {
-      if (String(err?.message || "").includes("spotify")) return;
+      if (String(err?.message || "").includes("spotify")) { Logger.info(`[Spotify] Suppressed: ${err.message}`); return; }
       message.channel.send({ embeds: [ErrorEmbed.build(err.message)] });
     }
   },

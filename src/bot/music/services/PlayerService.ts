@@ -34,7 +34,7 @@ export function getEngine(guildId: string): Engine {
       playback: pb,
       queue: q,
       join: async (voiceChannelId: string, textChannelId: string | null) => {
-        const { get } = require("../engine/lavalink");
+        const { get, getLeastLoadedNode } = require("../engine/lavalink");
         const lavalink = get();
         if (!lavalink) throw new Error("Lavalink not connected");
         const existing = lavalink.players.get(guildId);
@@ -42,12 +42,14 @@ export function getEngine(guildId: string): Engine {
           e!.player = existing;
           return existing;
         }
+        const node = getLeastLoadedNode();
         const player = lavalink.createPlayer({
           guildId,
           voiceChannelId,
           textChannelId: textChannelId || "",
           selfDeaf: true,
           selfMute: false,
+          ...(node ? { node } : {}),
         });
         await player.connect();
         e!.player = player;
@@ -87,11 +89,12 @@ export async function skip(guildId: string, userId: string, userName: string): P
   const nextTrack = await engine.playback.skip();
   const { saveState, deleteState } = require("./StateService");
   const { stopPositionSync } = require("./StateService");
+  const state = require("../../core/state/StateManager");
   if (nextTrack) {
     const ActivityService = require("../../services/ActivityService").default;
     await ActivityService.log({ guildId, userId, userName, action: "skip", detail: `Skipped to ${nextTrack.info?.title || "next track"}`, songTitle: nextTrack?.info?.title, artist: nextTrack?.info?.artist });
     await saveState(guildId);
-  } else {
+  } else if (!state.autoplay.get(guildId)) {
     await deleteState(guildId).catch(() => {});
     stopPositionSync(guildId);
     if (player) {
@@ -109,6 +112,11 @@ export async function stop(guildId: string, userId: string, userName: string): P
   await deleteState(guildId).catch(() => {});
   const { stopPositionSync } = require("./StateService");
   stopPositionSync(guildId);
+  // Reset autoplay on manual stop
+  const state = require("../../core/state/StateManager");
+  state.autoplay.set(guildId, false);
+  const { setAutoplay } = require("../../database/repositories/GuildRepository");
+  setAutoplay(guildId, false).catch(() => {});
   // Disconnect from voice channel
   if (player) {
     try { player.disconnect(); } catch {}

@@ -19,7 +19,7 @@ export default {
     const vc = checkSameVoice(interaction);
     if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], ephemeral: true });
 
-    MusicService.setVolume(interaction.guildId!, volume!, interaction.user.id, interaction.member?.displayName || interaction.user.username);
+    MusicService.setVolume(interaction.guildId!, volume!, interaction.user.id, (interaction.member as any)?.displayName || interaction.user.username);
     updateVolume(interaction.guildId!, volume!);
     
     await interaction.reply({ embeds: [SuccessEmbed.build(`Volume set to ${formatVolume(volume!)}`)] });

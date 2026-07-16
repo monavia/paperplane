@@ -4,6 +4,9 @@ import LoopStore from "./LoopStore";
 import TwentyFourSevenStore from "./TwentyFourSevenStore";
 import VoiceChannelStore from "./VoiceChannelStore";
 import ShuffleStore from "./ShuffleStore";
+import AutoplayStore from "./AutoplayStore";
+import FilterStore from "./FilterStore";
+import EqualizerStore from "./EqualizerStore";
 
 class StateManager {
   queues: QueueStore;
@@ -12,6 +15,9 @@ class StateManager {
   twentyFourSeven: TwentyFourSevenStore;
   voiceChannels: VoiceChannelStore;
   shuffle: ShuffleStore;
+  autoplay: AutoplayStore;
+  filter: FilterStore;
+  equalizer: EqualizerStore;
 
   constructor() {
     this.queues = new QueueStore();
@@ -20,6 +26,9 @@ class StateManager {
     this.twentyFourSeven = new TwentyFourSevenStore();
     this.voiceChannels = new VoiceChannelStore();
     this.shuffle = new ShuffleStore();
+    this.autoplay = new AutoplayStore();
+    this.filter = new FilterStore();
+    this.equalizer = new EqualizerStore();
   }
 }
 

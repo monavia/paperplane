@@ -93,3 +93,87 @@ export async function getLastEqualizer(guildId: string): Promise<any> {
     return (guild as any)?.lastEqualizer ?? null;
   } catch { return null; }
 }
+
+export async function getAutoplay(guildId: string): Promise<boolean> {
+  try {
+    if (usePg()) {
+      const p = await getPrisma();
+      const g = await p.guild.findUnique({ where: { guildId }, select: { autoplay: true } });
+      return g?.autoplay ?? false;
+    }
+    const g = await Guild.findOne({ guildId }).lean();
+    return (g as any)?.autoplay ?? false;
+  } catch { return false; }
+}
+
+export async function setAutoplay(guildId: string, enabled: boolean): Promise<void> {
+  if (usePg()) {
+    const p = await getPrisma();
+    await p.guild.upsert({ where: { guildId }, update: { autoplay: enabled }, create: { guildId, autoplay: enabled } });
+  } else {
+    await Guild.updateOne({ guildId }, { $set: { autoplay: enabled } }, { upsert: true });
+  }
+}
+
+export async function getLoop(guildId: string): Promise<string> {
+  try {
+    if (usePg()) {
+      const p = await getPrisma();
+      const g = await p.guild.findUnique({ where: { guildId }, select: { loop: true } });
+      return g?.loop || "off";
+    }
+    const g = await Guild.findOne({ guildId }).lean();
+    return (g as any)?.loop || "off";
+  } catch { return "off"; }
+}
+
+export async function setLoop(guildId: string, mode: string): Promise<void> {
+  if (usePg()) {
+    const p = await getPrisma();
+    await p.guild.upsert({ where: { guildId }, update: { loop: mode }, create: { guildId, loop: mode } });
+  } else {
+    await Guild.updateOne({ guildId }, { $set: { loop: mode } }, { upsert: true });
+  }
+}
+
+export async function getShuffle(guildId: string): Promise<boolean> {
+  try {
+    if (usePg()) {
+      const p = await getPrisma();
+      const g = await p.guild.findUnique({ where: { guildId }, select: { shuffle: true } });
+      return g?.shuffle ?? false;
+    }
+    const g = await Guild.findOne({ guildId }).lean();
+    return (g as any)?.shuffle ?? false;
+  } catch { return false; }
+}
+
+export async function setShuffle(guildId: string, enabled: boolean): Promise<void> {
+  if (usePg()) {
+    const p = await getPrisma();
+    await p.guild.upsert({ where: { guildId }, update: { shuffle: enabled }, create: { guildId, shuffle: enabled } });
+  } else {
+    await Guild.updateOne({ guildId }, { $set: { shuffle: enabled } }, { upsert: true });
+  }
+}
+
+export async function get247(guildId: string): Promise<boolean> {
+  try {
+    if (usePg()) {
+      const p = await getPrisma();
+      const g = await p.guild.findUnique({ where: { guildId }, select: { is247: true } });
+      return g?.is247 ?? false;
+    }
+    const g = await Guild.findOne({ guildId }).lean();
+    return (g as any)?.["247"] ?? false;
+  } catch { return false; }
+}
+
+export async function set247(guildId: string, enabled: boolean): Promise<void> {
+  if (usePg()) {
+    const p = await getPrisma();
+    await p.guild.upsert({ where: { guildId }, update: { is247: enabled }, create: { guildId, is247: enabled } });
+  } else {
+    await Guild.updateOne({ guildId }, { $set: { "247": enabled } }, { upsert: true });
+  }
+}

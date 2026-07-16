@@ -72,6 +72,18 @@ export async function failoverFromNode(nodeId: string) {
           applySpotifyMeta(resolved, savedMeta);
           await player.play({ track: resolved, clientTrack: resolved, position: player.position || 0 }).catch(() => {});
         }
+        const { getEngine } = require("../services/PlayerService");
+        getEngine(guildId).player = player;
+        const savedFilter = state.filter.get(guildId);
+        if (savedFilter && savedFilter !== "none") {
+          const { setFilter } = require("../services/MusicService");
+          setFilter(guildId, savedFilter, "system", "System").catch(() => {});
+        }
+        const savedBands = state.equalizer.get(guildId);
+        if (savedBands) {
+          const { setEqualizer } = require("../services/MusicService");
+          setEqualizer(guildId, savedBands, "system", "System").catch(() => {});
+        }
       }
     } catch {
       Logger.warn(`[NodeLink] Failover: changeNode failed for ${guildId} — recreating on ${target.id}`);
@@ -100,6 +112,18 @@ export async function failoverFromNode(nodeId: string) {
           applySpotifyMeta(resolved, savedMeta);
           await newPlayer.play({ track: resolved, clientTrack: resolved, position: savedPos });
         }
+        const { getEngine } = require("../services/PlayerService");
+        getEngine(guildId).player = newPlayer;
+        const savedFilter = state.filter.get(guildId);
+        if (savedFilter && savedFilter !== "none") {
+          const { setFilter } = require("../services/MusicService");
+          setFilter(guildId, savedFilter, "system", "System").catch(() => {});
+        }
+        const savedBands = state.equalizer.get(guildId);
+        if (savedBands) {
+          const { setEqualizer } = require("../services/MusicService");
+          setEqualizer(guildId, savedBands, "system", "System").catch(() => {});
+        }
         Logger.info(`[NodeLink] Failover: recreated player ${guildId} (auto node)`);
       } catch (err2: any) { Logger.warn(`[NodeLink] Failover: recreate failed for ${guildId}: ${err2.message}`); }
     }
@@ -123,6 +147,7 @@ export async function init(client: any): Promise<boolean> {
       nodeType: NodeType.NodeLink,
       closeOnError: false,
       heartBeatInterval: 1000,
+      requestSignalTimeoutMS: 10000,
     });
   }
 
@@ -139,6 +164,9 @@ export async function init(client: any): Promise<boolean> {
     },
     autoSkip: true,
     client: { id: client.user?.id || "" },
+    httpHeaders: {
+      "User-Agent": "PaperplaneBot/2.0",
+    },
   });
 
   const l: any = lavalink;
@@ -169,6 +197,10 @@ export async function init(client: any): Promise<boolean> {
     Logger.info(`[NodeLink] Node ${node.id} (${node.options?.region || "?"}) reconnecting`);
   });
 
+  l.nodeManager?.on("connect", (node: any) => {
+    Logger.ready(`[NodeLink] Node ${node.id} (${node.options?.region || "?"}) connected`);
+  });
+
   // Enable SponsorBlock on player creation
   l.on("playerCreate", (player: any) => {
     player.setSponsorBlock(["sponsor", "intro", "outro", "selfpromo", "interaction", "preview", "music_offtopic"]).catch(() => {});
@@ -178,14 +210,8 @@ export async function init(client: any): Promise<boolean> {
   l.on("queueEnd", () => {});
 
   await l.init({ id: client.user?.id || "" }).catch(() => {});
-  if (lavalink?.nodeManager) {
-    const nodes = Array.from(lavalink.nodeManager.nodes.values());
-    for (const n of nodes) {
-      if (n.connected) Logger.info(`[NodeLink] Node ${n.id} (${(n.options as any)?.region || "?"}) connected`);
-    }
-  }
 
-  // Periodic node health check — reconnect disconnected nodes + failover players every 30s
+  // Periodic node health check — reconnect disconnected nodes + failover players every 60s
   if (healthCheckInterval) clearInterval(healthCheckInterval);
   healthCheckInterval = setInterval(async () => {
     if (!lavalink?.nodeManager) return;
@@ -198,16 +224,16 @@ export async function init(client: any): Promise<boolean> {
         await failoverFromNode(node.id);
 
         const last = lastReconnectAttempt.get(node.id) || 0;
-        if (now - last < 15000) continue;
+        if (now - last < 60000) continue;
         lastReconnectAttempt.set(node.id, now);
         Logger.info(`[NodeLink] Health check: reconnecting ${node.id} (${(node.options as any)?.region || "?"})...`);
         const connectTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000));
-        try { await Promise.race([node.connect(), connectTimeout]); if (node.connected && node.sessionId) Logger.info(`[NodeLink] Node ${node.id} (${(node.options as any)?.region || "?"}) reconnected`); } catch (err: any) {
+        try { await Promise.race([node.connect(), connectTimeout]); if (node.connected) Logger.info(`[NodeLink] Health check: node ${node.id} (${(node.options as any)?.region || "?"}) reconnected`); } catch (err: any) {
           Logger.warn(`[NodeLink] Health reconnect failed for ${node.id}: ${err?.message || "timeout"}`);
         }
       }
     }
-  }, 15000);
+  }, 60000);
 
   client.on("raw", (d: any) => l.sendRawData(d));
   return true;
@@ -231,4 +257,17 @@ export function getConnectedNodes(): string[] {
   return Array.from(l.nodeManager.nodes.values())
     .filter((n: any) => n.connected)
     .map((n: any) => n.id);
+}
+
+export function getLeastLoadedNode(): string | null {
+  if (!lavalink?.nodeManager) return null;
+  const nodes = Array.from(lavalink.nodeManager.nodes.values());
+  const healthy = nodes.filter((n: any) => n.connected);
+  if (!healthy.length) return null;
+  const counts = new Map<string, number>();
+  for (const [, p] of lavalink.players) {
+    const nid = p.node?.id;
+    if (nid) counts.set(nid, (counts.get(nid) || 0) + 1);
+  }
+  return healthy.sort((a: any, b: any) => (counts.get(a.id) || 0) - (counts.get(b.id) || 0))[0].id;
 }
