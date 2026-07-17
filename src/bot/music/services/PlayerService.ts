@@ -95,12 +95,16 @@ export async function skip(guildId: string, userId: string, userName: string): P
     await ActivityService.log({ guildId, userId, userName, action: "skip", detail: `Skipped to ${nextTrack.info?.title || "next track"}`, songTitle: nextTrack?.info?.title, artist: nextTrack?.info?.artist });
     await saveState(guildId);
   } else if (!state.autoplay.get(guildId)) {
-    await deleteState(guildId).catch(() => {});
-    stopPositionSync(guildId);
-    if (player) {
-      try { player.disconnect(); } catch {}
-      try { player.destroy(); } catch {}
+    if (!state.twentyFourSeven.isEnabled(guildId)) {
+      await deleteState(guildId).catch(() => {});
+      stopPositionSync(guildId);
+      if (player) {
+        try { player.disconnect(); } catch {}
+        try { player.destroy(); } catch {}
+      }
     }
+    state.loop.delete(guildId);
+    state.shuffle.delete(guildId);
   }
   return nextTrack;
 }
@@ -112,13 +116,17 @@ export async function stop(guildId: string, userId: string, userName: string): P
   await deleteState(guildId).catch(() => {});
   const { stopPositionSync } = require("./StateService");
   stopPositionSync(guildId);
-  // Reset autoplay on manual stop
   const state = require("../../core/state/StateManager");
-  state.autoplay.set(guildId, false);
-  const { setAutoplay } = require("../../database/repositories/GuildRepository");
-  setAutoplay(guildId, false).catch(() => {});
-  // Disconnect from voice channel
-  if (player) {
+  if (state.twentyFourSeven.isEnabled(guildId)) {
+    // 247 ON: stop playback but stay in VC, keep filter/equalizer
+  } else {
+    // Reset autoplay on manual stop (only when 247 OFF)
+    state.autoplay.set(guildId, false);
+    const { setAutoplay } = require("../../database/repositories/GuildRepository");
+    setAutoplay(guildId, false).catch(() => {});
+  }
+  // Disconnect from voice channel (skip if 247 ON)
+  if (player && !state.twentyFourSeven.isEnabled(guildId)) {
     try { player.disconnect(); } catch {}
     try { player.destroy(); } catch {}
   }

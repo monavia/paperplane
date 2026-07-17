@@ -12,6 +12,10 @@ class VoiceChannelStore {
   delete(guildId: string): void {
     this.data.delete(guildId);
   }
+
+  entries(): IterableIterator<[string, { voiceChannelId: string; textChannelId: string }]> {
+    return this.data.entries();
+  }
 }
 
 export = VoiceChannelStore;

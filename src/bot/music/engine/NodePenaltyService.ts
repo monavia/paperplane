@@ -1,5 +1,5 @@
 import Logger from "../../core/utils/Logger";
-import promMetrics from "../../telemetry/MetricsCollector";
+import { setLavalinkNodePenalty } from "../../telemetry/MetricsCollector";
 
 interface NodeMetrics {
   failedLoads: number;
@@ -20,6 +20,11 @@ const PENALTY_ERROR = 75;
 const PENALTY_HIGH_LATENCY = 50;
 const LATENCY_THRESHOLD = 800;
 
+type StrategyType = "penalty" | "roundrobin" | "leastplayers";
+
+const STRATEGY: StrategyType = (process.env.LOAD_BALANCE_STRATEGY as StrategyType) || "penalty";
+let roundRobinIndex = 0;
+
 function getOrCreate(name: string): NodeMetrics {
   if (!metrics.has(name)) {
     metrics.set(name, { failedLoads: 0, disconnects: 0, errors: 0, responseTimes: [], lastError: "", lastErrorAt: 0 });
@@ -32,6 +37,7 @@ function recordDisconnect(nodeName: string): void { getOrCreate(nodeName).discon
 function recordError(nodeName: string, message: string): void {
   const m = getOrCreate(nodeName);
   m.errors++; m.lastError = message; m.lastErrorAt = Date.now();
+  setLavalinkNodePenalty(nodeName, getPenalty(nodeName));
 }
 function recordResponseTime(nodeName: string, ms: number): void {
   const m = getOrCreate(nodeName);
@@ -64,13 +70,33 @@ function getBestNode(manager: any, preferredRegion?: string): any {
   if (preferredRegion) {
     const regionNodes = connected.filter((n: any) => (n.options?.regions || []).includes(preferredRegion.toLowerCase()));
     if (regionNodes.length > 0) {
-      regionNodes.sort((a: any, b: any) => a.stats?.players * 10 + getPenalty(a.options?.name || a.name) - (b.stats?.players * 10 + getPenalty(b.options?.name || b.name)));
+      regionNodes.sort(scoreSorter);
       return regionNodes[0];
     }
   }
 
-  connected.sort((a: any, b: any) => a.stats?.players * 10 + getPenalty(a.options?.name || a.name) - (b.stats?.players * 10 + getPenalty(b.options?.name || b.name)));
+  if (STRATEGY === "roundrobin") return selectRoundRobin(connected);
+  if (STRATEGY === "leastplayers") return selectLeastPlayers(connected);
+  return selectPenalty(connected);
+}
+
+function scoreSorter(a: any, b: any): number {
+  return a.stats?.players * 10 + getPenalty(a.options?.name || a.name) - (b.stats?.players * 10 + getPenalty(b.options?.name || b.name));
+}
+
+function selectPenalty(connected: any[]): any {
+  connected.sort(scoreSorter);
   return connected[0];
+}
+
+function selectRoundRobin(connected: any[]): any {
+  const idx = roundRobinIndex % connected.length;
+  roundRobinIndex = (roundRobinIndex + 1) % connected.length;
+  return connected[idx];
+}
+
+function selectLeastPlayers(connected: any[]): any {
+  return connected.reduce((best, n) => (n.stats?.players ?? Infinity) < (best.stats?.players ?? Infinity) ? n : best);
 }
 
 function decay(): void {

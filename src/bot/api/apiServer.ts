@@ -621,6 +621,11 @@ export async function startApiServer(_status?: any): Promise<void> {
     });
   });
 
+  app.get("/api/metrics", (_req, res) => {
+    const { getMetrics } = require("../telemetry/MetricsCollector");
+    res.json({ success: true, data: getMetrics() });
+  });
+
   const port = Config.apiPort;
   app.listen(port, Config.apiHost, () => {
     Logger.ready(`API server on ${Config.apiHost}:${port}`);

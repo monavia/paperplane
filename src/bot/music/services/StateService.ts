@@ -176,6 +176,8 @@ async function restoreGuildState(client: any, saved: any): Promise<boolean> {
   const { getLastFilter, getLastEqualizer } = require("../../database/repositories/GuildRepository");
   state.filter.set(saved.guildId, await getLastFilter(saved.guildId));
   state.equalizer.set(saved.guildId, await getLastEqualizer(saved.guildId));
+  // Populate nowPlaying BEFORE engine.join so nodeConnect recovery can find it if join fails
+  if (saved.nowPlaying) state.nowPlaying.set(saved.guildId, saved.nowPlaying);
   let player = await engine.join(saved.voiceChannelId, saved.textChannelId);
   if (!player) return false;
 
@@ -304,6 +306,11 @@ async function restoreAllStates(client: any, retryCount = 0) {
         restoreRetryTimer = setTimeout(() => { restoreAllStates(client, retryCount + 1); }, RETRY_DELAY);
       } else {
         Logger.error(`[StateRestore] Lavalink still not ready after ${MAX_RETRIES} retries, giving up`);
+        // Populate state.nowPlaying from saved states so nodeConnect recovery can find them
+        const state = require("../../core/state/StateManager");
+        for (const saved of states) {
+          if (saved.nowPlaying) state.nowPlaying.set(saved.guildId, saved.nowPlaying);
+        }
       }
       return;
     }

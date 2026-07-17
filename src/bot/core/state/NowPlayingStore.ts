@@ -16,6 +16,10 @@ class NowPlayingStore {
   has(guildId: string): boolean {
     return this.data.has(guildId);
   }
+
+  entries(): IterableIterator<[string, any]> {
+    return this.data.entries();
+  }
 }
 
 export = NowPlayingStore;

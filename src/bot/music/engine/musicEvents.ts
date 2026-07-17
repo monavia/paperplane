@@ -150,6 +150,7 @@ function register(client: any): void {
     }
     lyricsMessages.delete(player.guildId);
     state.nowPlaying.set(player.guildId, track);
+    lavalink.cacheTrack(player.guildId, track);
 
     const { startPositionSync } = require("../services/StateService");
     startPositionSync(player.guildId);
@@ -219,8 +220,24 @@ function register(client: any): void {
         Logger.warn(`[trackStart] Channel ${textChannelId2} not found in cache`);
       }
     }
-
-
+    // Pre-fetch next track — resolve in background, cache encoded
+    Promise.resolve().then(async () => {
+      try {
+        const q = state.queues.get(player.guildId);
+        if (!q?.length) return;
+        const next = q[0];
+        if (next?.encoded) return;
+        if (!next?.info?.uri) return;
+        const uri = next.info.uri;
+        const isSpotify = /open\.spotify\.com/i.test(uri) || /^spotify:/.test(uri);
+        const search = await player.search({ query: isSpotify ? `ytmsearch:${next.info.author || ""} ${next.info.title || ""}` : uri }, { id: "system" }).catch(() => null);
+        if (search?.tracks?.[0]?.encoded) {
+          next.encoded = search.tracks[0].encoded;
+          const { saveSpotifyMeta, applySpotifyMeta } = require("../services/TitleResolver");
+          applySpotifyMeta(search.tracks[0], saveSpotifyMeta(next));
+        }
+      } catch {}
+    });
   });
 
   l.on("trackEnd", (player: any, _track: any, reason: any) => {
@@ -340,6 +357,7 @@ function register(client: any): void {
         }
         markIdleDisconnect(player.guildId);
         clearVoiceJoinTime(player.guildId);
+        lavalink.clearTrackCache(player.guildId);
         const { deleteState } = require("../services/StateService");
         deleteState(player.guildId).catch(() => {});
         player.disconnect();
@@ -487,6 +505,7 @@ function register(client: any): void {
       state.nowPlaying.delete(guildId);
       state.queues.clear(guildId);
       state.loop.delete(guildId);
+      lavalink.clearTrackCache(guildId);
       const { default: RecommendationEngine } = require("./RecommendationEngine");
       new RecommendationEngine().clearPlayed(guildId);
       const timer = disconnectTimers.get(guildId);

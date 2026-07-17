@@ -6,38 +6,43 @@ import Logger from "../utils/Logger";
 let slashCommands: Collection<string, any> = new Collection();
 let prefixCommands: Collection<string, any> = new Collection();
 
-export function loadSlash(client: any, _pluginManager?: any): number {
-  const slashDir = join(__dirname, "../../music/commands/slash");
+function loadDir(client: any, dir: string, type: "slash" | "prefix"): number {
   try {
-    const files = readdirSync(slashDir).filter((f) => f.endsWith(".ts") || f.endsWith(".js"));
+    const files = readdirSync(dir).filter((f) => f.endsWith(".ts") || f.endsWith(".js"));
     for (const file of files) {
-      const cmd = require(join(slashDir, file)).default;
-      if (cmd?.data?.name && cmd?.execute) {
-        slashCommands.set(cmd.data.name, cmd);
-        client.slashCommands?.set?.(cmd.data.name, cmd);
+      if (file.startsWith(".")) continue;
+      if (type === "slash") {
+        const cmd = require(join(dir, file)).default;
+        if (cmd?.data?.name && cmd?.execute) {
+          slashCommands.set(cmd.data.name, cmd);
+          client.slashCommands?.set?.(cmd.data.name, cmd);
+        }
+      } else {
+        const cmd = require(join(dir, file)).default || require(join(dir, file));
+        if (cmd?.name && cmd?.execute) {
+          prefixCommands.set(cmd.name, cmd);
+          if (!client.prefixCommands) client.prefixCommands = new Collection();
+          client.prefixCommands.set(cmd.name, cmd);
+        }
       }
     }
   } catch (err) {
-    Logger.warn(`[loadSlash] Failed to load slash commands from ${slashDir}: ${err}`);
+    Logger.warn(`[loadDir] Failed to load commands from ${dir}: ${err}`);
   }
+  return type === "slash" ? slashCommands.size : prefixCommands.size;
+}
+
+export function loadSlash(client: any, _pluginManager?: any): number {
+  loadDir(client, join(__dirname, "../../commands/music/slash"), "slash");
+  loadDir(client, join(__dirname, "../../commands/setup/slash"), "slash");
+  loadDir(client, join(__dirname, "../../commands/info/slash"), "slash");
   return slashCommands.size;
 }
 
 export function loadPrefix(client: any): number {
-  const prefixDir = join(__dirname, "../../music/commands/prefix");
-  try {
-    const files = readdirSync(prefixDir).filter((f) => f.endsWith(".ts") || f.endsWith(".js"));
-    for (const file of files) {
-      const cmd = require(join(prefixDir, file)).default || require(join(prefixDir, file));
-      if (cmd?.name && cmd?.execute) {
-        prefixCommands.set(cmd.name, cmd);
-        if (!client.prefixCommands) client.prefixCommands = new Collection();
-        client.prefixCommands.set(cmd.name, cmd);
-      }
-    }
-  } catch (err) {
-    Logger.warn(`[loadPrefix] Failed to load prefix commands from ${prefixDir}: ${err}`);
-  }
+  loadDir(client, join(__dirname, "../../commands/music/prefix"), "prefix");
+  loadDir(client, join(__dirname, "../../commands/setup/prefix"), "prefix");
+  loadDir(client, join(__dirname, "../../commands/info/prefix"), "prefix");
   return prefixCommands.size;
 }
 

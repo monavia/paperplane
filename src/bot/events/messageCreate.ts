@@ -8,6 +8,7 @@ import * as ErrorEmbed from "../ui/embeds/ErrorEmbed";
 import { getPrefix } from "../database/repositories/GuildRepository";
 import * as MusicService from "../music/services/MusicService";
 import { getQueue } from "../music/services/QueueService";
+import { isLavalinkReady } from "../music/services/MusicService";
 
 export function start(client: any): void {
   client.on("messageCreate", async (message: any) => {
@@ -25,6 +26,11 @@ export function start(client: any): void {
       const args = content.slice(guildPrefix.length).trim().split(/ +/);
       const commandName = args.shift()?.toLowerCase();
       if (!commandName) return;
+
+      const musicCommands = ["play", "skip", "stop", "pause", "resume", "queue", "nowplaying", "volume", "search", "autoplay", "loop", "shuffle", "clear", "remove", "move", "swap", "jump", "seek", "filter", "equalizer", "lyrics", "volume"];
+      if (musicCommands.includes(commandName) && !isLavalinkReady()) {
+        return message.channel.send({ content: "🎵 Music service is currently unavailable. Please try again in a few minutes." });
+      }
 
       const cmd = client.prefixCommands?.get(commandName);
       if (!cmd) {

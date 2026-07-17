@@ -4,6 +4,8 @@ import Colors from "../core/constants/Colors";
 import { getTextChannelId } from "../music/services/TextChannelStore";
 import { setLastFilter } from "../database/repositories/GuildRepository";
 import { isIdleDisconnect, clearIdleDisconnect } from "../music/engine/musicEvents";
+import state from "../core/state/StateManager";
+import { isLavalinkReady } from "../music/services/MusicService";
 
 const aloneTimers = new Map<string, any>();
 
@@ -12,6 +14,7 @@ function startAloneTimer(guildId: string) {
   if (existing) clearTimeout(existing);
   aloneTimers.set(guildId, setTimeout(() => {
     aloneTimers.delete(guildId);
+    if (state.twentyFourSeven.isEnabled(guildId)) return;
     const { getEngine, destroyEngine } = require("../music/services/PlayerService");
     const engine = getEngine(guildId);
     if (engine?.player) {
@@ -72,6 +75,7 @@ export function start(client: any): void {
       const botInVc = vc.members.has(botId);
       if (!botInVc) return;
       if (vc.members.size === 1) { // only bot left
+        if (state.twentyFourSeven.isEnabled(guildId)) return;
         Logger.info(`[VoiceState] Bot alone in ${guildId} — will disconnect in 3m`);
         startAloneTimer(guildId);
       }
