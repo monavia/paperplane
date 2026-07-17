@@ -372,3 +372,6 @@ FodyWeavers.xsd
 /package-lock.json
 /bun.lock
 /plugins
+/graphify-out/cache
+/CHANGELOG.md
+/PLANNING.md
