@@ -8,16 +8,20 @@ interface NodeMetrics {
   responseTimes: number[];
   lastError: string;
   lastErrorAt: number;
+  htmlErrors: number;
+  lastHtmlErrorAt: number;
 }
 
 const metrics = new Map<string, NodeMetrics>();
 let decayTimer: ReturnType<typeof setInterval> | null = null;
 const drainingNodes = new Set<string>();
+const unhealthyNodes = new Set<string>();
 
 const PENALTY_FAILED_LOAD = 50;
 const PENALTY_DISCONNECT = 100;
 const PENALTY_ERROR = 75;
 const PENALTY_HIGH_LATENCY = 50;
+const PENALTY_HTML_ERROR = 200;
 const LATENCY_THRESHOLD = 800;
 
 type StrategyType = "penalty" | "roundrobin" | "leastplayers";
@@ -27,7 +31,7 @@ let roundRobinIndex = 0;
 
 function getOrCreate(name: string): NodeMetrics {
   if (!metrics.has(name)) {
-    metrics.set(name, { failedLoads: 0, disconnects: 0, errors: 0, responseTimes: [], lastError: "", lastErrorAt: 0 });
+    metrics.set(name, { failedLoads: 0, disconnects: 0, errors: 0, responseTimes: [], lastError: "", lastErrorAt: 0, htmlErrors: 0, lastHtmlErrorAt: 0 });
   }
   return metrics.get(name)!;
 }
@@ -39,6 +43,15 @@ function recordError(nodeName: string, message: string): void {
   m.errors++; m.lastError = message; m.lastErrorAt = Date.now();
   setLavalinkNodePenalty(nodeName, getPenalty(nodeName));
 }
+
+function recordHtmlError(nodeName: string): void {
+  const m = getOrCreate(nodeName);
+  m.htmlErrors++; m.lastHtmlErrorAt = Date.now();
+  // Mark as unhealthy if multiple HTML errors
+  if (m.htmlErrors >= 2) unhealthyNodes.add(nodeName);
+  setLavalinkNodePenalty(nodeName, getPenalty(nodeName));
+}
+
 function recordResponseTime(nodeName: string, ms: number): void {
   const m = getOrCreate(nodeName);
   m.responseTimes.push(ms);
@@ -48,7 +61,7 @@ function recordResponseTime(nodeName: string, ms: number): void {
 function getPenalty(nodeName: string): number {
   const m = metrics.get(nodeName);
   if (!m) return 0;
-  let penalty = m.failedLoads * PENALTY_FAILED_LOAD + m.disconnects * PENALTY_DISCONNECT + m.errors * PENALTY_ERROR;
+  let penalty = m.failedLoads * PENALTY_FAILED_LOAD + m.disconnects * PENALTY_DISCONNECT + m.errors * PENALTY_ERROR + m.htmlErrors * PENALTY_HTML_ERROR;
   if (m.responseTimes.length > 0) {
     const avg = m.responseTimes.reduce((a, b) => a + b, 0) / m.responseTimes.length;
     if (avg > LATENCY_THRESHOLD) penalty += PENALTY_HIGH_LATENCY;
@@ -61,10 +74,17 @@ function startDrain(nodeName: string): void { drainingNodes.add(nodeName); }
 function stopDrain(nodeName: string): void { drainingNodes.delete(nodeName); }
 function getDrainingNodes(): string[] { return Array.from(drainingNodes); }
 
+function isUnhealthy(nodeName: string): boolean { return unhealthyNodes.has(nodeName); }
+function clearUnhealthy(nodeName: string): void { 
+  unhealthyNodes.delete(nodeName); 
+  const m = metrics.get(nodeName);
+  if (m) { m.htmlErrors = 0; }
+}
+
 function getBestNode(manager: any, preferredRegion?: string): any {
   if (!manager?.nodeManager?.nodes) return null;
   const connected = Array.from(manager.nodeManager.nodes.values())
-    .filter((n: any) => n.connected && !drainingNodes.has(n.options?.name || n.name));
+    .filter((n: any) => n.connected && !drainingNodes.has(n.options?.name || n.name) && !isUnhealthy(n.options?.name || n.name));
   if (!connected.length) return null;
 
   if (preferredRegion) {
@@ -104,7 +124,14 @@ function decay(): void {
     m.failedLoads = Math.floor(m.failedLoads * 0.5);
     m.disconnects = Math.floor(m.disconnects * 0.5);
     m.errors = Math.floor(m.errors * 0.5);
+    m.htmlErrors = Math.floor(m.htmlErrors * 0.5);
     if (m.responseTimes.length > 0) m.responseTimes = m.responseTimes.slice(Math.ceil(m.responseTimes.length / 2));
+  }
+  // Clear unhealthy nodes if penalties decayed enough
+  for (const [name, m] of metrics) {
+    if (unhealthyNodes.has(name) && m.htmlErrors === 0) {
+      unhealthyNodes.delete(name);
+    }
   }
 }
 
@@ -116,6 +143,6 @@ function startDecay(intervalMs = 300000): void {
 function stopDecay(): void { if (decayTimer) { clearInterval(decayTimer); decayTimer = null; } }
 
 export {
-  recordFailedLoad, recordDisconnect, recordError, recordResponseTime,
-  getPenalty, getBestNode, startDecay, stopDecay, isDraining, startDrain, stopDrain, getDrainingNodes,
+  recordFailedLoad, recordDisconnect, recordError, recordResponseTime, recordHtmlError, clearUnhealthy,
+  getPenalty, getBestNode, startDecay, stopDecay, isDraining, startDrain, stopDrain, getDrainingNodes, isUnhealthy,
 };
