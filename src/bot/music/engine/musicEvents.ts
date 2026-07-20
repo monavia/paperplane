@@ -303,6 +303,8 @@ const queueEndGuard = new Set<string>();
         return;
       }
 
+      deleteState(player.guildId).catch(() => {});
+
       const voiceChannel = clientRef?.channels?.cache?.get(player.voiceChannelId);
       const members = voiceChannel?.members?.filter((m: any) => !m.user?.bot) || new Map();
       const humanCount = members.size;
