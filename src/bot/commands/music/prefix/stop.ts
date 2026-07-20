@@ -11,7 +11,7 @@ export default {
     if (!vc.ok) return message.channel.send({ embeds: [ErrorEmbed.build(vc.message)] });
     const engine = MusicService.getEngine(message.guildId!);
     const player = engine.player;
-    if (!player || (!player.playing && !player.paused && !engine.queue.size())) {
+    if (!player) {
       return message.channel.send({ embeds: [ErrorEmbed.build("Nothing to stop.")] });
     }
     try {

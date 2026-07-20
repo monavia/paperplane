@@ -12,7 +12,7 @@ export default {
     if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], flags: 64 });
     const engine = MusicService.getEngine(interaction.guildId!);
     const player = engine.player;
-    if (!player || (!player.playing && !player.paused && !engine.queue.size())) {
+    if (!player) {
       return interaction.reply({ embeds: [ErrorEmbed.build("Nothing to stop.")], flags: 64 });
     }
     await interaction.deferReply();

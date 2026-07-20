@@ -133,18 +133,39 @@ export async function stop(guildId: string, userId: string, userName: string): P
   
   stopPositionSync(guildId);
   
-  if (state.twentyFourSeven.isEnabled(guildId)) {
-    // 247 ON: stop playback but stay in VC, keep filter/equalizer
-  } else {
-    // Reset autoplay on manual stop (only when 247 OFF)
+  if (!state.twentyFourSeven.isEnabled(guildId)) {
     state.autoplay.set(guildId, false);
-    
     setAutoplay(guildId, false).catch(() => {});
   }
-  // Disconnect from voice channel (skip if 247 ON)
-  if (player && !state.twentyFourSeven.isEnabled(guildId)) {
-    try { player.disconnect(); } catch {}
-    try { player.destroy(); } catch {}
+
+  const nodeDead = player && !player.node?.connected;
+  if (player) {
+    if (nodeDead && state.twentyFourSeven.isEnabled(guildId)) {
+      // 247 ON + dead node: destroy broken player, rejoin to stay in VC
+      try { player.disconnect(); } catch {}
+      try { player.destroy(); } catch {}
+      const vcData = state.voiceChannels.get(guildId);
+      if (vcData) {
+        try {
+          await engine.join(vcData.voiceChannelId, vcData.textChannelId);
+          const savedFilter = state.filter.get(guildId);
+          if (savedFilter && savedFilter !== "none") {
+            setFilter(guildId, savedFilter, "system", "System").catch(() => {});
+          }
+          const savedBands = state.equalizer.get(guildId);
+          if (savedBands) {
+            setEqualizer(guildId, savedBands, "system", "System").catch(() => {});
+          }
+        } catch (err: any) {
+          Logger.warn(`[247-Stop] Rejoin failed for ${guildId}: ${err?.message}`);
+        }
+      }
+    } else if (!state.twentyFourSeven.isEnabled(guildId)) {
+      // Normal stop, 247 OFF
+      try { player.disconnect(); } catch {}
+      try { player.destroy(); } catch {}
+    }
+    // 247 ON + healthy: no-op
   }
   
   await ActivityService.log({ guildId, userId, userName, action: "stop", detail: "Stopped playback" });
