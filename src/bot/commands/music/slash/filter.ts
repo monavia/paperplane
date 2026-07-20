@@ -47,7 +47,7 @@ export default {
 
   async execute(interaction: any) {
     const vc = checkSameVoice(interaction);
-    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], ephemeral: true });
+    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], flags: 64 });
 
     const guildId = interaction.guildId!;
     const engine = MusicService.getEngine(guildId);
@@ -59,6 +59,7 @@ export default {
       .setColor(Colors.INFO);
 
     const rows = buildButtons(currentFilter);
+    await interaction.reply({ embeds: [embed], components: rows });
     const msg = await interaction.fetchReply();
     const collector = msg.createMessageComponentCollector({
       filter: (i: any) => i.user.id === interaction.user.id,

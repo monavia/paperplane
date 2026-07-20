@@ -1,11 +1,16 @@
 import express from "express";
 import Config from "../config/bot";
 import Logger from "../core/utils/Logger";
-import { getEngine } from "../music/services/PlayerService";
+import * as PlayerService from "../music/services/PlayerService";
 import { getQueue } from "../music/services/QueueService";
 import { getClient, get as getLavalink } from "../music/engine/lavalink";
 import { getVoiceJoinDuration } from "../music/engine/PlayerManager";
 import state from "../core/state/StateManager";
+import { getLastEqualizer, setLastEqualizer, getLastFilter, setLastFilter } from "../database/repositories/GuildRepository";
+import { getHistory } from "../music/services/HistoryService";
+import { fetchLyrics } from "../music/services/LyricsService";
+import mongoose from "mongoose";
+import { getMetrics } from "../telemetry/MetricsCollector";
 
 const TRUSTED_IPS = (process.env.TRUSTED_IPS || "").split(",").map((s) => s.trim()).filter(Boolean);
 const API_TOKEN = process.env.BOT_API_TOKEN || "";
@@ -70,7 +75,50 @@ export async function startApiServer(_status?: any): Promise<void> {
   app.use("/api/guild/:guildId", validateGuildId);
   app.use("/api/activities/:guildId", validateGuildId);
 
-  app.get("/api/health", (_req, res) => {
+  app.get("/api/metrics", (_req, res) => {
+    const m = getMetrics();
+    const lines: string[] = [
+      '# HELP paperplane_tracks_played Total tracks played',
+      '# TYPE paperplane_tracks_played counter',
+      `paperplane_tracks_played ${m.tracksPlayed}`,
+      '# HELP paperplane_tracks_failed Total tracks failed',
+      '# TYPE paperplane_tracks_failed counter',
+      `paperplane_tracks_failed ${m.tracksFailed}`,
+      '# HELP paperplane_commands_executed Total commands executed',
+      '# TYPE paperplane_commands_executed counter',
+      `paperplane_commands_executed ${m.commandsExecuted}`,
+      '# HELP paperplane_guild_count Guild count',
+      '# TYPE paperplane_guild_count gauge',
+      `paperplane_guild_count ${m.guildCount}`,
+      '# HELP paperplane_voice_connections Active voice connections',
+      '# TYPE paperplane_voice_connections gauge',
+      `paperplane_voice_connections ${m.voiceConnections}`,
+      '# HELP paperplane_active_players Active players',
+      '# TYPE paperplane_active_players gauge',
+      `paperplane_active_players ${m.activePlayers}`,
+      '# HELP paperplane_active_guilds Active guilds',
+      '# TYPE paperplane_active_guilds gauge',
+      `paperplane_active_guilds ${m.activeGuilds}`,
+      '# HELP paperplane_lavalink_nodes_online Lavalink nodes online',
+      '# TYPE paperplane_lavalink_nodes_online gauge',
+      `paperplane_lavalink_nodes_online ${m.lavalinkNodesOnline}`,
+      '# HELP paperplane_rate_limit_blocked Rate limited requests',
+      '# TYPE paperplane_rate_limit_blocked counter',
+      `paperplane_rate_limit_blocked ${m.rateLimitBlocked}`,
+    ];
+    for (const [key, val] of Object.entries(m.lavalinkNodePlayers || {})) {
+      lines.push(`paperplane_lavalink_node_players{node="${key}"} ${val}`);
+    }
+    for (const [key, val] of Object.entries(m.lavalinkNodePenalty || {})) {
+      lines.push(`paperplane_lavalink_node_penalty{node="${key}"} ${val}`);
+    }
+    for (const [key, val] of Object.entries(m.tracksFailedByLabel || {})) {
+      lines.push(`paperplane_tracks_failed_total{error="${key}"} ${val}`);
+    }
+    res.type("text/plain").send(lines.join("\n") + "\n");
+  });
+
+app.get("/api/health", (_req, res) => {
     const client = getClient();
     res.json({
       status: "ok",
@@ -105,8 +153,7 @@ export async function startApiServer(_status?: any): Promise<void> {
   app.get("/api/guild/:guildId/equalizer", async (req, res) => {
     try {
       const { guildId } = req.params;
-      const { getLastEqualizer } = require("../database/repositories/GuildRepository");
-      const current = await getLastEqualizer(guildId);
+const current = await getLastEqualizer(guildId);
       res.json({
         success: true,
         data: {
@@ -127,9 +174,6 @@ export async function startApiServer(_status?: any): Promise<void> {
       const { preset } = req.body;
       const userId = "dashboard";
       const userName = "Dashboard";
-      const { setEqualizer } = require("../music/services/PlayerService");
-      const { setLastEqualizer } = require("../database/repositories/GuildRepository");
-
       const EQ_PRESETS: Record<string, { band: number; gain: number }[]> = {
         flat: Array.from({ length: 15 }, (_, i) => ({ band: i, gain: 0.0 })),
         bass: Array.from({ length: 15 }, (_, i) => ({ band: i, gain: i < 5 ? 0.4 - i * 0.1 : -0.05 - (i - 5) * 0.02 })),
@@ -172,7 +216,7 @@ export async function startApiServer(_status?: any): Promise<void> {
       };
 
       const bands = EQ_PRESETS[preset] || EQ_PRESETS.flat;
-      const ok = await setEqualizer(guildId, bands, userId, userName);
+      const ok = await PlayerService.setEqualizer(guildId, bands, userId, userName);
       if (ok) {
         await setLastEqualizer(guildId, preset);
       }
@@ -188,8 +232,7 @@ export async function startApiServer(_status?: any): Promise<void> {
     try {
       const { guildId } = req.params;
       const days = parseInt(req.query.days as string) || 7;
-      const { getHistory } = require("../music/services/HistoryService");
-      const history = await getHistory(guildId, 500);
+const history = await getHistory(guildId, 500);
       const cutoff = new Date(Date.now() - days * 86400000);
       const filtered = history.filter((h: any) => new Date(h.playedAt || h.timestamp) >= cutoff);
 
@@ -254,9 +297,7 @@ export async function startApiServer(_status?: any): Promise<void> {
   app.get("/api/guild/:guildId/filter", async (req, res) => {
     try {
       const { guildId } = req.params;
-      const { getFilterState } = require("../music/services/PlayerService");
-      const { getLastFilter } = require("../database/repositories/GuildRepository");
-      const fm = getFilterState(guildId);
+const fm = PlayerService.getFilterState(guildId);
       const current = await getLastFilter(guildId);
       res.json({
         success: true,
@@ -278,14 +319,11 @@ export async function startApiServer(_status?: any): Promise<void> {
       const { filter } = req.body;
       const userId = "dashboard";
       const userName = "Dashboard";
-      const { setFilter, resetFilters } = require("../music/services/PlayerService");
-      const { setLastFilter } = require("../database/repositories/GuildRepository");
-
       let ok;
       if (!filter || filter === "none") {
-        ok = await resetFilters(guildId, userId, userName);
+        ok = await PlayerService.resetFilters(guildId, userId, userName);
       } else {
-        ok = await setFilter(guildId, filter, userId, userName);
+        ok = await PlayerService.setFilter(guildId, filter, userId, userName);
       }
 
       if (ok) {
@@ -303,7 +341,7 @@ export async function startApiServer(_status?: any): Promise<void> {
   app.get("/api/guild/:guildId/health", async (req, res) => {
     try {
       const { guildId } = req.params;
-      const engine = getEngine(guildId);
+      const engine = PlayerService.getEngine(guildId);
       const player = engine?.player;
       const client = getClient();
 
@@ -347,7 +385,7 @@ export async function startApiServer(_status?: any): Promise<void> {
   app.get("/api/guild/:guildId/nowplaying", async (req, res) => {
     try {
       const { guildId } = req.params;
-      const engine = getEngine(guildId);
+      const engine = PlayerService.getEngine(guildId);
       const player = engine?.player;
 
       if (!player || (!player.playing && !player.paused)) {
@@ -404,7 +442,7 @@ export async function startApiServer(_status?: any): Promise<void> {
   app.get("/api/guild/:guildId/stats", async (req, res) => {
     try {
       const { guildId } = req.params;
-      const engine = getEngine(guildId);
+      const engine = PlayerService.getEngine(guildId);
       const player = engine?.player;
       const queueLength = engine?.queue?.getAll()?.length || 0;
       const voiceMs = getVoiceJoinDuration(guildId);
@@ -455,32 +493,29 @@ export async function startApiServer(_status?: any): Promise<void> {
       const userId = "dashboard";
       const userName = "Dashboard";
 
-      const playerService = require("../music/services/PlayerService");
-      const { getEngine } = playerService;
-
       switch (action) {
         case "pause":
-          await playerService.pause(guildId, userId, userName);
+          await PlayerService.pause(guildId, userId, userName);
           res.json({ success: true });
           break;
         case "resume":
-          await playerService.resume(guildId, userId, userName);
+          await PlayerService.resume(guildId, userId, userName);
           res.json({ success: true });
           break;
         case "stop":
-          await playerService.stop(guildId, userId, userName);
+          await PlayerService.stop(guildId, userId, userName);
           res.json({ success: true });
           break;
         case "skip":
-          await playerService.skip(guildId, userId, userName);
+          await PlayerService.skip(guildId, userId, userName);
           res.json({ success: true });
           break;
         case "volume":
-          playerService.setVolume(guildId, value ?? 100, userId, userName);
+          PlayerService.setVolume(guildId, value ?? 100, userId, userName);
           res.json({ success: true });
           break;
         case "seek":
-          playerService.seek(guildId, value ?? 0, userId, userName);
+          PlayerService.seek(guildId, value ?? 0, userId, userName);
           res.json({ success: true });
           break;
         default:
@@ -496,9 +531,7 @@ export async function startApiServer(_status?: any): Promise<void> {
   app.get("/api/guild/:guildId/lyrics", async (req, res) => {
     try {
       const { guildId } = req.params;
-      const { fetchLyrics } = require("../music/services/LyricsService");
-      const { getEngine } = require("../music/services/PlayerService");
-      const engine = getEngine(guildId);
+const engine = PlayerService.getEngine(guildId);
       const player = engine?.player;
 
       if (!player || (!player.playing && !player.paused)) {
@@ -540,8 +573,7 @@ export async function startApiServer(_status?: any): Promise<void> {
     try {
       const { guildId } = req.params;
       const limit = parseInt(req.query.limit as string) || 20;
-      const { getHistory } = require("../music/services/HistoryService");
-      const history = await getHistory(guildId, limit);
+const history = await getHistory(guildId, limit);
       const client = getClient();
 
       const data = await Promise.all(history.map(async (h: any) => {
@@ -604,8 +636,7 @@ export async function startApiServer(_status?: any): Promise<void> {
       ? Array.from(lavalink.nodeManager.nodes.values()).filter((n: any) => n.connected).length
       : 0;
 
-    const mongoose = require("mongoose");
-    const dbReady = mongoose.connection?.readyState === 1;
+const dbReady = mongoose.connection?.readyState === 1;
 
     res.json({
       api: { status: "ok", label: "Online", ok: true },
@@ -621,9 +652,8 @@ export async function startApiServer(_status?: any): Promise<void> {
     });
   });
 
-  app.get("/api/metrics", (_req, res) => {
-    const { getMetrics } = require("../telemetry/MetricsCollector");
-    res.json({ success: true, data: getMetrics() });
+  app.get("/api/metrics/json", (_req, res) => {
+res.json({ success: true, data: getMetrics() });
   });
 
   const port = Config.apiPort;

@@ -1,4 +1,5 @@
 import Logger from "../utils/Logger";
+import { saveAllStates } from "../../music/services/StateService";
 
 export function registerShutdownTasks(deps: {
   shutdownManager: any;
@@ -12,7 +13,6 @@ export function registerShutdownTasks(deps: {
     timeout: 10000,
     description: "Save all player states to database",
     execute: async () => {
-      const { saveAllStates } = require("../../../music/services/StateService");
       const saved = await saveAllStates();
       Logger.info(`Saved ${saved} player state(s)`);
     },

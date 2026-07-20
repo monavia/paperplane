@@ -1,4 +1,15 @@
-import { Schema, model } from "mongoose";
+import { Schema, model, Document } from "mongoose";
+
+export interface IPlayerState extends Document {
+  guildId: string;
+  voiceChannelId: string;
+  textChannelId: string | null;
+  queue: any[];
+  nowPlaying: any;
+  position: number;
+  nodeId: string | null;
+  updatedAt: Date;
+}
 
 const playerStateSchema = new Schema({
   guildId: { type: String, required: true, unique: true },
@@ -11,4 +22,4 @@ const playerStateSchema = new Schema({
   updatedAt: { type: Date, default: Date.now },
 });
 
-export default model("PlayerState", playerStateSchema);
+export default model<IPlayerState>("PlayerState", playerStateSchema);

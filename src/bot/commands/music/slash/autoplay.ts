@@ -30,11 +30,11 @@ export default {
 
   async execute(interaction: import("discord.js").ChatInputCommandInteraction) {
     const vc = checkSameVoice(interaction);
-    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], ephemeral: true });
+    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], flags: 64 });
 
     const guildId = interaction.guildId!;
     const engine = MusicService.getEngine(guildId);
-    if (!engine) return interaction.reply({ embeds: [ErrorEmbed.build("No active player.")], ephemeral: true });
+    if (!engine) return interaction.reply({ embeds: [ErrorEmbed.build("No active player.")], flags: 64 });
 
     const isAutoplayOn = state.autoplay.get(guildId);
 
@@ -43,6 +43,7 @@ export default {
       .setColor(isAutoplayOn ? Colors.SUCCESS : Colors.ERROR);
 
     const row = buildButtons(isAutoplayOn);
+    await interaction.reply({ embeds: [embed], components: [row] });
     const msg = await interaction.fetchReply();
     const collector = msg.createMessageComponentCollector({
       filter: (i: any) => i.user.id === interaction.user.id,

@@ -16,17 +16,19 @@ function getQueue(guildId: string) {
   return [current, ...upcoming];
 }
 
-function removeFromQueue(guildId: string, index: number): boolean {
-  const engine = getEngine(guildId);
-  const current = getNowPlaying(guildId);
-  const upcoming = engine.queue.getAll();
+function removeFromQueue(guildId: string, index: number): Promise<boolean> {
+  return withQueueLock(guildId, () => {
+    const engine = getEngine(guildId);
+    const current = getNowPlaying(guildId);
+    const upcoming = engine.queue.getAll();
 
-  if (index === 0 && current) return false;
-  const upcomingIndex = current ? index - 1 : index;
-  if (upcomingIndex < 0 || upcomingIndex >= upcoming.length) return false;
-  engine.queue.remove(upcomingIndex);
-  saveState(guildId);
-  return true;
+    if (index === 0 && current) return false;
+    const upcomingIndex = current ? index - 1 : index;
+    if (upcomingIndex < 0 || upcomingIndex >= upcoming.length) return false;
+    engine.queue.remove(upcomingIndex);
+    saveState(guildId);
+    return true;
+  });
 }
 
 function swapTracks(guildId: string, indexA: number, indexB: number): Promise<boolean> {
@@ -48,11 +50,13 @@ function clearQueue(guildId: string): Promise<void> {
   });
 }
 
-async function shuffle(guildId: string, userId: string, userName: string) {
-  const engine = getEngine(guildId);
-  engine.queue.shuffle();
-  await ActivityService.log({ guildId, userId, userName, action: "shuffle", detail: "Shuffled the queue" });
-  await saveState(guildId);
+async function shuffle(guildId: string, userId: string, userName: string): Promise<void> {
+  return withQueueLock(guildId, async () => {
+    const engine = getEngine(guildId);
+    engine.queue.shuffle();
+    await ActivityService.log({ guildId, userId, userName, action: "shuffle", detail: "Shuffled the queue" });
+    await saveState(guildId);
+  });
 }
 
 function moveTrack(guildId: string, fromIndex: number, toIndex: number): Promise<boolean> {
@@ -113,4 +117,13 @@ function jumpTo(guildId: string, index: number): Promise<boolean> {
   });
 }
 
-export { getQueue, removeFromQueue, swapTracks, clearQueue, shuffle, moveTrack, removeByQuery, removeRange, jumpTo };
+function addTracks(guildId: string, tracks: any[]): Promise<void> {
+  return withQueueLock(guildId, async () => {
+    if (!tracks.length) return;
+    const q = state.queues.get(guildId) || [];
+    state.queues.set(guildId, [...q, ...tracks]);
+    await saveState(guildId);
+  });
+}
+
+export { getQueue, removeFromQueue, swapTracks, clearQueue, shuffle, moveTrack, removeByQuery, removeRange, jumpTo, addTracks };

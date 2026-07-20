@@ -1,3 +1,5 @@
+import { isCover } from "../services/TitleResolver";
+
 class RecommendationEngine {
   private playedTracks: Map<string, Set<string>> = new Map();
 
@@ -48,18 +50,43 @@ class RecommendationEngine {
       // 1. YouTube Mix (radio) — rekomendasi algoritma YouTube
       candidates = await this._getYouTubeMix(player, track);
 
-      // 2. Fallback: ytmsearch pake judul spesifik
+      // 2. Fallback: search by source URI (preserves exact track when available)
+      if (!candidates.length && track.info?.uri && track.info.sourceName === "youtube") {
+        const result = await player.search({ query: track.info.uri });
+        if (result?.tracks?.length) candidates = result.tracks;
+      }
+
+      // 3. Fallback: ytmsearch pake judul spesifik
       if (!candidates.length) {
         const query = this._buildQuery(track.info);
         if (!query) return [];
-        let result = await player.search({ query: `ytmsearch:${query}` });
-        if (!result?.tracks?.length) result = await player.search({ query: `ytsearch:${query}` });
-        if (!result?.tracks?.length) result = await player.search({ query: `scsearch:${query}` });
-        candidates = result?.tracks || [];
+        const result = await player.search({ query: `ytmsearch:${query} official audio` });
+        if (!result?.tracks?.length) {
+          const r2 = await player.search({ query: `ytsearch:${query}` });
+          if (!r2?.tracks?.length) {
+            const r3 = await player.search({ query: `scsearch:${query}` });
+            candidates = r3?.tracks || [];
+          } else candidates = r2.tracks;
+        } else candidates = result.tracks;
+        if (!candidates.length) {
+          const query2 = this._buildQuery(track.info);
+          const fallback = await player.search({ query: `ytmsearch:${query2}` }).catch(() => null);
+          if (fallback?.tracks?.length) candidates = fallback.tracks;
+        }
       }
 
       if (!candidates.length) return [];
-      const filtered = candidates.filter((t: any) => !this._isSameTrack(t, track) && !this._isPlayed(guildId, t));
+      const origDuration = track?.info?.duration || 0;
+      const filtered = candidates.filter((t: any) => {
+        const titleL = (t?.info?.title || "").toLowerCase();
+        return !this._isSameTrack(t, track) &&
+        !this._isPlayed(guildId, t) &&
+        !isCover(t?.info?.title || "", t?.info?.author) &&
+        !titleL.includes("instrumental") &&
+        !titleL.includes("karaoke") &&
+        !/session|#\w+|@\s+\w+|version|tribute\b/i.test(titleL) &&
+        (origDuration < 30000 || !t?.info?.duration || Math.abs(t.info.duration - origDuration) / origDuration < 0.4);
+      });
       for (const t of filtered) this._markPlayed(guildId, t);
       return filtered.sort(() => Math.random() - 0.5).slice(0, count);
     } catch { return []; }

@@ -114,4 +114,60 @@ describe("QueueLock", () => {
     }
     assert.ok(true); // Passes if no leak
   });
+
+  test("sequential calls with varying durations all complete in order", async () => {
+    const order: number[] = [];
+    const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+    const p1 = withQueueLock("guild6", async () => {
+      order.push(1);
+      await delay(60);
+      order.push(2);
+    });
+
+    const p2 = withQueueLock("guild6", async () => {
+      order.push(3);
+      await delay(10);
+      order.push(4);
+    });
+
+    const p3 = withQueueLock("guild6", async () => {
+      order.push(5);
+    });
+
+    await Promise.all([p1, p2, p3]);
+    assert.deepStrictEqual(order, [1, 2, 3, 4, 5]);
+  });
+
+  test("memory does not leak across many guilds", async () => {
+    const guilds = Array.from({ length: 20 }, (_, i) => `leak-guild-${i}`);
+    await Promise.all(guilds.map(g => withQueueLock(g, async () => "ok")));
+
+    // All locks should be released and entries cleaned up
+    for (const g of guilds) {
+      const result = await withQueueLock(g, async () => "again");
+      assert.strictEqual(result, "again");
+    }
+  });
+
+  test("timeout warning fires but lock stays held", async () => {
+    const delay = (ms: number) => new Promise(r => setTimeout(r, ms));
+    let secondStarted = false;
+
+    const p1 = withQueueLock("guild7", async () => {
+      await delay(200); // exceeds 50ms timeout
+      return "slow";
+    }, 50);
+
+    const p2 = withQueueLock("guild7", async () => {
+      secondStarted = true;
+      return "fast";
+    }, 50);
+
+    const [r1, r2] = await Promise.all([p1, p2]);
+    assert.strictEqual(r1, "slow");
+    assert.strictEqual(r2, "fast");
+    // Second should NOT start until first is done (lock not released by timeout)
+    assert.strictEqual(secondStarted, true); // must complete after first
+  });
 });

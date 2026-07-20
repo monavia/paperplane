@@ -42,7 +42,7 @@ export default {
 
   async execute(interaction: any) {
     const vc = checkSameVoice(interaction);
-    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], ephemeral: true });
+    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], flags: 64 });
 
     const current = await getLastEqualizer(interaction.guildId!);
 
@@ -60,6 +60,7 @@ export default {
       .setDescription(`Current EQ: **${current}**`)
       .setColor(Colors.INFO);
 
+    await interaction.reply({ embeds: [embed], components: [row] });
     const msg = await interaction.fetchReply();
 
     const collector = msg.createMessageComponentCollector({

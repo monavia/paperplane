@@ -6,6 +6,8 @@ import { setLastFilter } from "../database/repositories/GuildRepository";
 import { isIdleDisconnect, clearIdleDisconnect } from "../music/engine/musicEvents";
 import state from "../core/state/StateManager";
 import { isLavalinkReady } from "../music/services/MusicService";
+import { getEngine, destroyEngine } from "../music/services/PlayerService";
+import { deleteState } from "../music/services/StateService";
 
 const aloneTimers = new Map<string, any>();
 
@@ -15,13 +17,13 @@ function startAloneTimer(guildId: string) {
   aloneTimers.set(guildId, setTimeout(() => {
     aloneTimers.delete(guildId);
     if (state.twentyFourSeven.isEnabled(guildId)) return;
-    const { getEngine, destroyEngine } = require("../music/services/PlayerService");
+    if (!isLavalinkReady()) return; // skip destroy when Lavalink down
     const engine = getEngine(guildId);
     if (engine?.player) {
-      Logger.info(`[VoiceState] Bot alone for 3m in ${guildId} — destroying player`);
+      Logger.info(`[VoiceState] Bot alone for 1m in ${guildId} — destroying player`);
       destroyEngine(guildId);
     }
-  }, 180000));
+  }, 60000));
 }
 
 function cancelAloneTimer(guildId: string) {
@@ -47,11 +49,15 @@ export function start(client: any): void {
         return;
       }
 
-      const { deleteState } = require("../music/services/StateService");
       await deleteState(guildId).catch(() => {});
+      if (!state.twentyFourSeven.isEnabled(guildId)) {
+        state.autoplay.delete(guildId);
+        state.shuffle.delete(guildId);
+        state.filter.delete(guildId);
+        state.equalizer.delete(guildId);
+      }
 
-      const { getEngine } = require("../music/services/PlayerService");
-      const engine = getEngine(guildId);
+const engine = getEngine(guildId);
       if (!engine.player?.voiceChannelId) return;
 
       const channelId = getTextChannelId(guildId);
@@ -74,9 +80,10 @@ export function start(client: any): void {
       if (!vc?.isVoiceBased() || !vc.members) return;
       const botInVc = vc.members.has(botId);
       if (!botInVc) return;
-      if (vc.members.size === 1) { // only bot left
+      const humans = vc.members.filter((m: any) => !m.user?.bot).size;
+      if (humans === 0) { // only bots left
         if (state.twentyFourSeven.isEnabled(guildId)) return;
-        Logger.info(`[VoiceState] Bot alone in ${guildId} — will disconnect in 3m`);
+        Logger.info(`[VoiceState] No humans in ${guildId} — will disconnect in 1m`);
         startAloneTimer(guildId);
       }
     }

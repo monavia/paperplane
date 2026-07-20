@@ -6,7 +6,7 @@ export default {
   data: new SlashCommandBuilder().setName("help").setDescription("Show all available commands"),
   async execute(interaction: any) {
     const commands = interaction.client?.slashCommands;
-    if (!commands?.size) return interaction.reply({ content: "No commands loaded.", ephemeral: true });
+    if (!commands?.size) return interaction.reply({ content: "No commands loaded.", flags: 64 });
 
     const lines = commands.map((cmd: any) => `\`/${cmd.data.name}\` — ${cmd.data.description}`);
     const embed = new EmbedBuilder()
@@ -14,6 +14,6 @@ export default {
       .setDescription(lines.join("\n"))
       .setColor(Colors.INFO)
       .setFooter({ text: `${commands.size} slash commands • Prefix: \`${botConfig.prefix}\`` });
-    await interaction.reply({ embeds: [embed], ephemeral: true });
+    await interaction.reply({ embeds: [embed], flags: 64 });
   },
 };

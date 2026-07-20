@@ -1,3 +1,6 @@
+import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaClient } from "@prisma/client";
+
 let _prisma: any = null;
 
 function createPrismaClient() {
@@ -5,8 +8,6 @@ function createPrismaClient() {
   if (!connectionString.startsWith("postgresql://")) {
     return null;
   }
-  const { PrismaPg } = require("@prisma/adapter-pg");
-  const { PrismaClient } = require("@prisma/client");
   const adapter = new PrismaPg({ connectionString });
   return new PrismaClient({ adapter });
 }

@@ -17,7 +17,7 @@ export default {
 
     if (newPrefix) {
       if (!interaction.memberPermissions?.has("ManageGuild")) {
-        return interaction.reply({ embeds: [ErrorEmbed.build("You need `Manage Server` permission.")], ephemeral: true });
+        return interaction.reply({ embeds: [ErrorEmbed.build("You need `Manage Server` permission.")], flags: 64 });
       }
       await setPrefix(interaction.guildId, newPrefix);
       return interaction.reply({ embeds: [SuccessEmbed.build(`Prefix set to \`${newPrefix}\``)] });
@@ -27,6 +27,6 @@ export default {
     const embed = new EmbedBuilder()
       .setDescription(`Current prefix: \`${current}\``)
       .setColor(Colors.INFO);
-    await interaction.reply({ embeds: [embed], ephemeral: true });
+    await interaction.reply({ embeds: [embed], flags: 64 });
   },
 };

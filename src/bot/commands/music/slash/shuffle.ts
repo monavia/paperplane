@@ -31,10 +31,10 @@ export default {
 
   async execute(interaction: import("discord.js").ChatInputCommandInteraction) {
     const vc = checkSameVoice(interaction);
-    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], ephemeral: true });
+    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], flags: 64 });
 
     const guildId = interaction.guildId!;
-    if (!MusicService.getEngine(guildId)?.player) return interaction.reply({ embeds: [ErrorEmbed.build("Bot is not connected to a voice channel.")], ephemeral: true });
+    if (!MusicService.getEngine(guildId)?.player) return interaction.reply({ embeds: [ErrorEmbed.build("Bot is not connected to a voice channel.")], flags: 64 });
 
     const isShuffleOn = state.shuffle.get(guildId);
 

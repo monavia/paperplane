@@ -1,5 +1,7 @@
 import { getPlayer, createPlayer } from "./PlayerManager";
 import { markManualAdvance } from "./musicEvents";
+import { withQueueLock } from "../../core/state/QueueLock";
+import state from "../../core/state/StateManager";
 
 export class PlaybackEngine {
   guildId: string;
@@ -29,9 +31,6 @@ export class PlaybackEngine {
     const player = this.player;
     if (!player) return null;
 
-    const { withQueueLock } = require("../../core/state/QueueLock");
-    const state = require("../../core/state/StateManager");
-
     return withQueueLock(this.guildId, async () => {
       const queue = state.queues.get(this.guildId) || [];
       const nextTrack = queue.shift();
@@ -55,9 +54,6 @@ export class PlaybackEngine {
   async stop(): Promise<boolean> {
     const player = this.player;
     if (!player) return false;
-
-    const { withQueueLock } = require("../../core/state/QueueLock");
-    const state = require("../../core/state/StateManager");
 
     return withQueueLock(this.guildId, async () => {
       state.nowPlaying.delete(this.guildId);

@@ -1,4 +1,4 @@
-import { get, getLeastLoadedNode } from "./lavalink";
+import { get } from "./lavalink";
 
 const voiceJoinTimes = new Map<string, number>();
 
@@ -7,19 +7,18 @@ export function getPlayer(guildId: string): any {
   return mgr?.players?.get(guildId) || null;
 }
 
-export function createPlayer(guildId: string, voiceChannelId: string | null, textChannelId: string | null): any {
+export function createPlayer(guildId: string, voiceChannelId: string | null, textChannelId: string | null, vcRegion?: string): any {
   const mgr = get();
   if (!mgr) return null;
   const existing = mgr.players.get(guildId);
   if (existing) return existing;
-  const node = getLeastLoadedNode();
   const player = mgr.createPlayer({
     guildId,
     voiceChannelId: voiceChannelId || "",
     textChannelId: textChannelId || "",
     selfDeaf: true,
     selfMute: false,
-    ...(node ? { node } : {}),
+    ...(vcRegion ? { vcRegion } : {}),
   });
   return player;
 }

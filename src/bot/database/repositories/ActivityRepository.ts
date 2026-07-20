@@ -1,3 +1,4 @@
+import Logger from "../../core/utils/Logger";
 import Activity from "../models/Activity";
 import { isUsingPrisma } from "../connection";
 
@@ -11,7 +12,7 @@ class ActivityRepository {
   async insertMany(docs: any[]) {
     if (isUsingPrisma()) {
       const p = await getPrisma();
-      try { await p.activity.createMany({ data: docs }); } catch {}
+      try { await p.activity.createMany({ data: docs }); } catch { Logger.warn("[ActivityRepo] insertMany failed"); }
     } else {
       await Activity.insertMany(docs, { ordered: false }).catch(() => ({}));
     }

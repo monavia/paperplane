@@ -30,14 +30,14 @@ export type FilterResult = {
 export function checkPrompt(prompt: string): FilterResult {
   const normalized = prompt.toLowerCase();
 
+  for (const allow of allowedContext) {
+    if (allow.test(normalized)) return { blocked: false };
+  }
+
   for (const pattern of blockedPatterns) {
     if (pattern.test(normalized)) {
       return { blocked: true, reason: "Sorry, I can't help with academic work, coding, or homework." };
     }
-  }
-
-  for (const allow of allowedContext) {
-    if (allow.test(normalized)) return { blocked: false };
   }
 
   return { blocked: false };

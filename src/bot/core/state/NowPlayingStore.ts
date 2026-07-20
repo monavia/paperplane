@@ -17,6 +17,10 @@ class NowPlayingStore {
     return this.data.has(guildId);
   }
 
+  get size(): number {
+    return this.data.size;
+  }
+
   entries(): IterableIterator<[string, any]> {
     return this.data.entries();
   }

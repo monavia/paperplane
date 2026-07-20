@@ -14,10 +14,10 @@ export default {
 
   async execute(interaction: import("discord.js").ChatInputCommandInteraction) {
     const vc = checkSameVoice(interaction);
-    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], ephemeral: true });
+    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], flags: 64 });
     const player = getPlayer(interaction.guildId!);
     const track = player?.queue?.current;
-    if (!track) return interaction.reply({ embeds: [ErrorEmbed.build("Nothing is playing.")], ephemeral: true });
+    if (!track) return interaction.reply({ embeds: [ErrorEmbed.build("Nothing is playing.")], flags: 64 });
 
     await interaction.deferReply();
 

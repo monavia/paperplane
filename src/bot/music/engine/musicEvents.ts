@@ -8,14 +8,18 @@ import Colors from "../../core/constants/Colors";
 import { getSourceEmoji } from "../../ui/embeds/NowPlayingEmbed";
 import { getTextChannelId } from "../services/TextChannelStore";
 import { clearVoiceJoinTime } from "./PlayerManager";
-import * as LyricsSyncManager from "./LyricsSyncManager";
 import lyricsMessages from "../../core/state/LyricsMessageStore";
 import * as HistoryService from "../services/HistoryService";
 import { getPrefix } from "../../database/repositories/GuildRepository";
 import botConfig from "../../config/bot";
+import { saveState, startPositionSync, stopPositionSync, deleteState, isRestoredGuild, clearRestoredGuild } from "../services/StateService";
+import { cleanTitle, saveSpotifyMeta, applySpotifyMeta } from "../services/TitleResolver";
+import AutoplayEngine from "./AutoplayEngine";
+import RecommendationEngine from "./RecommendationEngine";
+import { deletePlayerData } from "../services/PersistentPlayerStore";
+import { incTracksPlayed, incTracksFailed } from "../../telemetry/MetricsCollector";
 import metrics from "../../telemetry/MetricsCollector";
-import { playerState } from "../services/RedisPlayerState";
-import { saveSpotifyMeta, applySpotifyMeta } from "../services/TitleResolver";
+
 
 const disconnectTimers = new Map<string, any>();
 const errorTimestamps = new Map<string, number[]>();
@@ -93,7 +97,7 @@ async function advanceQueue(player: any): Promise<any> {
               Object.assign(next, res.tracks[0]);
             }
           }
-        } catch {}
+        } catch { Logger.warn(`[advanceQueue] Re-resolution failed for ${guildId}`); }
       }
 
       if (!next.encoded) {
@@ -104,17 +108,9 @@ async function advanceQueue(player: any): Promise<any> {
       state.nowPlaying.set(guildId, next);
       try {
         await player.play({ track: next, clientTrack: next });
-        const { saveState } = require("../services/StateService");
+        
         await saveState(guildId);
         const remaining = state.queues.get(guildId) || [];
-        playerState.saveState(guildId, {
-          voiceChannelId: player.voiceChannelId || "",
-          textChannelId: getTextChannelId(guildId) || null,
-          currentTrack: next.encoded || "",
-          position: 0,
-          queue: remaining.map((t: any) => t.encoded || "").filter(Boolean),
-          isPlaying: true,
-        });
         Logger.info(`[advanceQueue] guild=${guildId} now playing: ${next.info?.title || "?"} (queue=${remaining.length} left)`);
 
         if (state.loop.get(guildId) === "playlist") {
@@ -140,7 +136,6 @@ function register(client: any): void {
 
   l.on("trackStart", (player: any, track: any) => {
     metrics.tracksPlayed.inc({ guild: player.guildId, source: track?.info?.source || 'unknown' });
-    LyricsSyncManager.stop(player.guildId);
     const prevLyrics = lyricsMessages.get(player.guildId);
     if (prevLyrics && clientRef) {
       const ch = clientRef.channels.cache.get(prevLyrics.channelId);
@@ -152,7 +147,7 @@ function register(client: any): void {
     state.nowPlaying.set(player.guildId, track);
     lavalink.cacheTrack(player.guildId, track);
 
-    const { startPositionSync } = require("../services/StateService");
+    
     startPositionSync(player.guildId);
 
     if (player.voiceChannelId) {
@@ -161,20 +156,6 @@ function register(client: any): void {
         state.voiceChannels.set(player.guildId, player.voiceChannelId, textChannelId);
       }
     }
-
-    const textChannelId = getTextChannelId(player.guildId);
-    const queueEncoded = (state.queues.get(player.guildId) || []).map((t: any) => t.encoded || "").filter(Boolean);
-    playerState.saveState(player.guildId, {
-      voiceChannelId: player.voiceChannelId || "",
-      textChannelId: textChannelId || null,
-      currentTrack: track.encoded || "",
-      position: 0,
-      queue: queueEncoded,
-      isPlaying: true,
-    });
-    playerState.startPositionSync(player.guildId, () => {
-      return player.position || 0;
-    });
 
     const req = track.info?.requester || track.requester;
     const userId = typeof req === "object" ? (req.id || req.userId) : (req || "unknown");
@@ -186,29 +167,31 @@ function register(client: any): void {
       disconnectTimers.delete(player.guildId);
     }
 
-    const { isRestoredGuild } = require("../services/StateService");
+    
     const restored = isRestoredGuild(player.guildId);
     if (restored) {
       restoredGuilds.add(player.guildId);
-      const { clearRestoredGuild } = require("../services/StateService");
+      
       clearRestoredGuild(player.guildId);
     }
     const isManualAdvance = manualAdvances.has(player.guildId);
     const suppress = suppressTrackStart.has(player.guildId);
     if (suppress) suppressTrackStart.delete(player.guildId);
-    const isFailover = require("./lavalink").isFailoverGuild?.(player.guildId);
-    if (isFailover) { require("./lavalink").clearFailoverGuild(player.guildId); }
+    const isFailover = lavalink.isFailoverGuild?.(player.guildId);
+    if (isFailover) { lavalink.clearFailoverGuild(player.guildId); }
     // Only suppress for first track after restore (not all tracks during startup)
     const isFirstRestored = restoredGuilds.has(player.guildId);
     if (isFirstRestored) restoredGuilds.delete(player.guildId);
     const shouldSendEmbed = !isFirstRestored && !isManualAdvance && !suppress && !isFailover;
     const textChannelId2 = getTextChannelId(player.guildId);
-    Logger.info(`[DBUG-trackStart] guild=${player.guildId} track=${track?.info?.title?.slice(0, 40) || "?"} restored=${restored} isFirstRest=${isFirstRestored} manual=${isManualAdvance} suppr=${suppress} fail=${isFailover} send=${shouldSendEmbed} ch=${textChannelId2 || "none"}`);
+    Logger.info(`[DBUG-trackStart] guild=${player.guildId} track=${track?.info?.title?.slice(0, 40) || "?"} restored=${restored} isFirstRest=${isFirstRestored} manual=${isManualAdvance} suppr=${suppress} fail=${isFailover} send=${shouldSendEmbed} ch=${textChannelId2 || "none"} region=${player.node?.options?.regions?.[0] || "?"}`);
+    incTracksPlayed();
     if (textChannelId2 && shouldSendEmbed) {
       const channel = client.channels.cache.get(textChannelId2);
       if (channel) {
-        const title = track.info.title || "Unknown";
-        const author = track.info.author || "Unknown";
+        const cleaned = cleanTitle(track.info.title || "", track.info.author || "");
+        const title = cleaned.title;
+        const author = cleaned.author;
         const url = track.info.originalUrl || track.info.uri || "";
         const source = track.info.source || "youtube";
         const emoji = getSourceEmoji(source, track.info?.spotifyUrl);
@@ -233,21 +216,25 @@ function register(client: any): void {
         const search = await player.search({ query: isSpotify ? `ytmsearch:${next.info.author || ""} ${next.info.title || ""}` : uri }, { id: "system" }).catch(() => null);
         if (search?.tracks?.[0]?.encoded) {
           next.encoded = search.tracks[0].encoded;
-          const { saveSpotifyMeta, applySpotifyMeta } = require("../services/TitleResolver");
+          
           applySpotifyMeta(search.tracks[0], saveSpotifyMeta(next));
         }
-      } catch {}
+      } catch { Logger.warn("[trackStart] Track re-resolution failed"); }
     });
   });
 
   l.on("trackEnd", (player: any, _track: any, reason: any) => {
     const reasonStr = typeof reason === "object" ? reason?.reason : reason;
     const queueLen = state.queues.get(player.guildId)?.length || 0;
-    Logger.info(`[trackEnd] guild=${player.guildId}/${getGuildName(player.guildId)} reason=${reasonStr} queue=${queueLen} playing=${player.playing} node=${player.node?.name || "?"}`);
-    playerState.updatePlayingStatus(player.guildId, false);
+    Logger.info(`[trackEnd] guild=${player.guildId}/${getGuildName(player.guildId)} reason=${reasonStr} queue=${queueLen} playing=${player.playing} node=${player.node?.name || "?"} restored=${isRestoredGuild(player.guildId)}`);
   });
 
+const queueEndGuard = new Set<string>();
+
   l.on("queueEnd", async (player: any, track: any, payload: any) => {
+    if (queueEndGuard.has(player.guildId)) return;
+    queueEndGuard.add(player.guildId);
+    setTimeout(() => queueEndGuard.delete(player.guildId), 5000);
     try {
       if (!player.node?.connected) {
         Logger.info(`[queueEnd] guild=${player.guildId} node disconnected, skipping disconnect timer`);
@@ -269,16 +256,8 @@ function register(client: any): void {
         state.nowPlaying.set(player.guildId, track);
         try {
           await player.play({ track, clientTrack: track });
-          const { saveState } = require("../services/StateService");
+          
           await saveState(player.guildId);
-          playerState.saveState(player.guildId, {
-            voiceChannelId: player.voiceChannelId || "",
-            textChannelId: getTextChannelId(player.guildId) || null,
-            currentTrack: track.encoded || "",
-            position: 0,
-            queue: (state.queues.get(player.guildId) || []).map((t: any) => t.encoded || "").filter(Boolean),
-            isPlaying: true,
-          });
           Logger.info(`[queueEnd] guild=${player.guildId} track-loop: replaying "${track.info?.title || "?"}"`);
           return;
         } catch (err: any) {
@@ -292,25 +271,24 @@ function register(client: any): void {
       if (!player.playing && !player.paused) {
       try {
         if (state.autoplay.get(player.guildId)) {
-          const AutoplayEngine = require("./AutoplayEngine").default;
+          
           const autoplay = new AutoplayEngine();
           const autoTrack = await autoplay.getNextTrack(player, track, player.guildId);
           if (autoTrack) {
             state.nowPlaying.set(player.guildId, autoTrack);
             await player.play({ track: autoTrack, clientTrack: autoTrack }).catch((err: any) => Logger.warn(`[autoplay] Play failed: ${err.message}`));
-            const { saveState } = require("../services/StateService");
+            
             await saveState(player.guildId).catch(() => {});
             return;
           }
+          Logger.warn(`[autoplay] No recommendations for guild=${player.guildId} track="${track?.info?.title?.slice(0,40) || "?"}" source=${track?.info?.sourceName || "?"} id=${track?.info?.identifier || "?"}`);
         }
-      } catch {}
+      } catch { Logger.warn(`[queueEnd] Autoplay handler failed for ${player.guildId}`); }
 
       state.nowPlaying.delete(player.guildId);
-      LyricsSyncManager.stop(player.guildId);
       errorTimestamps.delete(player.guildId);
       retryTracks.delete(player.guildId);
-      playerState.deleteState(player.guildId);
-      const { default: RecommendationEngine } = require("./RecommendationEngine");
+      
       new RecommendationEngine().clearPlayed(player.guildId);
       const prevLyrics = lyricsMessages.get(player.guildId);
       if (prevLyrics && clientRef) {
@@ -326,14 +304,14 @@ function register(client: any): void {
       }
 
       const voiceChannel = clientRef?.channels?.cache?.get(player.voiceChannelId);
-      const memberCount = voiceChannel?.members?.size || 1;
-      const humanCount = memberCount - 1;
-      const timeout = 180000;
-      const timeoutLabel = "3m";
+      const members = voiceChannel?.members?.filter((m: any) => !m.user?.bot) || new Map();
+      const humanCount = members.size;
+      const timeout = 60000;
+      const timeoutLabel = "60s";
 
-      Logger.info(`[queueEnd] guild=${player.guildId}/${guildName} members=${memberCount} humans=${humanCount} timeout=${timeoutLabel}`);
+      Logger.info(`[queueEnd] guild=${player.guildId}/${guildName} humans=${humanCount} total=${voiceChannel?.members?.size || 1} timeout=${timeoutLabel}`);
 
-      const { stopPositionSync } = require("../services/StateService");
+      
       stopPositionSync(player.guildId);
 
       const timerId = setTimeout(() => {
@@ -350,7 +328,7 @@ function register(client: any): void {
           const channel = clientRef?.channels?.cache?.get(textChannelId);
           if (channel) {
             const embed = new EmbedBuilder()
-              .setDescription(`Leaving voice channel due to inactivity.\nAdd more tracks to keep the music going!`)
+              .setDescription(`Leaving voice channel due to inactivity.`)
               .setColor(Colors.ERROR);
             (channel as any).send({ embeds: [embed] }).catch(() => {});
           }
@@ -358,7 +336,7 @@ function register(client: any): void {
         markIdleDisconnect(player.guildId);
         clearVoiceJoinTime(player.guildId);
         lavalink.clearTrackCache(player.guildId);
-        const { deleteState } = require("../services/StateService");
+        
         deleteState(player.guildId).catch(() => {});
         player.disconnect();
         player.destroy();
@@ -376,10 +354,11 @@ function register(client: any): void {
 
   l.on("trackError", async (player: any, track: any, payload: any) => {
     try {
+      incTracksFailed();
       const errMsg = payload?.error || payload?.exception?.message || "Unknown";
       const trackId = track?.info?.uri || track?.info?.title || "unknown";
       const queueLen = state.queues.get(player.guildId)?.length || 0;
-      Logger.error(`[trackError] guild=${player.guildId}/${getGuildName(player.guildId)} err="${errMsg}" track="${track?.info?.title || "?"}" queue=${queueLen} node=${player.node?.name || "?"}`);
+      Logger.error(`[trackError] guild=${player.guildId}/${getGuildName(player.guildId)} err="${errMsg}" track="${track?.info?.title || "?"}" queue=${queueLen} node=${player.node?.name || "?"} restored=${isRestoredGuild(player.guildId)}`);
       metrics.tracksFailed.inc({ guild: player.guildId, error_type: errMsg.substring(0, 50) });
 
       const now = Date.now();
@@ -397,31 +376,40 @@ function register(client: any): void {
 
       const retried = retryTracks.get(player.guildId) || new Set<string>();
       const isFirstAttempt = !retried.has(trackId);
+      const isDeezerError = /deezer/i.test(errMsg);
+      const isNetworkError = /econnreset|enotfound|econnrefused|etimedout|timeout|aborted/i.test(errMsg);
       let alt: any = null;
-      if (isFirstAttempt) {
+      if (isDeezerError || isNetworkError) {
+        retried.add(trackId);
+        retryTracks.set(player.guildId, retried);
+        Logger.info(`[trackError] ${isDeezerError ? "Deezer" : "Network"} error — skipping fallback search for "${track?.info?.title?.slice(0,30) || "?"}"`);
+      } else if (isFirstAttempt) {
         retried.add(trackId);
         retryTracks.set(player.guildId, retried);
 
         const savedMeta = saveSpotifyMeta(track);
-        const title = track?.info?.title || "";
-        const author = track?.info?.author || "";
-        const q = `${author} ${title}`.trim();
+        const orig = state.nowPlaying.get(player.guildId);
+        const title = orig?.info?.title || track?.info?.title || "";
+        const author = orig?.info?.author || "";
+        const q = author ? `${author} ${title}` : title;
         if (q) {
           for (const prefix of ["ytsearch", "ytmsearch", "scsearch"]) {
             try {
               const res = await player.search({ query: `${prefix}:${q}` }, clientRef?.user);
-              const found = res?.tracks?.find((t: any) => t.encoded && t.encoded !== track?.encoded);
+              const found = res?.tracks?.find((t: any) => t.encoded && t.encoded !== track?.encoded && t.info?.sourceName !== "deezer");
               if (found) {
                 if (!found.info) found.info = {};
                 found.info.source = track?.info?.source || (prefix === "scsearch" ? "soundcloud" : "youtube");
                 found.info.originalUrl = found.info.uri;
                 found.info.requester = track?.info?.requester;
                 applySpotifyMeta(found, savedMeta);
+                const altId = found.info?.uri || found.info?.title || "";
+                if (altId) retried.add(altId);
                 alt = found;
                 Logger.info(`[trackError] Source fallback via ${prefix}: "${q}"`);
                 break;
               }
-            } catch {}
+            } catch { Logger.warn(`[trackError] Source search failed: ${prefix}:${q}`); }
           }
         }
       }
@@ -468,7 +456,7 @@ function register(client: any): void {
 
   l.on("trackStuck", (player: any, track: any, payload: any) => {
     try {
-      Logger.warn(`[trackStuck] guild=${player.guildId}/${getGuildName(player.guildId)} threshold=${payload?.thresholdMs || 0}ms`);
+      Logger.warn(`[trackStuck] guild=${player.guildId}/${getGuildName(player.guildId)} threshold=${payload?.thresholdMs || 0}ms restored=${isRestoredGuild(player.guildId)} track="${track?.info?.title || "?"}"`);
       if (player.node?.connected) {
         player.stopPlaying().catch(() => {});
       }
@@ -482,10 +470,9 @@ function register(client: any): void {
       const guildId = player.guildId;
       const is247 = state.twentyFourSeven.isEnabled(guildId);
 
-      const { stopPositionSync } = require("../services/StateService");
+      
       stopPositionSync(guildId);
 
-      LyricsSyncManager.stop(guildId);
       const prevLyrics = lyricsMessages.get(guildId);
       if (prevLyrics && clientRef) {
         const ch = clientRef.channels.cache.get(prevLyrics.channelId);
@@ -500,13 +487,16 @@ function register(client: any): void {
       if (!is247) {
         state.voiceChannels.delete(guildId);
         await destroyEngine(guildId).catch(() => {});
+        
+        deletePlayerData(guildId);
       }
 
+      state.position.delete(guildId);
       state.nowPlaying.delete(guildId);
       state.queues.clear(guildId);
       state.loop.delete(guildId);
       lavalink.clearTrackCache(guildId);
-      const { default: RecommendationEngine } = require("./RecommendationEngine");
+      
       new RecommendationEngine().clearPlayed(guildId);
       const timer = disconnectTimers.get(guildId);
       if (timer) {
@@ -548,7 +538,7 @@ function register(client: any): void {
             });
             await newPlayer.connect();
           }
-        } catch {}
+        } catch { Logger.warn(`[playerDisconnect] Reconnect failed for ${guildId}`); }
       }
     } catch (err: any) {
       Logger.error(`[playerDisconnect] guild=${player.guildId} handler crashed: ${err?.message}`);

@@ -1,21 +1,26 @@
-import { cleanTitle } from "./TitleResolver";
+import Logger from "../../core/utils/Logger";
+import { cleanTitle, isCover } from "./TitleResolver";
 
 const BAD_KEYWORDS = [
   "remix", "cover", "live", "karaoke", "nightcore", "slowed", "sped up",
   "reverb", "bass boosted", "8d", "viral", "tiktok", "joget", "dj",
+  "versi", "tribute", "instrumental",
 ];
 
 const BAD_WORDS_RE = BAD_KEYWORDS.map((kw) => new RegExp("\\b" + kw.replace(/ /g, "\\s") + "\\b", "i"));
 
-function hasBadKeyword(title: string): boolean {
-  return BAD_WORDS_RE.some((re) => re.test(title));
+function hasBadKeyword(title: string, author?: string): boolean {
+  return BAD_WORDS_RE.some((re) => re.test(title)) || isCover(title, author);
 }
+
+const PREFERRED_SOURCES = new Set(["youtube", "ytmusic", "youtubemusic"]);
 
 function scoreTrack(track: any): number {
   const title = (track.info?.title || "").toLowerCase();
   const author = (track.info?.author || "").toLowerCase();
   let score = 0;
 
+  if (PREFERRED_SOURCES.has(track.info?.sourceName)) score += 10;
   if (title.includes("lyrics") || title.includes("lyric")) score += 4;
   if (title.includes("official") || author.includes("vevo")) score += 2;
 
@@ -35,8 +40,8 @@ export function pickBestTrack(tracks: any[]): any {
   const firstTitle = (first.info?.title || "").toLowerCase();
 
   let best = first;
-  if (hasBadKeyword(firstTitle)) {
-    const filtered = tracks.filter((t) => !hasBadKeyword((t.info?.title || "").toLowerCase()));
+  if (hasBadKeyword(firstTitle, first.info?.author)) {
+    const filtered = tracks.filter((t) => !hasBadKeyword((t.info?.title || "").toLowerCase(), t.info?.author));
     if (filtered.length) {
       const scored = filtered.map((t: any) => ({ track: t, score: scoreTrack(t) }));
       scored.sort((a, b) => b.score - a.score);
@@ -52,8 +57,11 @@ export function pickBestTrack(tracks: any[]): any {
 
 export async function searchWithRetry(player: any, query: any, user: any, _retries = 2): Promise<any> {
   try {
-    return await player.search(query, user);
+    const result = await player.search(query, user);
+    return result;
   } catch (err: any) {
+    const qStr = typeof query === "object" ? (query.query || query.q || JSON.stringify(query)) : String(query);
+    Logger.warn(`[SearchTimeout] retriesLeft=${_retries} err="${err.message?.slice(0,60) || err}" query="${qStr.slice(0,60)}" node=${player.node?.id || "?"}`);
     if (_retries > 0) return searchWithRetry(player, query, user, _retries - 1);
     throw err;
   }

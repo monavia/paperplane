@@ -17,7 +17,7 @@ export default {
   async execute(interaction: import("discord.js").ChatInputCommandInteraction) {
     const volume = interaction.options.getInteger("level");
     const vc = checkSameVoice(interaction);
-    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], ephemeral: true });
+    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], flags: 64 });
 
     MusicService.setVolume(interaction.guildId!, volume!, interaction.user.id, (interaction.member as any)?.displayName || interaction.user.username);
     updateVolume(interaction.guildId!, volume!);

@@ -2,6 +2,7 @@ import "reflect-metadata";
 import "dotenv/config";
 
 // Suppress lavalink-client internal console.error dumps
+// Verified: lavalink-client v2.10 debugOptions only has {noAudio, playerDestroy} — no console.error suppress.
 const _origConsoleError = console.error;
 console.error = (...args: any[]) => {
   const first = args[0];
@@ -16,6 +17,9 @@ import Logger from "./bot/core/utils/Logger";
 import { connect as connectDB } from "./bot/database/connection";
 import { load as loadEvents } from "./bot/core/bootstrap/loadEvents";
 import { loadSlash, loadPrefix, getSlashData } from "./bot/core/bootstrap/loadCommands";
+import { ShutdownManager } from "./bot/core/utils/ShutdownManager";
+import { destroyPlayer } from "./bot/music/engine/PlayerManager";
+import { get as getLavalink } from "./bot/music/engine/lavalink";
 import { registerShutdownTasks } from "./bot/core/bootstrap/registerShutdownTasks";
 import { startApiServer } from "./bot/api/apiServer";
 
@@ -71,16 +75,13 @@ async function main() {
     }
 
     // Register shutdown tasks
-    const ShutdownManager = require("./bot/core/utils/ShutdownManager").ShutdownManager;
     const shutdownManager = new ShutdownManager(30000);
     registerShutdownTasks({
       shutdownManager,
       destroyPlayer: async (id: string) => {
-        const { destroyPlayer } = require("./bot/music/engine/PlayerManager");
         if (id === "all") {
-          const lavalink = require("./bot/music/engine/lavalink").get();
-          if (lavalink?.players) {
-            for (const [gid] of lavalink.players) {
+          if (getLavalink()?.players) {
+            for (const [gid] of getLavalink()!.players) {
               await destroyPlayer(gid);
             }
           }

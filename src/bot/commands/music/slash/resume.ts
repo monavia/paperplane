@@ -11,13 +11,13 @@ export default {
 
   async execute(interaction: import("discord.js").ChatInputCommandInteraction) {
     const vc = checkSameVoice(interaction);
-    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], ephemeral: true });
+    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], flags: 64 });
 
     const player = MusicService.getEngine(interaction.guildId!).player;
-    if (!player) return interaction.reply({ embeds: [ErrorEmbed.build("No track is currently playing.")], ephemeral: true });
+    if (!player) return interaction.reply({ embeds: [ErrorEmbed.build("No track is currently playing.")], flags: 64 });
 
     const resumed = await MusicService.resume(interaction.guildId!, interaction.user.id, (interaction.member as any)?.displayName || interaction.user.username);
-    if (!resumed) return interaction.reply({ embeds: [ErrorEmbed.build("Failed to resume playback.")], ephemeral: true });
+    if (!resumed) return interaction.reply({ embeds: [ErrorEmbed.build("Failed to resume playback.")], flags: 64 });
 
     await interaction.reply({ embeds: [SuccessEmbed.build("Playback resumed.")] });
   },

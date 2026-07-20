@@ -6,6 +6,8 @@ import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
 import { checkSameVoice } from "@/bot/core/utils/VoiceCheck";
 import * as LoadingEmbed from "@/bot/ui/embeds/LoadingEmbed";
 import Logger from "@/bot/core/utils/Logger";
+import { get } from "../../../music/engine/lavalink";
+import { withQueueLock } from "../../../core/state/QueueLock";
 
 export default {
   name: "search",
@@ -24,7 +26,6 @@ export default {
     try {
       let player = getPlayer(message.guildId!);
       if (!player) {
-        const { get } = require("../../../music/engine/lavalink");
         const node = get()?.nodeManager?.nodes?.values()?.next()?.value as any;
         if (!node) return msg.edit({ embeds: [ErrorEmbed.build("Lavalink not connected.")] });
         player = node;
@@ -46,13 +47,12 @@ export default {
         await i.deferUpdate();
 
         const engine = MusicService.getEngine(message.guildId!);
-        const pl = await engine.join(voice.id, message.channelId);
+        const pl = await engine.join(voice.id, message.channelId, voice.rtcRegion ?? undefined);
         if (!pl) return i.editReply({ embeds: [ErrorEmbed.build("Failed to join voice channel.")], components: [] });
 
          MusicService.setTextChannelId(message.guildId!, message.channelId);
 
-         const { withQueueLock } = require("../../../core/state/QueueLock");
-         await withQueueLock(message.guildId!, async () => {
+          await withQueueLock(message.guildId!, async () => {
            const wasPlaying = pl.playing || pl.paused || engine.queue.getAll().length > 0 || !!pl?.queue?.current;
 
            for (const track of selected) {

@@ -6,6 +6,9 @@ import state from "../../core/state/StateManager";
 import { withQueueLock } from "../../core/state/QueueLock";
 import * as lavalink from "../engine/lavalink";
 import { isUsingPrisma } from "../../database/connection";
+import { getAutoplay, getLoop, getShuffle, get247, getLastFilter, getLastEqualizer } from "../../database/repositories/GuildRepository";
+import { setFilter, setEqualizer } from "../../music/services/MusicService";
+import { EmbedBuilder } from "discord.js";
 
 const restoredGuilds = new Set<string>();
 let restoreRetryTimer: NodeJS.Timeout | null = null;
@@ -13,6 +16,9 @@ let uncachedRetries = 0;
 
 export function isRestoredGuild(guildId: string): boolean {
   return restoredGuilds.has(guildId);
+}
+export function addRestoredGuild(guildId: string): void {
+  restoredGuilds.add(guildId);
 }
 export function clearRestoredGuild(guildId: string): void {
   restoredGuilds.delete(guildId);
@@ -83,9 +89,10 @@ export function startPositionSync(guildId: string): void {
       const engine = getEngine(guildId);
       const player = engine.player;
       if (!player?.playing) return;
-      await updatePlayerState(guildId, { position: player.position || 0, nodeId: player.node?.id || null, updatedAt: new Date() });
-    } catch {}
-  }, 5000);
+      const pos = Math.max(state.position.get(guildId) || 0, player.position || 0, player.lastPosition || 0);
+      await updatePlayerState(guildId, { position: pos, nodeId: player.node?.id || null, updatedAt: new Date() });
+    } catch { Logger.warn(`[StateRestore] positionSync failed for ${guildId}`); }
+  }, 1000);
   positionSyncTimers.set(guildId, timer);
 }
 
@@ -110,19 +117,37 @@ async function saveState(guildId: string) {
     const queue = engine.queue.getAll();
 
     const textChannelId = getTextChannelId(guildId);
+    const statePos = state.position.get(guildId) || 0;
+    const playerPos = player.position || 0;
+    const lastPos = player.lastPosition || 0;
+    const pos = Math.max(statePos, playerPos, lastPos);
 
+      Logger.info(`[StateSave] guild=${guildId} title="${(nowPlaying?.info?.title || "").slice(0,40)}" pos=${pos} statePos=${statePos} playerPos=${playerPos} lastPos=${lastPos} playing=${player.playing} region=${player.node?.options?.regions?.[0] || "?"}`);
       await upsertPlayerState(guildId, {
         voiceChannelId,
         textChannelId,
         queue: queue.map((t: any) => JSON.parse(JSON.stringify(t))),
         nowPlaying: nowPlaying ? JSON.parse(JSON.stringify(nowPlaying)) : null,
-        position: player.position || 0,
+        position: pos,
         nodeId: player.node?.id || null,
         updatedAt: new Date(),
       });
   } catch (err: any) {
     Logger.error(`Failed to save player state for ${guildId}:`, err.message);
   }
+}
+
+async function saveAllStates(): Promise<number> {
+  const manager = lavalink.get();
+  if (!manager?.players) return 0;
+  let saved = 0;
+  const guildIds = Array.from(manager.players.keys()) as string[];
+  for (const guildId of guildIds) {
+    stopPositionSync(guildId);
+    try { await saveState(guildId); saved++; }
+    catch (err: any) { Logger.error(`Failed to save state for guild ${guildId}:`, err.message); }
+  }
+  return saved;
 }
 
 async function deleteState(guildId: string) {
@@ -143,18 +168,6 @@ function isLavalinkReady(): boolean {
   } catch { return false; }
 }
 
-async function saveAllStates(): Promise<number> {
-  const manager = lavalink.get();
-  if (!manager?.players) return 0;
-  let saved = 0;
-  const guildIds = Array.from(manager.players.keys()) as string[];
-  for (const guildId of guildIds) {
-    try { await saveState(guildId); saved++; }
-    catch (err: any) { Logger.error(`Failed to save state for guild ${guildId}:`, err.message); }
-  }
-  return saved;
-}
-
 async function restoreGuildState(client: any, saved: any): Promise<boolean> {
   if (restoredGuilds.has(saved.guildId)) return true;
 
@@ -167,13 +180,10 @@ async function restoreGuildState(client: any, saved: any): Promise<boolean> {
   if (saved.textChannelId) setTextChannelId(saved.guildId, saved.textChannelId);
 
   const engine = getEngine(saved.guildId);
-  const state = require("../../core/state/StateManager");
-  const { getAutoplay, getLoop, getShuffle, get247 } = require("../../database/repositories/GuildRepository");
   state.autoplay.set(saved.guildId, await getAutoplay(saved.guildId));
-  state.loop.set(saved.guildId, await getLoop(saved.guildId));
+  state.loop.set(saved.guildId, await getLoop(saved.guildId) as "off" | "track" | "playlist");
   state.shuffle.set(saved.guildId, await getShuffle(saved.guildId));
   state.twentyFourSeven.set(saved.guildId, await get247(saved.guildId), "");
-  const { getLastFilter, getLastEqualizer } = require("../../database/repositories/GuildRepository");
   state.filter.set(saved.guildId, await getLastFilter(saved.guildId));
   state.equalizer.set(saved.guildId, await getLastEqualizer(saved.guildId));
   // Populate nowPlaying BEFORE engine.join so nodeConnect recovery can find it if join fails
@@ -192,7 +202,6 @@ async function restoreGuildState(client: any, saved: any): Promise<boolean> {
   }
 
   // Ensure player is on a healthy node (failover support)
-  const lavalink = require("../engine/lavalink");
   const manager = lavalink.get();
   const allNodes = manager?.nodeManager?.nodes ? Array.from(manager.nodeManager.nodes.values()) : [];
   const healthyNodes = allNodes.filter((n: any) => n.connected);
@@ -209,7 +218,7 @@ async function restoreGuildState(client: any, saved: any): Promise<boolean> {
       Logger.warn(`[StateRestore] changeNode failed — recreating player on ${target.id}`);
       try {
         await player.destroy().catch(() => {});
-        player = manager.createPlayer({
+        player = manager!.createPlayer({
           guildId: saved.guildId,
           voiceChannelId: saved.voiceChannelId,
           textChannelId: saved.textChannelId || "",
@@ -217,7 +226,7 @@ async function restoreGuildState(client: any, saved: any): Promise<boolean> {
           selfMute: false,
           node: target.id,
         });
-        await player.connect();
+        await lavalink.connectWithRetry(player, saved.guildId);
         engine.player = player;
         Logger.info(`[StateRestore] Recreated player ${saved.guildId} on ${target.id}`);
       } catch {
@@ -233,7 +242,7 @@ async function restoreGuildState(client: any, saved: any): Promise<boolean> {
   try {
     const remote = await node.fetchPlayer(saved.guildId);
     resumedTrackActive = remote?.track?.encoded != null;
-  } catch {}
+  } catch { Logger.warn(`[StateRestore] fetchPlayer failed for ${saved.guildId}`); }
 
   if (resumedTrackActive) {
     if (saved.queue?.length) {
@@ -242,6 +251,27 @@ async function restoreGuildState(client: any, saved: any): Promise<boolean> {
     Logger.info(`Resume active for ${saved.guildId}, restored ${engine.queue.size()} queued tracks`);
     state.nowPlaying.set(saved.guildId, player.queue.current || saved.nowPlaying);
     restoredGuilds.add(saved.guildId);
+    // Check if humans in VC, leave after 1m if autoplay ON and nobody
+    if (state.autoplay.get(saved.guildId)) {
+      const vc = guild.channels.cache.get(saved.voiceChannelId);
+      const hasHumans = vc?.members?.some((m: any) => !m.user?.bot);
+      if (!hasHumans) {
+        Logger.info(`[StateRestore] No humans in VC (resumed) for ${saved.guildId} — will leave in 1m`);
+          setTimeout(async () => {
+            const stillHasHumans = guild.channels.cache.get(saved.voiceChannelId)?.members?.some((m: any) => !m.user?.bot);
+            if (!stillHasHumans) {
+              const tcId = getTextChannelId(saved.guildId);
+              if (tcId) {
+                const ch = client.channels.cache.get(tcId);
+                if (ch) {
+                  ch.send({ embeds: [new EmbedBuilder().setDescription("No one is in the voice channel. Leaving...").setColor(0xFF0000)] }).catch(() => {});
+                }
+              }
+              destroyEngine(saved.guildId);
+            }
+          }, 60000);
+      }
+    }
     return true;
   }
 
@@ -258,14 +288,21 @@ async function restoreGuildState(client: any, saved: any): Promise<boolean> {
       if (!first) return;
       state.nowPlaying.set(saved.guildId, first);
       const pos = (saved.position || 0) > 0 && first?.info?.duration ? Math.min(saved.position, first.info.duration - 1000) : 0;
+      const region = player.node?.options?.regions?.[0] || saved.nodeId || "?";
+      Logger.info(`[StateRestore] guild=${saved.guildId} title="${(first?.info?.title || "").slice(0,40)}" restorePos=${saved.position} cappedPos=${pos} duration=${first?.info?.duration || 0} encoded=${!!first?.encoded} region=${region}`);
       restoredGuilds.add(saved.guildId);
-      await player.play({ track: first, clientTrack: first, position: pos });
+      try {
+        await player.play({ track: first, clientTrack: first, position: pos });
+        Logger.info(`[StateRestore] Play OK guild=${saved.guildId} pos=${pos} region=${region}`);
+      } catch (err: any) {
+        Logger.error(`[StateRestore] Play FAILED guild=${saved.guildId} pos=${pos} err="${err.message}"`);
+        throw err;
+      }
     });
     if (first) {
       // Apply saved filter/equalizer
       const savedFilter = state.filter.get(saved.guildId);
       if (savedFilter && savedFilter !== "none") {
-        const { setFilter } = require("../../music/services/MusicService");
         setFilter(saved.guildId, savedFilter, "system", "System").catch(() => {});
       }
       const savedBands = state.equalizer.get(saved.guildId);
@@ -273,8 +310,21 @@ async function restoreGuildState(client: any, saved: any): Promise<boolean> {
         const presetName = typeof savedBands === "string" ? savedBands : null;
         const bands = presetName ? null : savedBands;
         if (bands) {
-          const { setEqualizer } = require("../../music/services/MusicService");
           setEqualizer(saved.guildId, bands, "system", "System").catch(() => {});
+        }
+      }
+      // Autoplay restore: check if humans in VC, leave after 1m if nobody
+      if (state.autoplay.get(saved.guildId)) {
+        const vc = guild.channels.cache.get(saved.voiceChannelId);
+        const hasHumans = vc?.members?.some((m: any) => !m.user?.bot);
+        if (!hasHumans) {
+          Logger.info(`[StateRestore] No humans in VC for ${saved.guildId} — will leave in 1m`);
+          setTimeout(async () => {
+            const stillHasHumans = guild.channels.cache.get(saved.voiceChannelId)?.members?.some((m: any) => !m.user?.bot);
+            if (!stillHasHumans) {
+              destroyEngine(saved.guildId);
+            }
+          }, 60000);
         }
       }
       Logger.info(`Restored playback for ${saved.guildId}`);
@@ -307,7 +357,6 @@ async function restoreAllStates(client: any, retryCount = 0) {
       } else {
         Logger.error(`[StateRestore] Lavalink still not ready after ${MAX_RETRIES} retries, giving up`);
         // Populate state.nowPlaying from saved states so nodeConnect recovery can find them
-        const state = require("../../core/state/StateManager");
         for (const saved of states) {
           if (saved.nowPlaying) state.nowPlaying.set(saved.guildId, saved.nowPlaying);
         }

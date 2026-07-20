@@ -13,7 +13,7 @@ export default {
 
   async execute(interaction: any) {
     const vc = checkSameVoice(interaction);
-    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], ephemeral: true });
+    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], flags: 64 });
 
     const from = interaction.options.getInteger("from", true);
     const to = interaction.options.getInteger("to", true);
@@ -22,14 +22,14 @@ export default {
     const queue = MusicService.getQueue(guildId);
 
     if (from < 0 || from >= queue.length || to < 0 || to >= queue.length) {
-      return interaction.reply({ embeds: [ErrorEmbed.build(`Invalid index. Valid range: 0-${queue.length - 1}`)], ephemeral: true });
+      return interaction.reply({ embeds: [ErrorEmbed.build(`Invalid index. Valid range: 0-${queue.length - 1}`)], flags: 64 });
     }
     if (from === 0 || to === 0) {
-      return interaction.reply({ embeds: [ErrorEmbed.build("Cannot move the currently playing track.")], ephemeral: true });
+      return interaction.reply({ embeds: [ErrorEmbed.build("Cannot move the currently playing track.")], flags: 64 });
     }
 
     const success = MusicService.moveTrack(guildId, from, to);
-    if (!success) return interaction.reply({ embeds: [ErrorEmbed.build("Failed to move track.")], ephemeral: true });
+    if (!success) return interaction.reply({ embeds: [ErrorEmbed.build("Failed to move track.")], flags: 64 });
 
     interaction.reply({ embeds: [SuccessEmbed.build(`Moved track from position ${from} to ${to}`)] });
   },

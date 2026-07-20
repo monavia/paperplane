@@ -1,6 +1,7 @@
 import { EmbedBuilder } from "discord.js";
 import Colors from "../../core/constants/Colors";
 import Emojis from "../../core/constants/Emojis";
+import { cleanTitle } from "../../music/services/TitleResolver";
 
 export function getSourceEmoji(source: string, spotifyUrl?: string | null): string {
   if (source === "spotify" || spotifyUrl) return Emojis.SPOTIFY;
@@ -16,19 +17,21 @@ function toHttpUrl(uri: string): string {
 }
 
 export function build(track: any, _player: any): EmbedBuilder {
-  const title = track.info?.title || "Unknown";
-  const author = track.info?.author || "Unknown";
+  const cleaned = cleanTitle(track.info?.title || "", track.info?.author || "");
+  const title = cleaned.title || track.info?.title || "Unknown";
+  const author = cleaned.author || track.info?.author || "";
   const url = toHttpUrl(track.info?.spotifyUrl || track.info?.originalUrl || track.info?.uri || "");
   const source = track.info?.source || "youtube";
   const emoji = getSourceEmoji(source, track.info?.spotifyUrl);
-  const display = author !== "Unknown" ? `${author} - ${title}` : title;
+  const display = author ? `${author} - ${title}` : title;
   return new EmbedBuilder()
     .setDescription(`${emoji} Started playing [${display}](${url})`)
     .setColor(Colors.NOWPLAYING);
 }
 
 export function addedToQueue(track: any, position: number): EmbedBuilder {
-  const title = track.info?.title || "Unknown";
+  const cleaned = cleanTitle(track.info?.title || "", track.info?.author || "");
+  const title = cleaned.title || track.info?.title || "Unknown";
   const url = toHttpUrl(track.info?.spotifyUrl || track.info?.originalUrl || track.info?.uri || "");
   const source = track.info?.source || "youtube";
   const emoji = getSourceEmoji(source, track.info?.spotifyUrl);

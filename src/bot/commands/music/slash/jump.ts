@@ -12,20 +12,20 @@ export default {
 
   async execute(interaction: any) {
     const vc = checkSameVoice(interaction);
-    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], ephemeral: true });
+    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], flags: 64 });
 
     const index = interaction.options.getInteger("index", true);
     const guildId = interaction.guildId!;
     const queue = MusicService.getQueue(guildId);
 
     if (index < 0 || index >= queue.length) {
-      return interaction.reply({ embeds: [ErrorEmbed.build(`Invalid index. Valid range: 0-${queue.length - 1}`)], ephemeral: true });
+      return interaction.reply({ embeds: [ErrorEmbed.build(`Invalid index. Valid range: 0-${queue.length - 1}`)], flags: 64 });
     }
-    if (index === 0) return interaction.reply({ embeds: [ErrorEmbed.build("Already playing that track.")], ephemeral: true });
+    if (index === 0) return interaction.reply({ embeds: [ErrorEmbed.build("Already playing that track.")], flags: 64 });
 
     const track = queue[index];
     const success = await MusicService.jumpTo(guildId, index);
-    if (!success) return interaction.reply({ embeds: [ErrorEmbed.build("Failed to jump to track.")], ephemeral: true });
+    if (!success) return interaction.reply({ embeds: [ErrorEmbed.build("Failed to jump to track.")], flags: 64 });
 
     interaction.reply({ embeds: [SuccessEmbed.build(`Jumped to **${track?.info?.title || "?"}**`)] });
   },

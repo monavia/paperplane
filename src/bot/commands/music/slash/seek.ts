@@ -23,17 +23,17 @@ export default {
 
   async execute(interaction: import("discord.js").ChatInputCommandInteraction) {
     const vc = checkSameVoice(interaction);
-    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], ephemeral: true });
+    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], flags: 64 });
 
     const player = MusicService.getEngine(interaction.guildId!).player;
-    if (!player?.playing) return interaction.reply({ embeds: [ErrorEmbed.build("No track is currently playing.")], ephemeral: true });
+    if (!player?.playing) return interaction.reply({ embeds: [ErrorEmbed.build("No track is currently playing.")], flags: 64 });
 
     const input = interaction.options.getString("position", true);
     const ms = parseTime(input);
-    if (ms === null) return interaction.reply({ embeds: [ErrorEmbed.build("Invalid position. Use format: `1:30` or `90`.")], ephemeral: true });
+    if (ms === null) return interaction.reply({ embeds: [ErrorEmbed.build("Invalid position. Use format: `1:30` or `90`.")], flags: 64 });
 
     const duration = player.queue.current?.info?.duration || 0;
-    if (ms > duration) return interaction.reply({ embeds: [ErrorEmbed.build("Position exceeds track duration.")], ephemeral: true });
+    if (ms > duration) return interaction.reply({ embeds: [ErrorEmbed.build("Position exceeds track duration.")], flags: 64 });
 
     player.seek(ms);
     const display = input.match(/^(\d+:)?\d+$/) ? input : `${Math.floor(ms / 60000)}:${Math.floor((ms % 60000) / 1000).toString().padStart(2, "0")}`;

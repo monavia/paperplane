@@ -1,4 +1,6 @@
 import Logger from "../../core/utils/Logger";
+import { destroyEngine } from "../services/PlayerService";
+import { failoverFromNode, connectWithRetry } from "./lavalink";
 
 const STUCK_TIMEOUT_MS = 15000;
 const CHECK_INTERVAL_MS = 30000;
@@ -34,7 +36,6 @@ async function checkPlayer(guildId: string, player: any, clientRef: any): Promis
   const guild = clientRef?.guilds?.cache?.get(guildId);
   if (!guild) {
     Logger.info(`[Watchdog] Guild ${guildId} not found, destroying player`);
-    const { destroyEngine } = require("../services/PlayerService");
     await destroyEngine(guildId).catch(() => {});
     stuckCounts.delete(guildId);
     reconnectAttempts.delete(guildId);
@@ -45,7 +46,6 @@ async function checkPlayer(guildId: string, player: any, clientRef: any): Promis
     const vc = guild.channels.cache.get(player.voiceChannelId);
     if (!vc || !vc.isVoiceBased()) {
       Logger.info(`[Watchdog] Voice channel ${player.voiceChannelId} gone for guild ${guildId}, destroying player`);
-      const { destroyEngine } = require("../services/PlayerService");
       await destroyEngine(guildId).catch(() => {});
       stuckCounts.delete(guildId);
       reconnectAttempts.delete(guildId);
@@ -53,13 +53,7 @@ async function checkPlayer(guildId: string, player: any, clientRef: any): Promis
     }
   }
 
-  // Internet glitch recovery — node disconnected
-  if (node && !node.connected) {
-    Logger.warn(`[Watchdog] Node ${node.id} disconnected for guild ${guildId} — triggering failover`);
-    const { failoverFromNode } = require("./lavalink");
-    await failoverFromNode(node.id).catch(() => {});
-    return;
-  }
+  // Internet glitch recovery — skip, health check (15s) handles reconnect + failover
 
   // Voice disconnected — try reconnect with backoff (non-blocking)
   if (player.voiceChannelId && !player.connected) {
@@ -75,7 +69,6 @@ async function checkPlayer(guildId: string, player: any, clientRef: any): Promis
       Logger.error(`[Watchdog] Player ${guildId} failed to reconnect after ${MAX_RECONNECT_ATTEMPTS} attempts — destroying player`);
       reconnectAttempts.delete(guildId);
       stuckCounts.delete(guildId);
-      const { destroyEngine } = require("../services/PlayerService");
       await destroyEngine(guildId).catch(() => {});
       return;
     }
@@ -101,7 +94,7 @@ async function checkPlayer(guildId: string, player: any, clientRef: any): Promis
       if (!remote || !remote.track?.encoded) {
         Logger.warn(`[Watchdog] Player ${guildId} silent voice loss — reconnecting voice`);
         try {
-          await player.connect();
+          await connectWithRetry(player, guildId);
           await new Promise(r => setTimeout(r, 500));
           if (current?.encoded) await player.play({ track: current, clientTrack: current, position: player.position || 0 });
           else { await player.stopPlaying().catch(() => {}); }
@@ -110,7 +103,7 @@ async function checkPlayer(guildId: string, player: any, clientRef: any): Promis
         }
         return;
       }
-    } catch {}
+    } catch { Logger.warn(`[Watchdog] fetchPlayer failed for ${guildId}`); }
   }
 
   // Stuck detection
@@ -125,7 +118,6 @@ async function checkPlayer(guildId: string, player: any, clientRef: any): Promis
 
       if (count >= MAX_STUCK && node?.id) {
         Logger.warn(`[Watchdog] Player ${guildId} stuck ${count}x — triggering failover from ${node.id}`);
-        const { failoverFromNode } = require("./lavalink");
         await failoverFromNode(node.id).catch(() => {});
         stuckCounts.delete(guildId);
       } else {

@@ -9,11 +9,11 @@ export default {
   data: new SlashCommandBuilder().setName("stop").setDescription("Stop playback"),
   async execute(interaction: any) {
     const vc = checkSameVoice(interaction);
-    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], ephemeral: true });
+    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], flags: 64 });
     const engine = MusicService.getEngine(interaction.guildId!);
     const player = engine.player;
     if (!player || (!player.playing && !player.paused && !engine.queue.size())) {
-      return interaction.reply({ embeds: [ErrorEmbed.build("Nothing to stop.")], ephemeral: true });
+      return interaction.reply({ embeds: [ErrorEmbed.build("Nothing to stop.")], flags: 64 });
     }
     await interaction.deferReply();
     try {

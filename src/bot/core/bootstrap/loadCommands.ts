@@ -12,13 +12,13 @@ function loadDir(client: any, dir: string, type: "slash" | "prefix"): number {
     for (const file of files) {
       if (file.startsWith(".")) continue;
       if (type === "slash") {
-        const cmd = require(join(dir, file)).default;
+        const cmd = require(join(dir, file)).default; // dynamic path — must stay require()
         if (cmd?.data?.name && cmd?.execute) {
           slashCommands.set(cmd.data.name, cmd);
           client.slashCommands?.set?.(cmd.data.name, cmd);
         }
       } else {
-        const cmd = require(join(dir, file)).default || require(join(dir, file));
+        const cmd = require(join(dir, file)).default || require(join(dir, file)); // dynamic path — must stay require()
         if (cmd?.name && cmd?.execute) {
           prefixCommands.set(cmd.name, cmd);
           if (!client.prefixCommands) client.prefixCommands = new Collection();

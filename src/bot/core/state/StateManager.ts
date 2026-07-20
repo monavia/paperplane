@@ -7,6 +7,7 @@ import ShuffleStore from "./ShuffleStore";
 import AutoplayStore from "./AutoplayStore";
 import FilterStore from "./FilterStore";
 import EqualizerStore from "./EqualizerStore";
+import PositionStore from "./PositionStore";
 
 class StateManager {
   queues: QueueStore;
@@ -18,6 +19,7 @@ class StateManager {
   autoplay: AutoplayStore;
   filter: FilterStore;
   equalizer: EqualizerStore;
+  position: PositionStore;
 
   constructor() {
     this.queues = new QueueStore();
@@ -29,6 +31,7 @@ class StateManager {
     this.autoplay = new AutoplayStore();
     this.filter = new FilterStore();
     this.equalizer = new EqualizerStore();
+    this.position = new PositionStore();
   }
 }
 

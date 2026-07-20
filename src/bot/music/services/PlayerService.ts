@@ -1,14 +1,21 @@
+import Logger from "../../core/utils/Logger";
 import state from "../../core/state/StateManager";
 import QueueEngine from "../engine/QueueEngine";
 import { PlaybackEngine } from "../engine/PlaybackEngine";
 import { deleteTextChannelId } from "./TextChannelStore";
+import { saveState, deleteState, stopPositionSync } from "./StateService";
+import { get, connectWithRetry } from "../engine/lavalink";
+import { deletePlayerData } from "../services/PersistentPlayerStore";
+import { setAutoplay } from "../../database/repositories/GuildRepository";
+import { withQueueLock } from "../../core/state/QueueLock";
+import ActivityService from "../../services/ActivityService";
 
 interface Engine {
   guildId: string;
   player: any;
   playback: PlaybackEngine;
   queue: QueueEngine;
-  join: (voiceChannelId: string, textChannelId: string | null) => Promise<any>;
+  join: (voiceChannelId: string, textChannelId: string | null, vcRegion?: string) => Promise<any>;
   getCurrentTrack: () => any;
 }
 
@@ -33,8 +40,8 @@ export function getEngine(guildId: string): Engine {
       player: null as any,
       playback: pb,
       queue: q,
-      join: async (voiceChannelId: string, textChannelId: string | null) => {
-        const { get, getLeastLoadedNode } = require("../engine/lavalink");
+      join: async (voiceChannelId: string, textChannelId: string | null, vcRegion?: string) => {
+        
         const lavalink = get();
         if (!lavalink) throw new Error("Lavalink not connected");
         const existing = lavalink.players.get(guildId);
@@ -42,17 +49,17 @@ export function getEngine(guildId: string): Engine {
           e!.player = existing;
           return existing;
         }
-        const node = getLeastLoadedNode();
         const player = lavalink.createPlayer({
           guildId,
           voiceChannelId,
           textChannelId: textChannelId || "",
           selfDeaf: true,
           selfMute: false,
-          ...(node ? { node } : {}),
+          ...(vcRegion ? { vcRegion } : {}),
         });
-        await player.connect();
+        await connectWithRetry(player, guildId);
         e!.player = player;
+        Logger.info(`[VoiceJoin] guild=${guildId} vc=${voiceChannelId} vcRegion=${vcRegion || "?"} node=${player.node?.id || "?"} nodeRegion=${player.node?.options?.regions?.[0] || "?"}`);
         return player;
       },
       getCurrentTrack: () => {
@@ -67,7 +74,7 @@ export function getEngine(guildId: string): Engine {
 }
 
 export async function destroyEngine(guildId: string): Promise<void> {
-  const { stopPositionSync, deleteState } = require("./StateService");
+  
   stopPositionSync(guildId);
   await deleteState(guildId).catch(() => {});
   const e = engines.get(guildId);
@@ -76,9 +83,18 @@ export async function destroyEngine(guildId: string): Promise<void> {
   }
   engines.delete(guildId);
   deleteTextChannelId(guildId);
+  
+  deletePlayerData(guildId);
+  state.position.delete(guildId);
   state.nowPlaying.delete(guildId);
   state.queues.clear(guildId);
   state.loop.delete(guildId);
+  if (!state.twentyFourSeven.isEnabled(guildId)) {
+    state.autoplay.delete(guildId);
+    state.shuffle.delete(guildId);
+    state.filter.delete(guildId);
+    state.equalizer.delete(guildId);
+  }
 }
 
 // Stub exports so MusicService re-export doesn't fail
@@ -87,11 +103,11 @@ export async function skip(guildId: string, userId: string, userName: string): P
   const engine = getEngine(guildId);
   const player = engine.player;
   const nextTrack = await engine.playback.skip();
-  const { saveState, deleteState } = require("./StateService");
-  const { stopPositionSync } = require("./StateService");
-  const state = require("../../core/state/StateManager");
+  
+  
+  
   if (nextTrack) {
-    const ActivityService = require("../../services/ActivityService").default;
+    
     await ActivityService.log({ guildId, userId, userName, action: "skip", detail: `Skipped to ${nextTrack.info?.title || "next track"}`, songTitle: nextTrack?.info?.title, artist: nextTrack?.info?.artist });
     await saveState(guildId);
   } else if (!state.autoplay.get(guildId)) {
@@ -112,17 +128,17 @@ export async function stop(guildId: string, userId: string, userName: string): P
   const engine = getEngine(guildId);
   const player = engine.player;
   await engine.playback.stop();
-  const { deleteState } = require("./StateService");
+
   await deleteState(guildId).catch(() => {});
-  const { stopPositionSync } = require("./StateService");
+  
   stopPositionSync(guildId);
-  const state = require("../../core/state/StateManager");
+  
   if (state.twentyFourSeven.isEnabled(guildId)) {
     // 247 ON: stop playback but stay in VC, keep filter/equalizer
   } else {
     // Reset autoplay on manual stop (only when 247 OFF)
     state.autoplay.set(guildId, false);
-    const { setAutoplay } = require("../../database/repositories/GuildRepository");
+    
     setAutoplay(guildId, false).catch(() => {});
   }
   // Disconnect from voice channel (skip if 247 ON)
@@ -130,16 +146,16 @@ export async function stop(guildId: string, userId: string, userName: string): P
     try { player.disconnect(); } catch {}
     try { player.destroy(); } catch {}
   }
-  const ActivityService = require("../../services/ActivityService").default;
+  
   await ActivityService.log({ guildId, userId, userName, action: "stop", detail: "Stopped playback" });
 }
 export function seek(guildId: string, position: number, userId: string, userName: string): boolean {
   try {
-    const { get } = require("../engine/lavalink");
+    
     const player = get()?.players?.get(guildId);
     if (!player) return false;
     player.seek(position);
-    const ActivityService = require("../../services/ActivityService").default;
+    
     ActivityService.log({ guildId, userId, userName, action: "seek", detail: `Seeked to ${position}ms` }).catch(() => {});
     return true;
   } catch { return false; }
@@ -157,7 +173,7 @@ export function setVolume(guildId: string, volume: number, _userId: string, _use
   return engine.playback.setVolume(volume);
 }
 export async function resolveAndQueueTracks(guildId: string, tracks: any[], user: any): Promise<void> {
-  const { withQueueLock } = require("../../core/state/QueueLock");
+  
   const engine = getEngine(guildId);
   await withQueueLock(guildId, async () => {
     engine.queue.addMultiple(tracks);
@@ -167,7 +183,7 @@ export async function resolveAndQueueTracks(guildId: string, tracks: any[], user
         state.nowPlaying.set(guildId, first);
         await engine.player?.play({ track: first, clientTrack: first });
 
-        const { saveState } = require("./StateService");
+        
         await saveState(guildId);
       }
     }
@@ -223,7 +239,7 @@ export function getFilterState(guildId: string): any {
 }
 export async function playSoundboard(_guildId: string, _url: string, _userId: string, _userName: string): Promise<boolean> { return false; }
 export async function search(guildId: string, query: string, user: any): Promise<any> {
-  const { get } = require("../engine/lavalink");
+  
   const player = get()?.players?.get(guildId);
   if (!player) return { tracks: [] };
   return player.search({ query }, user);

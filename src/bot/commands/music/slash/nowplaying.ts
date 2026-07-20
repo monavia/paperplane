@@ -8,7 +8,7 @@ export default {
   data: new SlashCommandBuilder().setName("nowplaying").setDescription("Show current track"),
   async execute(interaction: any) {
     const tracks = getQueue(interaction.guildId!);
-    if (!tracks?.length) return interaction.reply({ embeds: [ErrorEmbed.build("Nothing is playing.")], ephemeral: true });
+    if (!tracks?.length) return interaction.reply({ embeds: [ErrorEmbed.build("Nothing is playing.")], flags: 64 });
     const track = tracks[0];
     const info = track.info || {};
     const thumb = info.artworkUrl || (info.identifier?.length === 11 ? `https://img.youtube.com/vi/${info.identifier}/maxresdefault.jpg` : null);

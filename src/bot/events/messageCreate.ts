@@ -5,10 +5,18 @@ import { checkPrompt } from "../ai/services/PromptFilter";
 import Logger from "../core/utils/Logger";
 import Colors from "../core/constants/Colors";
 import * as ErrorEmbed from "../ui/embeds/ErrorEmbed";
-import { getPrefix } from "../database/repositories/GuildRepository";
+import { getPrefix, setPrefix } from "../database/repositories/GuildRepository";
 import * as MusicService from "../music/services/MusicService";
 import { getQueue } from "../music/services/QueueService";
 import { isLavalinkReady } from "../music/services/MusicService";
+import state from "../core/state/StateManager";
+import { get } from "../music/engine/lavalink";
+import { setTextChannelId } from "../music/services/TextChannelStore";
+import { withQueueLock } from "../core/state/QueueLock";
+import { markTrackStartSuppressed } from "../music/engine/musicEvents";
+import { saveState } from "../music/services/StateService";
+import * as NowPlayingEmbed from "../ui/embeds/NowPlayingEmbed";
+import { build as buildQueueEmbed } from "../ui/embeds/QueueEmbed";
 
 export function start(client: any): void {
   client.on("messageCreate", async (message: any) => {
@@ -29,7 +37,7 @@ export function start(client: any): void {
 
       const musicCommands = ["play", "skip", "stop", "pause", "resume", "queue", "nowplaying", "volume", "search", "autoplay", "loop", "shuffle", "clear", "remove", "move", "swap", "jump", "seek", "filter", "equalizer", "lyrics", "volume"];
       if (musicCommands.includes(commandName) && !isLavalinkReady()) {
-        return message.channel.send({ content: "🎵 Music service is currently unavailable. Please try again in a few minutes." });
+        return message.channel.send({ embeds: [ErrorEmbed.build("Music service is currently unavailable. Please try again in a few minutes.")] });
       }
 
       const cmd = client.prefixCommands?.get(commandName);
@@ -70,26 +78,20 @@ export function start(client: any): void {
         const guildId = message.guildId;
         const voice = message.member?.voice?.channel;
         const name = message.member?.displayName || message.author.username;
-        const state = require("../core/state/StateManager");
 
         if (interpreted.type === "play" || interpreted.type === "playlist") {
           if (!voice) return message.channel.send({ embeds: [ErrorEmbed.build("You must be in a voice channel.")] });
-          const { get } = require("../music/engine/lavalink");
           const lavalink = get();
           if (!lavalink) return message.channel.send({ embeds: [ErrorEmbed.build("Music system not ready.")] });
           let player = lavalink.players.get(guildId);
           if (!player) {
-            player = lavalink.createPlayer({ guildId, voiceChannelId: voice.id, textChannelId: message.channelId, selfDeaf: true, selfMute: false });
+            player = lavalink.createPlayer({ guildId, voiceChannelId: voice.id, textChannelId: message.channelId, selfDeaf: true, selfMute: false, vcRegion: voice.rtcRegion });
             await player.connect();
           }
           MusicService.getEngine(guildId).player = player;
-          const { setTextChannelId } = require("../music/services/TextChannelStore");
           setTextChannelId(guildId, message.channelId);
 
           const queries = interpreted.type === "playlist" ? interpreted.songs : [interpreted.query];
-          const { withQueueLock } = require("../core/state/QueueLock");
-          const { markTrackStartSuppressed } = require("../music/engine/musicEvents");
-
           for (let i = 0; i < queries.length; i++) {
             const q = queries[i];
             const result = await player.search({ query: `ytmsearch:${q}` }, message.author);
@@ -100,13 +102,13 @@ export function start(client: any): void {
                 state.nowPlaying.set(guildId, track);
                 markTrackStartSuppressed(guildId);
                 await player.play({ track, clientTrack: track });
-                const { saveState } = require("../music/services/StateService");
                 await saveState(guildId);
               });
             } else {
               await withQueueLock(guildId, async () => {
                 const q2 = state.queues.get(guildId) || [];
                 state.queues.set(guildId, [...q2, track]);
+                await saveState(guildId);
               });
             }
           }
@@ -119,7 +121,6 @@ export function start(client: any): void {
           case "skip": {
             const player = MusicService.getEngine(guildId).player;
             if (!player) return message.channel.send({ embeds: [ErrorEmbed.build("No track playing.")] });
-            const NowPlayingEmbed = require("../ui/embeds/NowPlayingEmbed");
             const nextTrack = await MusicService.skip(guildId, message.author.id, name);
             if (nextTrack) return message.channel.send({ embeds: [NowPlayingEmbed.build(nextTrack, null)] });
             return message.channel.send({ embeds: [new EmbedBuilder().setDescription("Queue empty.").setColor(Colors.INFO)] });
@@ -145,15 +146,13 @@ export function start(client: any): void {
           case "queue": {
             const tracks = getQueue(guildId);
             if (!tracks?.length) return message.channel.send({ embeds: [new EmbedBuilder().setDescription("Queue is empty.").setColor(Colors.INFO)] });
-            const { build: buildQueueEmbed } = require("../ui/embeds/QueueEmbed");
             const { embed } = buildQueueEmbed(tracks, 1);
             return message.channel.send({ embeds: [embed] });
           }
           case "nowplaying": {
             const nowPlaying = state.nowPlaying.get(guildId);
             if (!nowPlaying) return message.channel.send({ embeds: [new EmbedBuilder().setDescription("Nothing is playing right now.").setColor(Colors.INFO)] });
-            const { build: buildNP } = require("../ui/embeds/NowPlayingEmbed");
-            return message.channel.send({ embeds: [buildNP(nowPlaying, null)] });
+            return message.channel.send({ embeds: [NowPlayingEmbed.build(nowPlaying, null)] });
           }
           case "volume": {
             const player = MusicService.getEngine(guildId).player;
@@ -189,7 +188,6 @@ export function start(client: any): void {
           return message.channel.send({ embeds: [ErrorEmbed.build("Changing prefix requires `Manage Server` permission.")] });
         }
         const newP = prefixExec[1].substring(0, 3);
-        const { setPrefix } = require("../database/repositories/GuildRepository");
         await setPrefix(message.guildId, newP);
         return message.channel.send({ embeds: [new EmbedBuilder().setDescription(`Prefix changed to \`${newP}\``).setColor(Colors.INFO)] });
       }

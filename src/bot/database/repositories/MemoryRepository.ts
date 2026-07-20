@@ -13,7 +13,7 @@ async function getMemories(userId: string, limit = 50): Promise<string[]> {
   if (isUsingPrisma()) {
     const p = await getPrisma();
     const docs = await p.memory.findMany({ where: { userId }, orderBy: { timestamp: "desc" }, take: limit });
-    return docs.map((d: any) => d.entry).filter(Boolean);
+    return docs.map((d: any) => d.summary).filter(Boolean);
   }
   const docs = await Memory.find({ userId }).sort({ createdAt: -1 }).limit(limit).lean();
   return docs.map((d: any) => d.summary);
@@ -27,7 +27,7 @@ async function addMemory(userId: string, summary: string): Promise<void> {
       const oldest = await p.memory.findFirst({ where: { userId }, orderBy: { timestamp: "asc" } });
       if (oldest) await p.memory.delete({ where: { id: oldest.id } });
     }
-    await p.memory.create({ data: { userId, entry: summary } });
+    await p.memory.create({ data: { userId, summary } });
     return;
   }
   const count = await Memory.countDocuments({ userId });

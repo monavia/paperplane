@@ -44,7 +44,7 @@ model Conversation {
 model Memory {
   id        String   @id @default(cuid())
   userId    String
-  entry     String?
+  summary   String?
   timestamp DateTime @default(now())
 
   @@index([userId])

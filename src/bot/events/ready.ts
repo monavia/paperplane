@@ -2,6 +2,9 @@ import { ActivityType } from "discord.js";
 import Logger from "../core/utils/Logger";
 import { init as initLavalink, get as getLavalink } from "../music/engine/lavalink";
 import { register } from "../music/engine/musicEvents";
+import { startWatchdog } from "../music/engine/PlayerWatchdog";
+import { restoreAllStates } from "../music/services/StateService";
+import { cleanupOldEntries } from "../music/services/HistoryService";
 
 export function start(client: any): void {
   client.once("clientReady", async () => {
@@ -26,10 +29,8 @@ export function start(client: any): void {
       const ready = await initLavalink(client);
       register(client);
       if (ready) {
-        const { startWatchdog } = require("../music/engine/PlayerWatchdog");
         startWatchdog(getLavalink(), client);
 
-        const { restoreAllStates } = require("../music/services/StateService");
         restoreAllStates(client).catch((e: any) => Logger.error("restoreAllStates failed:", e));
       }
     } catch (err) {
@@ -37,7 +38,6 @@ export function start(client: any): void {
     }
 
     // Periodic history cleanup
-    const { cleanupOldEntries } = require("../music/services/HistoryService");
     cleanupOldEntries().catch(() => {});
     const historyCleanupTimer = setInterval(() => cleanupOldEntries().catch(() => {}), 86400000);
     historyCleanupTimer.unref();

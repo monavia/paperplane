@@ -20,6 +20,8 @@ const NOISE_PATTERNS = [
   /\[HD\]/gi,
   /\(4K\)/gi,
   /\[4K\]/gi,
+  /\(lirik\s*(lagu|musik)?\s*\)/gi,
+  /\(remaster(?:ed)?\s*(?:audio|version|edition|version)?\s*\d{0,4}\)/gi,
   /-\s*topic$/gi,
   /\(visualizer\)/gi,
   /\[visualizer\]/gi,
@@ -63,7 +65,36 @@ function stripNoise(title: string): string {
   for (const re of TRAILING_NOISE) {
     cleaned = cleaned.replace(re, "");
   }
+  cleaned = cleaned.replace(/\s*[-–—]\s*Topic\s*[-–—]\s*/gi, " - ");
   return cleaned.replace(/\s{2,}/g, " ").trim();
+}
+
+const COVER_PATTERNS = [
+  /\|\s*\w[\w\s]*\s*(cover|versi|version|tribute|tribut|imitation)\s*$/i,
+  /\|\s*\w[\w\s]*$/i,
+  /\bcover\s+(by|of|version|dari|oleh)\b/i,
+  /\(cover\s+(by|of|version|dari|oleh|tribute)\)/i,
+  /\((?:live\s+)?(cover|versi|version|tribute)\s*(?:by|of|dari|oleh)?\s*\w+\)/i,
+  /^cover\s+(by|of|dari|oleh)\s/i,
+  /\bversi\s+\w+\s+(cover|tribute)\b/i,
+  /\([^)]*\blive\b[^)]*\bcover\b[^)]*\)/i,
+  /\bcover\b/i,
+  /\binstrumental\b/i,
+];
+
+export function isCover(title: string, author?: string): boolean {
+  if (COVER_PATTERNS.some((re) => re.test(title))) return true;
+  if (author && /^via\s+@/i.test(author)) return true;
+  return false;
+}
+
+function parseInner(raw: string): { title: string; artist: string } | null {
+  const inner = raw.match(/^(.+?)\s*[-–—]\s*(.+)$/);
+  if (!inner) return null;
+  const l = inner[1].trim(), r = inner[2].trim();
+  if (l.length < 2 || r.length < 1) return null;
+  if (l.length < r.length) return { title: r, artist: l };
+  return { title: l, artist: r };
 }
 
 export function cleanTitle(title: string, author?: string): { title: string; author: string } {
@@ -72,21 +103,47 @@ export function cleanTitle(title: string, author?: string): { title: string; aut
 
   const dashMatch = cleaned.match(/^(.+?)\s*[-–—]\s*(.+)$/);
   if (dashMatch) {
-    const detectedAuthor = dashMatch[1].trim();
-    const detectedTitle = dashMatch[2].trim();
+    let detectedAuthor = dashMatch[1].trim();
+    let detectedTitle = stripNoise(dashMatch[2].trim());
+    const inner = parseInner(detectedTitle);
+    if (inner && inner.title.length >= 2) {
+      detectedTitle = inner.title;
+      detectedAuthor = inner.artist;
+    }
     if (detectedTitle.length >= 2 && detectedAuthor.length >= 1) {
-      return {
-        title: detectedTitle,
-        author: detectedAuthor,
-      };
+      return { title: detectedTitle, author: detectedAuthor };
     }
   }
 
-  const ytAuthor = (author || "").replace(/\s*-\s*Topic$/i, "").trim();
+  const ytAuthor = (author || "").replace(/\s*[-–—]\s*Topic$/i, "").trim();
   if (ytAuthor && cleaned.toLowerCase().startsWith(ytAuthor.toLowerCase())) {
     const extracted = cleaned.slice(ytAuthor.length).replace(/^\s*[-–—]\s*/, "").trim();
     if (extracted.length >= 2) {
       return { title: extracted, author: ytAuthor };
+    }
+  }
+
+  // If dash match found but author is a channel, try flipping: Title - Artist
+  if (dashMatch && ytAuthor && /channel|records?|official|topic|vevo|entertainment|production/i.test(ytAuthor)) {
+    const first = dashMatch[1].trim();
+    const second = dashMatch[2].trim();
+    const ytNorm = ytAuthor.replace(/[^a-z0-9]/gi, "").toLowerCase();
+    const firstNorm = first.replace(/[^a-z0-9]/gi, "").toLowerCase();
+    const secondNorm = second.replace(/[^a-z0-9]/gi, "").toLowerCase();
+    // If channel name matches first part → keep original (Artist - Title)
+    if (ytNorm.startsWith(firstNorm) || ytNorm.endsWith(firstNorm) || firstNorm.startsWith(ytNorm)) {
+      const cleanedSecond = stripNoise(second);
+      const inner = parseInner(cleanedSecond);
+      if (inner) return { title: inner.title, author: inner.artist };
+      return { title: cleanedSecond, author: first };
+    }
+    // If channel name matches second part → already Artist - Title, keep as-is
+    if (ytNorm.startsWith(secondNorm) || ytNorm.endsWith(secondNorm) || secondNorm.startsWith(ytNorm)) {
+      return { title: stripNoise(first), author: second };
+    }
+    // Channel matches neither → flip (Title - Artist format)
+    if (second.length >= 2 && first.length >= 1) {
+      return { title: stripNoise(first), author: second };
     }
   }
 

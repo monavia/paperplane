@@ -1,3 +1,4 @@
+import Logger from "../../core/utils/Logger";
 import Guild from "../models/Guild";
 import botConfig from "../../config/bot";
 import { isUsingPrisma } from "../connection";
@@ -30,7 +31,7 @@ export async function getPrefix(guildId: string): Promise<string> {
     }
     prefixCache.set(guildId, { prefix, ts: Date.now() });
     return prefix;
-  } catch { return botConfig.prefix; }
+  } catch { Logger.warn(`[GuildRepo] getPrefix failed for ${guildId}`); return botConfig.prefix; }
 }
 
 export async function setPrefix(guildId: string, prefix: string): Promise<void> {
@@ -70,7 +71,7 @@ export async function getLastFilter(guildId: string): Promise<string> {
     }
     const guild = await Guild.findOne({ guildId }).lean();
     return (guild as any)?.lastFilter || "none";
-  } catch { return "none"; }
+  } catch { Logger.warn(`[GuildRepo] getLastFilter failed for ${guildId}`); return "none"; }
 }
 
 export async function setLastEqualizer(guildId: string, bands: any): Promise<void> {
@@ -91,7 +92,7 @@ export async function getLastEqualizer(guildId: string): Promise<any> {
     }
     const guild = await Guild.findOne({ guildId }).lean();
     return (guild as any)?.lastEqualizer ?? null;
-  } catch { return null; }
+  } catch { Logger.warn(`[GuildRepo] getLastEqualizer failed for ${guildId}`); return null; }
 }
 
 export async function getAutoplay(guildId: string): Promise<boolean> {
@@ -103,7 +104,7 @@ export async function getAutoplay(guildId: string): Promise<boolean> {
     }
     const g = await Guild.findOne({ guildId }).lean();
     return (g as any)?.autoplay ?? false;
-  } catch { return false; }
+  } catch { Logger.warn(`[GuildRepo] getter failed for ${guildId}`); return false; }
 }
 
 export async function setAutoplay(guildId: string, enabled: boolean): Promise<void> {
@@ -124,7 +125,7 @@ export async function getLoop(guildId: string): Promise<string> {
     }
     const g = await Guild.findOne({ guildId }).lean();
     return (g as any)?.loop || "off";
-  } catch { return "off"; }
+  } catch { Logger.warn(`[GuildRepo] getLoop failed for ${guildId}`); return "off"; }
 }
 
 export async function setLoop(guildId: string, mode: string): Promise<void> {
@@ -145,7 +146,7 @@ export async function getShuffle(guildId: string): Promise<boolean> {
     }
     const g = await Guild.findOne({ guildId }).lean();
     return (g as any)?.shuffle ?? false;
-  } catch { return false; }
+  } catch { Logger.warn(`[GuildRepo] getter failed for ${guildId}`); return false; }
 }
 
 export async function setShuffle(guildId: string, enabled: boolean): Promise<void> {
@@ -166,7 +167,7 @@ export async function get247(guildId: string): Promise<boolean> {
     }
     const g = await Guild.findOne({ guildId }).lean();
     return (g as any)?.["247"] ?? false;
-  } catch { return false; }
+  } catch { Logger.warn(`[GuildRepo] getter failed for ${guildId}`); return false; }
 }
 
 export async function set247(guildId: string, enabled: boolean): Promise<void> {

@@ -1,6 +1,20 @@
-import mongoose from "mongoose";
+import mongoose, { Document } from "mongoose";
 
-const guildSchema = new mongoose.Schema({
+export interface IGuild extends Document {
+  guildId: string;
+  prefix: string;
+  volume: number;
+  lastFilter: string;
+  lastEqualizer: any;
+  autoplay: boolean;
+  loop: string;
+  shuffle: boolean;
+  "247": boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const guildSchema = new mongoose.Schema<IGuild>({
   guildId: { type: String, required: true, unique: true },
   prefix: { type: String, default: "-" },
   volume: { type: Number, default: 80 },
@@ -19,4 +33,4 @@ guildSchema.pre("save", function (next: any) {
   next();
 });
 
-export default mongoose.model("Guild", guildSchema);
+export default mongoose.model<IGuild>("Guild", guildSchema);

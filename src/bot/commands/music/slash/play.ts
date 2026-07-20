@@ -9,6 +9,11 @@ import { withQueueLock } from "@/bot/core/state/QueueLock";
 import Colors from "@/bot/core/constants/Colors";
 import * as MusicService from "@/bot/music/services/MusicService";
 import botConfig from "@/bot/config/bot";
+import state from "../../../core/state/StateManager";
+import { get } from "../../../music/engine/lavalink";
+import { getPlayer, createPlayer } from "../../../music/engine/PlayerManager";
+import { setTextChannelId } from "../../../music/services/TextChannelStore";
+import { getEngine } from "../../../music/services/PlayerService";
 
 async function resolveSpotifyTrack(player: any, spotifyItem: any, user: any): Promise<any> {
   const q = spotifyItem.query || `${spotifyItem.artists?.join(" ") || ""} ${spotifyItem.name}`.trim();
@@ -44,7 +49,7 @@ export default {
     if (!voice) {
       return interaction.reply({
         embeds: [ErrorEmbed.build("You must be in a voice channel.")],
-        ephemeral: true,
+        flags: 64,
       });
     }
 
@@ -52,18 +57,12 @@ export default {
     await interaction.deferReply();
 
     try {
-      const state = require("../../../core/state/StateManager");
-      const { get } = require("../../../music/engine/lavalink");
-      const { getPlayer, createPlayer } = require("../../../music/engine/PlayerManager");
-      const { setTextChannelId } = require("../../../music/services/TextChannelStore");
-      const { getEngine } = require("../../../music/services/PlayerService");
-
       const lavalink = get();
       if (!lavalink) throw new Error("Lavalink not connected");
 
       let player = getPlayer(interaction.guildId);
       if (!player) {
-        player = createPlayer(interaction.guildId, voice.id, interaction.channelId);
+        player = createPlayer(interaction.guildId, voice.id, interaction.channelId, voice.rtcRegion);
         await player.connect();
       }
       getEngine(interaction.guildId).player = player;
@@ -110,6 +109,7 @@ export default {
             if (space <= 0) return interaction.editReply({ embeds: [ErrorEmbed.build("Queue full.")] });
             const addable = space < resolvedTracks.length ? resolvedTracks.slice(0, space) : resolvedTracks;
             state.queues.set(interaction.guildId, [...curQueue, ...addable]);
+            await MusicService.saveState(interaction.guildId);
             return interaction.editReply({
               embeds: [new EmbedBuilder().setDescription(`Added ${addable.length} of ${resolvedTracks.length} tracks to queue.`).setColor(Colors.SUCCESS)],
             });
@@ -168,6 +168,7 @@ export default {
             const q2 = state.queues.get(interaction.guildId) || [];
             const addable2 = space < playlistTracks.length ? playlistTracks.slice(0, space) : playlistTracks;
             state.queues.set(interaction.guildId, [...q2, ...addable2]);
+            await MusicService.saveState(interaction.guildId);
             return interaction.editReply({
               embeds: [new EmbedBuilder().setDescription(`Added ${addable2.length} tracks from **${playlistName}**${addedMsg}`).setColor(Colors.SUCCESS)],
             });
@@ -203,6 +204,7 @@ export default {
         return await withQueueLock(interaction.guildId, async () => {
           const queue2 = state.queues.get(interaction.guildId) || [];
           state.queues.set(interaction.guildId, [...queue2, track]);
+          await MusicService.saveState(interaction.guildId);
           return interaction.editReply({
             embeds: [NowPlayingEmbed.addedToQueue(track, queue2.length + 1)],
           });

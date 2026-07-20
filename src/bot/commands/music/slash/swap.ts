@@ -13,7 +13,7 @@ export default {
 
   async execute(interaction: import("discord.js").ChatInputCommandInteraction) {
     const vc = checkSameVoice(interaction);
-    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], ephemeral: true });
+    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], flags: 64 });
 
     const a = interaction.options.getInteger("a", true);
     const b = interaction.options.getInteger("b", true);
@@ -22,12 +22,12 @@ export default {
 
     const queue = MusicService.getQueue(guildId);
     if (a < 0 || a >= queue.length || b < 0 || b >= queue.length) {
-      return interaction.reply({ embeds: [ErrorEmbed.build(`Invalid index. Valid range: 0-${queue.length - 1}`)], ephemeral: true });
+      return interaction.reply({ embeds: [ErrorEmbed.build(`Invalid index. Valid range: 0-${queue.length - 1}`)], flags: 64 });
     }
-    if (a === 0 || b === 0) return interaction.reply({ embeds: [ErrorEmbed.build("Cannot swap the currently playing track.")], ephemeral: true });
+    if (a === 0 || b === 0) return interaction.reply({ embeds: [ErrorEmbed.build("Cannot swap the currently playing track.")], flags: 64 });
 
     const success = MusicService.swapTracks(guildId, a, b);
-    if (!success) return interaction.reply({ embeds: [ErrorEmbed.build("Failed to swap tracks.")], ephemeral: true });
+    if (!success) return interaction.reply({ embeds: [ErrorEmbed.build("Failed to swap tracks.")], flags: 64 });
 
     const trackA = queue[a];
     const trackB = queue[b];

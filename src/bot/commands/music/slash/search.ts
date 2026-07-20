@@ -5,6 +5,8 @@ import * as SearchEmbed from "@/bot/ui/embeds/SearchEmbed";
 import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
 import { checkSameVoice } from "@/bot/core/utils/VoiceCheck";
 import Logger from "@/bot/core/utils/Logger";
+import { get } from "../../../music/engine/lavalink";
+import { withQueueLock } from "../../../core/state/QueueLock";
 
 export default {
   data: new SlashCommandBuilder()
@@ -14,7 +16,7 @@ export default {
 
   async execute(interaction: any) {
     const vc = checkSameVoice(interaction);
-    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], ephemeral: true });
+    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], flags: 64 });
     const voice = interaction.member.voice.channel;
 
     const query = interaction.options.getString("query", true);
@@ -23,7 +25,6 @@ export default {
     try {
       let player = getPlayer(interaction.guildId!);
       if (!player) {
-        const { get } = require("../../../music/engine/lavalink");
         const node = get()?.nodeManager?.nodes?.values()?.next()?.value as any;
         if (!node) return interaction.editReply({ embeds: [ErrorEmbed.build("Lavalink not connected.")] });
         player = node;
@@ -44,13 +45,12 @@ export default {
         await i.deferUpdate();
 
         const engine = MusicService.getEngine(interaction.guildId!);
-        const pl = await engine.join(voice.id, interaction.channelId!);
+        const pl = await engine.join(voice.id, interaction.channelId!, voice.rtcRegion);
         if (!pl) return i.editReply({ embeds: [ErrorEmbed.build("Failed to join voice channel.")], components: [] });
 
          MusicService.setTextChannelId(interaction.guildId!, interaction.channelId!);
 
-         const { withQueueLock } = require("../../../core/state/QueueLock");
-         await withQueueLock(interaction.guildId!, async () => {
+          await withQueueLock(interaction.guildId!, async () => {
            const wasPlaying = pl.playing || pl.paused || engine.queue.getAll().length > 0 || !!pl?.queue?.current;
 
            for (const track of selected) {

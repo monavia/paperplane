@@ -10,9 +10,9 @@ export default {
   data: new SlashCommandBuilder().setName("skip").setDescription("Skip the current track"),
   async execute(interaction: any) {
     const vc = checkSameVoice(interaction);
-    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], ephemeral: true });
+    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], flags: 64 });
     const player = MusicService.getEngine(interaction.guildId!).player;
-    if (!player) return interaction.reply({ embeds: [ErrorEmbed.build("No track is currently playing.")], ephemeral: true });
+    if (!player) return interaction.reply({ embeds: [ErrorEmbed.build("No track is currently playing.")], flags: 64 });
     await interaction.deferReply();
     try {
       const nextTrack = await MusicService.skip(interaction.guildId!, interaction.user.id, interaction.member?.displayName || interaction.user.username);

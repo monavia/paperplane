@@ -1,6 +1,18 @@
 import { LavalinkManager, NodeType } from "lavalink-client";
+import { EmbedBuilder } from "discord.js";
 import Logger from "../../core/utils/Logger";
+import state from "../../core/state/StateManager";
 import { saveSpotifyMeta, applySpotifyMeta } from "../services/TitleResolver";
+import { getPlayerData, setPlayerData } from "../services/PersistentPlayerStore";
+import { pickBestTrack } from "../services/SearchService";
+import { getTextChannelId } from "../services/TextChannelStore";
+import PlayerState from "../../database/models/PlayerState";
+import { getEngine } from "../services/PlayerService";
+import { setFilter, setEqualizer } from "../services/MusicService";
+import { getBestNode, recordDisconnect, recordError } from "./NodePenaltyService";
+import { addRestoredGuild } from "../services/StateService";
+import { setLavalinkRef } from "./FailoverManager";
+// import MongoQueueStore from "../services/MongoQueueStore"; // R5 — pending: queueStore intended to replace saveState, not coexist
 
 let lavalink: LavalinkManager | null = null;
 let clientRef: any = null;
@@ -8,6 +20,8 @@ let healthCheckInterval: NodeJS.Timeout | null = null;
 const lastReconnectAttempt = new Map<string, number>();
 const failoverGuilds = new Set<string>();
 const recoveringGuilds = new Set<string>();
+const recoveringGuildsTimestamps = new Map<string, number>();
+const RECOVERING_GUILDS_TTL_MS = 10 * 60 * 1000; // 10min
 let allNodesDownTimer: NodeJS.Timeout | null = null;
 const trackCache = new Map<string, { encoded: string; ts: number }>(); // guildId → {encoded, timestamp}
 
@@ -48,12 +62,30 @@ export function clearFailoverGuild(guildId: string): void {
   failoverGuilds.delete(guildId);
 }
 
+export async function connectWithRetry(player: any, guildId: string, retries = 3): Promise<void> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      await player.connect();
+      return;
+    } catch (err: any) {
+      if (i < retries - 1) {
+        Logger.warn(`[NodeLink] connect failed for ${guildId} (${i + 1}/${retries}): ${err?.message}, retrying in 2s`);
+        await new Promise(r => setTimeout(r, 2000));
+      } else {
+        throw err;
+      }
+    }
+  }
+}
+
 const globalFailoverLocks = new Set<string>();
 
 export async function failoverFromNode(nodeId: string) {
   if (!lavalink?.nodeManager) return;
-  const state = require("../../core/state/StateManager");
-  const { getTextChannelId } = require("../services/TextChannelStore");
+  
+
+  
+
   const failoverLocks = new Set<string>();
 
   for (const [guildId, player] of lavalink.players) {
@@ -65,7 +97,8 @@ export async function failoverFromNode(nodeId: string) {
     failoverGuilds.add(guildId);
 
     // Find a healthy target node using NodePenaltyService scoring
-    const { getBestNode, recordDisconnect } = require("./NodePenaltyService");
+    
+
     recordDisconnect(nodeId);
     const target = getBestNode(lavalink);
     if (!target || target.id === nodeId) {
@@ -81,12 +114,12 @@ export async function failoverFromNode(nodeId: string) {
 
     try {
       await player.changeNode(target.id, false);
-      Logger.info(`[NodeLink] Failover: moved player ${guildId} to ${target.id}`);
+      Logger.info(`[NodeLink] Failover: moved player ${guildId} from node=${nodeId} region=${player.node?.options?.regions?.[0] || "?"} → node=${target.id} region=${target.options?.regions?.[0] || "?"}`);
       const curTrack = state.nowPlaying.get(guildId);
       if (curTrack && !player.playing) {
-        const cached = getCachedTrack(guildId);
-        if (cached) {
-          await (player.play as any)({ encoded: cached, position: player.position || 0 }).catch(() => {});
+        const encoded = curTrack?.encoded || getCachedTrack(guildId);
+        if (encoded) {
+          await (player.play as any)({ encoded, position: player.position || 0 }).catch(() => {});
         } else if (curTrack.info?.uri) {
           const uri = curTrack.info.uri;
           const isSpotify = /^spotify:(track|album|playlist):/.test(uri) || /open\.spotify\.com/i.test(uri);
@@ -96,27 +129,30 @@ export async function failoverFromNode(nodeId: string) {
             const q = `${curTrack.info.author || ""} ${curTrack.info.title || ""}`.trim();
             for (const prefix of ["ytmsearch", "ytsearch", "scsearch"]) {
               const search = await player.search({ query: `${prefix}:${q}` }, { id: "system" }).catch(() => null);
-              if (search?.tracks?.[0]) { resolved = search.tracks[0]; break; }
+              if (search?.tracks?.length) { resolved = pickBestTrack(search.tracks); if (resolved) break; }
             }
           } else {
             const search = await player.search({ query: uri }, { id: "system" }).catch(() => null);
-            resolved = search?.tracks?.[0];
+            resolved = search?.tracks?.length ? pickBestTrack(search.tracks) : null;
           }
           if (resolved) {
             applySpotifyMeta(resolved, savedMeta);
             await player.play({ track: resolved, clientTrack: resolved, position: player.position || 0 }).catch(() => {});
           }
         }
-        const { getEngine } = require("../services/PlayerService");
+        
+
         getEngine(guildId).player = player;
         const savedFilter = state.filter.get(guildId);
         if (savedFilter && savedFilter !== "none") {
-          const { setFilter } = require("../services/MusicService");
+          
+
           setFilter(guildId, savedFilter, "system", "System").catch(() => {});
         }
         const savedBands = state.equalizer.get(guildId);
         if (savedBands) {
-          const { setEqualizer } = require("../services/MusicService");
+          
+
           setEqualizer(guildId, savedBands, "system", "System").catch(() => {});
         }
       }
@@ -142,9 +178,9 @@ export async function failoverFromNode(nodeId: string) {
             selfMute: false,
           });
           await newPlayer.connect();
-          const cached = getCachedTrack(guildId);
-          if (cached) {
-            await (newPlayer.play as any)({ encoded: cached, position: savedPos }).catch(() => {});
+          const encoded = track?.encoded || getCachedTrack(guildId);
+          if (encoded) {
+            await (newPlayer.play as any)({ encoded, position: savedPos }).catch(() => {});
           } else if (track?.info?.uri) {
             const uri = track.info.uri;
             const isSpotify = /^spotify:(track|album|playlist):/.test(uri) || /open\.spotify\.com/i.test(uri);
@@ -154,25 +190,28 @@ export async function failoverFromNode(nodeId: string) {
               const q = `${track.info.author || ""} ${track.info.title || ""}`.trim();
               for (const prefix of ["ytmsearch", "ytsearch", "scsearch"]) {
                 const search = await newPlayer.search({ query: `${prefix}:${q}` }, { id: "system" }).catch(() => null);
-                if (search?.tracks?.[0]) { resolved = search.tracks[0]; break; }
-              }
-            } else {
-              const search = await newPlayer.search({ query: uri }, { id: "system" }).catch(() => null);
-              if (search?.tracks?.[0]) resolved = search.tracks[0];
+              if (search?.tracks?.length) { resolved = pickBestTrack(search.tracks); if (resolved) break; }
+            }
+          } else {
+            const search = await newPlayer.search({ query: uri }, { id: "system" }).catch(() => null);
+            if (search?.tracks?.length) resolved = pickBestTrack(search.tracks);
             }
             applySpotifyMeta(resolved, savedMeta);
             await newPlayer.play({ track: resolved, clientTrack: resolved, position: savedPos });
           }
-          const { getEngine } = require("../services/PlayerService");
+          
+
           getEngine(guildId).player = newPlayer;
           const savedFilter = state.filter.get(guildId);
           if (savedFilter && savedFilter !== "none") {
-            const { setFilter } = require("../services/MusicService");
+            
+
             setFilter(guildId, savedFilter, "system", "System").catch(() => {});
           }
           const savedBands = state.equalizer.get(guildId);
           if (savedBands) {
-            const { setEqualizer } = require("../services/MusicService");
+            
+
             setEqualizer(guildId, savedBands, "system", "System").catch(() => {});
           }
           Logger.info(`[NodeLink] Failover: recreated player ${guildId} (auto node)`);
@@ -187,24 +226,27 @@ function handleAllNodesDown(): void {
   allNodesDownTimer = null;
   Logger.error(`[NodeLink] All nodes down for 60s — cleaning up players`);
   try {
-    const state = require("../../core/state/StateManager");
+    
+
     for (const [guildId] of state.nowPlaying.entries()) {
       const player = lavalink?.players.get(guildId);
       if (!player) continue;
       try {
-        const { getTextChannelId } = require("../services/TextChannelStore");
+        
+
         const chId = getTextChannelId(guildId);
         if (chId && clientRef) {
           const ch = clientRef.channels.cache.get(chId);
           if (ch) {
-            const { EmbedBuilder } = require("discord.js");
+            
+
             ch.send({ embeds: [new EmbedBuilder().setDescription("Music system is experiencing issues. Please try again later.").setColor(0xFF0000)] }).catch(() => {});
           }
         }
         player.destroy().catch(() => {});
-      } catch {}
+      } catch { Logger.warn(`[NodeLink] Failed to destroy player for ${guildId}`); }
     }
-  } catch {}
+  } catch { Logger.error("[NodeLink] handleAllNodesDown crashed"); }
 }
 
 export async function init(client: any): Promise<boolean> {
@@ -220,11 +262,13 @@ export async function init(client: any): Promise<boolean> {
       port: parseInt(process.env[`NODELINK_PORT${i > 1 ? `_${i}` : ""}`] || "2333"),
       authorization: process.env[`NODELINK_PASSWORD${i > 1 ? `_${i}` : ""}`] || "youshallnotpass",
       secure: process.env[`NODELINK_SECURE${i > 1 ? `_${i}` : ""}`] === "true",
-      region: process.env[`NODELINK_REGION${i > 1 ? `_${i}` : ""}`] || "asia",
+      regions: (process.env[`NODELINK_REGION${i > 1 ? `_${i}` : ""}`] || "asia").split(",").map((r: string) => r.trim()).filter(Boolean),
       nodeType: NodeType.NodeLink,
       closeOnError: false,
-      heartBeatInterval: 1000,
-      requestSignalTimeoutMS: 10000,
+      heartBeatInterval: 30000,
+      requestSignalTimeoutMS: 20000,
+      retryAmount: 5,
+      retryDelay: 10000,
     });
   }
 
@@ -240,18 +284,29 @@ export async function init(client: any): Promise<boolean> {
       if (guild) guild.shard.send(payload);
     },
     autoSkip: true,
+    autoMove: true,
     client: { id: client.user?.id || "" },
     httpHeaders: {
       "User-Agent": "PaperplaneBot/2.0",
     },
+    // queueOptions: { queueStore: new MongoQueueStore(), maxPreviousTracks: 10 }, // R5 — pending: conflicts with saveState dual system
+    playerOptions: {
+      volumeDecrementer: 0.75,
+      clientBasedPositionUpdateInterval: 50,
+      defaultSearchPlatform: "ytsearch",
+      applyVolumeAsFilter: false,
+    },
   });
+
+  setLavalinkRef(lavalink, client);
 
   const l: any = lavalink;
 
   l.on("nodeError", async (node: any, err: any) => {
     try {
-      Logger.warn(`[NodeLink] Node ${node.options?.id || "?"} (${node.options?.region || "?"}) error: ${err?.message || err}`);
-      const { recordError } = require("./NodePenaltyService");
+      Logger.warn(`[NodeLink] Node ${node.options?.id || "?"} (${node.options?.regions?.[0] || "?"}) error: ${err?.message || err}`);
+      
+
       recordError(node.options?.id || node.id, err?.message || String(err));
       if (lavalink?.nodeManager) await failoverFromNode(node.id);
     } catch (e: any) { Logger.error(`[NodeLink] nodeError handler error: ${e.message}`); }
@@ -259,14 +314,14 @@ export async function init(client: any): Promise<boolean> {
 
   l.on("nodeDisconnect", async (node: any) => {
     try {
-      Logger.warn(`[NodeLink] Node ${node.id} (${node.options?.region || "?"}) disconnected`);
+      Logger.warn(`[NodeLink] Node ${node.id} (${node.options?.regions?.[0] || "?"}) disconnected`);
       if (lavalink?.nodeManager) await failoverFromNode(node.id);
 
       // Try reconnecting (once per 15s)
       const last = lastReconnectAttempt.get(node.id) || 0;
       if (Date.now() - last >= 15000 && node.connect) {
         lastReconnectAttempt.set(node.id, Date.now());
-        Logger.info(`[NodeLink] Reconnecting ${node.id} (${node.options?.region || "?"})...`);
+        Logger.info(`[NodeLink] Reconnecting ${node.id} (${node.options?.regions?.[0] || "?"})...`);
         try { await node.connect(); Logger.info(`[NodeLink] Node ${node.id} reconnected`); } catch (err2: any) { Logger.warn(`[NodeLink] Reconnect failed for ${node.id}: ${err2?.message || err2}`); }
       }
 
@@ -281,49 +336,102 @@ export async function init(client: any): Promise<boolean> {
   });
 
   l.on("nodeReconnect", (node: any) => {
-    Logger.info(`[NodeLink] Node ${node.id} (${node.options?.region || "?"}) reconnecting`);
+    Logger.info(`[NodeLink] Node ${node.id} (${node.options?.regions?.[0] || "?"}) reconnecting`);
+    cancelNodesDownTimer(); // early cancel — reconnect started
   });
 
   l.nodeManager?.on("connect", async (node: any) => {
-    Logger.ready(`[NodeLink] Node ${node.id} (${node.options?.region || "?"}) connected`);
+    Logger.ready(`[NodeLink] Node ${node.id} (${node.options?.regions?.[0] || "?"}) connected`);
     cancelNodesDownTimer();
-    // Enable session resume for seamless voice handoff (5min timeout)
-    try { node.updateSession?.(true, 300_000); } catch {} 
+    // Enable session resume per lavalink-client docs — restores <360s outage instantly from Lavalink data
+    try { node.updateSession?.(true, 300_000); } catch { Logger.warn(`[NodeLink] updateSession failed for ${node.id}`); }
+
+    // Destroy stale players for this node — node reconnected but voice WS wasn't restored
+    // (session resume can't restore what a fresh NodeLink never had)
+    if (lavalink) {
+      const staleGuilds: string[] = [];
+      for (const [guildId, p] of lavalink.players) {
+        if (p.node?.id === node.id && !p.connected) staleGuilds.push(guildId);
+      }
+      if (staleGuilds.length) {
+        // Brief wait for resumed event to process any successful session restores first
+        await new Promise(r => setTimeout(r, 2000));
+        for (const guildId of staleGuilds) {
+          try { const p = lavalink.players.get(guildId); if (p && p.node?.id === node.id && !p.connected) await p.destroy().catch(() => {}); } catch {}
+        }
+        Logger.info(`[NodeLink] Destroyed ${staleGuilds.length} stale player(s), attempting recovery from RAM/DB`);
+      }
+    }
 
     try {
-      const state = require("../../core/state/StateManager");
-      const { getTextChannelId } = require("../services/TextChannelStore");
-      const { getEngine } = require("../services/PlayerService");
-
       for (const [guildId, nowPlaying] of state.nowPlaying.entries()) {
         if (!nowPlaying) continue;
-        if (lavalink?.players.get(guildId)?.connected) continue;
+        if (lavalink?.players.get(guildId)) continue;
         if (recoveringGuilds.has(guildId)) continue;
         recoveringGuilds.add(guildId);
+        recoveringGuildsTimestamps.set(guildId, Date.now());
 
+        // Try RAM stores first, then DB
+        const storeData = getPlayerData(guildId);
         const vcData = state.voiceChannels.get(guildId);
-        if (!vcData?.voiceChannelId) continue;
+        let vcId = storeData?.voiceChannelId || vcData?.voiceChannelId;
+        let tcId = getTextChannelId(guildId) || storeData?.textChannelId || vcData?.textChannelId || "";
+        let dbNowPlaying = nowPlaying;
+        let dbPosition = state.position.get(guildId);
+
+        // Layer 2: DB Fallback — when RAM stores empty (>360s outage)
+        if (!vcId) {
+          try {
+            
+
+            const tenMinAgo = new Date(Date.now() - 10 * 60 * 1000);
+            const dbState = await PlayerState.findOne({
+              guildId,
+              updatedAt: { $gte: tenMinAgo },
+            }).lean().catch(() => null);
+            if (dbState?.voiceChannelId) {
+              vcId = dbState.voiceChannelId;
+              tcId = dbState.textChannelId || tcId;
+              if (dbState.nowPlaying && !state.nowPlaying.get(guildId)) {
+                state.nowPlaying.set(guildId, dbState.nowPlaying);
+                dbNowPlaying = dbState.nowPlaying;
+              }
+              if (dbState.position) dbPosition = dbState.position;
+              if (dbState.queue?.length && !state.queues.get(guildId)?.length) {
+                state.queues.set(guildId, dbState.queue);
+              }
+              Logger.info(`[NodeLink] DB fallback found player data for ${guildId}`);
+            }
+          } catch { Logger.warn(`[NodeLink] DB fallback for ${guildId} unavailable`); }
+        }
+
+        if (!vcId) { recoveringGuilds.delete(guildId); recoveringGuildsTimestamps.delete(guildId); continue; }
 
         Logger.info(`[NodeLink] Restoring player for ${guildId} after reconnect`);
         try {
           const player = lavalink!.createPlayer({
             guildId,
-            voiceChannelId: vcData.voiceChannelId,
-            textChannelId: getTextChannelId(guildId) || vcData.textChannelId || "",
+            voiceChannelId: vcId,
+            textChannelId: getTextChannelId(guildId) || storeData?.textChannelId || vcData?.textChannelId || "",
             selfDeaf: true,
             selfMute: false,
           });
-          await player.connect();
+          await connectWithRetry(player, guildId);
           getEngine(guildId).player = player;
 
           const queue = state.queues.get(guildId) || [];
-          const first = queue.shift() || nowPlaying;
+          const first = queue.shift() || dbNowPlaying;
           state.nowPlaying.set(guildId, first);
           cacheTrack(guildId, first);
-          await player.play({ track: first, clientTrack: first, position: 0 }).catch(() => {});
-          Logger.info(`[NodeLink] Restored player ${guildId}`);
+          await player.play({ track: first, clientTrack: first, position: dbPosition }).catch(() => {});
+          Logger.info(`[DBUG-restore] guild=${guildId} voice=${vcId} track=${first.info?.title} pos=${dbPosition} filter=${state.filter.get(guildId) || "none"} eq=${state.equalizer.get(guildId) ? "set" : "none"} ok=true`);
+          addRestoredGuild(guildId);
+          recoveringGuilds.delete(guildId);
+          recoveringGuildsTimestamps.delete(guildId);
         } catch (err: any) {
           Logger.warn(`[NodeLink] Restore failed for ${guildId}: ${err.message}`);
+          recoveringGuilds.delete(guildId);
+          recoveringGuildsTimestamps.delete(guildId);
         }
       }
     } catch (e: any) {
@@ -331,9 +439,73 @@ export async function init(client: any): Promise<boolean> {
     }
   });
 
-  // Enable SponsorBlock on player creation
+  // Layer 1: Session Resume — instant restore from Lavalink data
+  l.nodeManager?.on("resumed", async (node: any, _payload: any, fetchedPlayers: any[]) => {
+    Logger.ready(`[NodeLink] Node ${node.id} resumed — restoring ${fetchedPlayers.length} players`);
+    cancelNodesDownTimer();
+    for (const data of fetchedPlayers) {
+      if (!data?.guildId || !data.state?.connected) continue;
+      if (recoveringGuilds.has(data.guildId)) continue;
+      recoveringGuilds.add(data.guildId);
+      recoveringGuildsTimestamps.set(data.guildId, Date.now());
+      const storeData = getPlayerData(data.guildId);
+      if (!storeData) { recoveringGuilds.delete(data.guildId); recoveringGuildsTimestamps.delete(data.guildId); continue; }
+      try {
+        const player = l.createPlayer({
+          guildId: data.guildId,
+          voiceChannelId: storeData.voiceChannelId,
+          textChannelId: storeData.textChannelId || "",
+          selfDeaf: true,
+          selfMute: false,
+          node: node.id,
+        });
+        await connectWithRetry(player, data.guildId);
+        if (data.filters) player.filterManager.data = data.filters;
+        if (data.track) player.queue.current = l.utils.buildTrack(data.track, player.queue.current?.requester || clientRef.user);
+        player.paused = data.paused;
+        player.playing = !data.paused && !!data.track;
+        player.lastPosition = data.state.position || 0;
+        player.lastPositionChange = Date.now();
+        // Actually resume playback — property changes alone don't start audio
+        if (data.track && !data.paused) {
+          await player.play({ encoded: data.track, position: data.state.position || 0 }).catch(() => {});
+          Logger.ready(`[NodeLink] Resumed playback for ${data.guildId} at pos ${data.state.position || 0}`);
+        }
+        addRestoredGuild(data.guildId);
+        recoveringGuilds.delete(data.guildId);
+        recoveringGuildsTimestamps.delete(data.guildId);
+      } catch (err: any) {
+        Logger.warn(`[NodeLink] Resume failed for ${data.guildId}: ${err.message}`);
+        recoveringGuilds.delete(data.guildId);
+        recoveringGuildsTimestamps.delete(data.guildId);
+      }
+    }
+  });
+
   l.on("playerCreate", (player: any) => {
     player.setSponsorBlock(["sponsor", "intro", "outro", "selfpromo", "interaction", "preview", "music_offtopic"]).catch(() => {});
+    setPlayerData(player.guildId, { voiceChannelId: player.voiceChannelId || "", textChannelId: player.textChannelId || "" });
+  });
+
+  // Layer 3: Player Persistence — keep voiceChannelId + position up-to-date in RAM
+  l.on("playerUpdate", (_old: any, player: any) => {
+    if (player.voiceChannelId) {
+      setPlayerData(player.guildId, {
+        voiceChannelId: player.voiceChannelId,
+        textChannelId: player.textChannelId || "",
+      });
+    }
+    
+
+    state.position.set(player.guildId, player.lastPosition || player.position || 0);
+  });
+
+  l.on("playerDestroy", (player: any) => {
+    // Save last position before player is gone — used for recovery (C3)
+    
+
+    const pos = player.lastPosition || player.position || 0;
+    if (pos > 0) state.position.set(player.guildId, pos);
   });
 
   l.on("trackStart", () => {});
@@ -343,6 +515,18 @@ export async function init(client: any): Promise<boolean> {
 
   // Periodic track cache prune (TTL cleanup)
   setInterval(pruneTrackCache, TRACK_CACHE_PRUNE_INTERVAL_MS);
+
+  // Periodic recovering guilds cleanup — stale entries expire after TTL
+  setInterval(() => {
+    const now = Date.now();
+    for (const [guildId, ts] of recoveringGuildsTimestamps) {
+      if (now - ts > RECOVERING_GUILDS_TTL_MS) {
+        recoveringGuilds.delete(guildId);
+        recoveringGuildsTimestamps.delete(guildId);
+        Logger.info(`[NodeLink] Expired stale recoveringGuilds entry for ${guildId}`);
+      }
+    }
+  }, TRACK_CACHE_PRUNE_INTERVAL_MS);
 
   // Periodic node health check — reconnect disconnected nodes + failover players every 15s
   if (healthCheckInterval) clearInterval(healthCheckInterval);
@@ -359,9 +543,9 @@ export async function init(client: any): Promise<boolean> {
         const last = lastReconnectAttempt.get(node.id) || 0;
         if (now - last < 15000) continue;
         lastReconnectAttempt.set(node.id, now);
-        Logger.info(`[NodeLink] Health check: reconnecting ${node.id} (${(node.options as any)?.region || "?"})...`);
+        Logger.info(`[NodeLink] Health check: reconnecting ${node.id} (${(node.options as any)?.regions?.[0] || "?"})...`);
         const connectTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000));
-        try { await Promise.race([node.connect(), connectTimeout]); if (node.connected) Logger.info(`[NodeLink] Health check: node ${node.id} (${(node.options as any)?.region || "?"}) reconnected`); } catch (err: any) {
+        try { await Promise.race([node.connect(), connectTimeout]); if (node.connected) { cancelNodesDownTimer(); Logger.info(`[NodeLink] Health check: node ${node.id} (${(node.options as any)?.regions?.[0] || "?"}) reconnected`); } } catch (err: any) {
           Logger.warn(`[NodeLink] Health reconnect failed for ${node.id}: ${err?.message || "timeout"}`);
         }
       }
@@ -394,7 +578,7 @@ export function getConnectedNodes(): string[] {
 
 export function getLeastLoadedNode(): string | null {
   if (!lavalink?.nodeManager) return null;
-  const { getBestNode } = require("./NodePenaltyService");
+  
   const best = getBestNode(lavalink);
   return best?.id || null;
 }

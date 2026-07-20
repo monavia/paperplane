@@ -10,6 +10,11 @@ import { withQueueLock } from "@/bot/core/state/QueueLock";
 import Colors from "@/bot/core/constants/Colors";
 import * as MusicService from "@/bot/music/services/MusicService";
 import Logger from "@/bot/core/utils/Logger";
+import state from "../../../core/state/StateManager";
+import { get } from "../../../music/engine/lavalink";
+import { getPlayer, createPlayer } from "../../../music/engine/PlayerManager";
+import { setTextChannelId } from "../../../music/services/TextChannelStore";
+import { getEngine } from "../../../music/services/PlayerService";
 
 async function resolveSpotifyTrack(player: any, spotifyItem: any, user: any): Promise<any> {
   const q = spotifyItem.query || `${spotifyItem.artists?.join(" ") || ""} ${spotifyItem.name}`.trim();
@@ -42,12 +47,10 @@ async function resolveSpotifyBatch(items: any[], player: any, guildId: string, u
       if (r.status === "fulfilled" && r.value) resolved.push(r.value);
     }
   }
-  const state = require("../../../core/state/StateManager");
   const curQueue = state.queues.get(guildId) || [];
   const space = botConfig.maxQueue - curQueue.length;
   if (space <= 0) return resolved;
   const addable = space < resolved.length ? resolved.slice(0, space) : resolved;
-  const { withQueueLock } = require("../../../core/state/QueueLock");
   await withQueueLock(guildId, async () => {
     state.queues.set(guildId, [...curQueue, ...addable]);
   });
@@ -71,18 +74,12 @@ export default {
     }
 
     try {
-      const state = require("../../../core/state/StateManager");
-      const { get } = require("../../../music/engine/lavalink");
-      const { getPlayer, createPlayer } = require("../../../music/engine/PlayerManager");
-      const { setTextChannelId } = require("../../../music/services/TextChannelStore");
-      const { getEngine } = require("../../../music/services/PlayerService");
-
       const lavalink = get();
       if (!lavalink) throw new Error("Lavalink not connected");
 
       let player = getPlayer(message.guildId);
       if (!player) {
-        player = createPlayer(message.guildId, voice.id, message.channelId);
+        player = createPlayer(message.guildId, voice.id, message.channelId, voice.rtcRegion);
         await player.connect();
       }
       getEngine(message.guildId).player = player;
@@ -167,6 +164,7 @@ export default {
             const q2 = state.queues.get(message.guildId) || [];
             const addable2 = space < playlistTracks.length ? playlistTracks.slice(0, space) : playlistTracks;
             state.queues.set(message.guildId, [...q2, ...addable2]);
+            await MusicService.saveState(message.guildId);
             return message.channel.send({
               embeds: [new EmbedBuilder().setDescription(`Added ${addable2.length} tracks from **${playlistName}**${addedMsg}`).setColor(Colors.SUCCESS)],
             });
@@ -198,13 +196,14 @@ export default {
 
       const queue = state.queues.get(message.guildId) || [];
 
-      if (player.playing || player.paused) {
-        return await withQueueLock(message.guildId, async () => {
-          const queue2 = state.queues.get(message.guildId) || [];
-          state.queues.set(message.guildId, [...queue2, track]);
-          return message.channel.send({ embeds: [NowPlayingEmbed.addedToQueue(track, queue2.length + 1)] });
-        });
-      }
+        if (player.playing || player.paused) {
+          return await withQueueLock(message.guildId, async () => {
+            const queue2 = state.queues.get(message.guildId) || [];
+            state.queues.set(message.guildId, [...queue2, track]);
+            await MusicService.saveState(message.guildId);
+            return message.channel.send({ embeds: [NowPlayingEmbed.addedToQueue(track, queue2.length + 1)] });
+          });
+        }
 
        await withQueueLock(message.guildId, async () => {
          queue.push(track);
