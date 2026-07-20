@@ -176,6 +176,7 @@ export async function failoverFromNode(nodeId: string) {
             textChannelId: getTextChannelId(guildId) || "",
             selfDeaf: true,
             selfMute: false,
+            node: target.id,
           });
           await newPlayer.connect();
           const encoded = track?.encoded || getCachedTrack(guildId);
@@ -409,12 +410,14 @@ export async function init(client: any): Promise<boolean> {
 
         Logger.info(`[NodeLink] Restoring player for ${guildId} after reconnect`);
         try {
+          const nodeId = getLeastLoadedNode();
           const player = lavalink!.createPlayer({
             guildId,
             voiceChannelId: vcId,
             textChannelId: getTextChannelId(guildId) || storeData?.textChannelId || vcData?.textChannelId || "",
             selfDeaf: true,
             selfMute: false,
+            ...(nodeId ? { node: nodeId } : {}),
           });
           await connectWithRetry(player, guildId);
           getEngine(guildId).player = player;
