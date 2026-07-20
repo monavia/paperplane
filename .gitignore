@@ -375,3 +375,5 @@ FodyWeavers.xsd
 /graphify-out/cache
 /CHANGELOG.md
 /PLANNING.md
+/.serena
+/AUDIT.md
