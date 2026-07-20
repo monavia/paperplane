@@ -1,7 +1,8 @@
 module.exports = {
   apps: [{
     name: "paperplane",
-    script: "dist/index.js",
+    script: "src/index.ts",
+    interpreter: "tsx",
     cwd: "./",
     exec_mode: "fork",
     instances: 1,
