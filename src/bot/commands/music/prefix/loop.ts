@@ -48,6 +48,8 @@ export default {
   async execute(message: import("discord.js").Message, args: string[]) {
     const vc = checkSameVoice(message);
     if (!vc.ok) return (message.channel as any).send({ embeds: [ErrorEmbed.build(vc.message)] });
+    const down = MusicService.requireLavalink();
+    if (down) return (message.channel as any).send(down);
 
     const guildId = message.guildId!;
     if (!MusicService.getEngine(guildId)?.player) return (message.channel as any).send({ embeds: [ErrorEmbed.build("Bot is not connected to a voice channel.")] });

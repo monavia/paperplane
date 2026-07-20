@@ -36,9 +36,6 @@ export function start(client: any): void {
       if (!commandName) return;
 
       const musicCommands = ["play", "skip", "stop", "pause", "resume", "queue", "nowplaying", "volume", "search", "autoplay", "loop", "shuffle", "clear", "remove", "move", "swap", "jump", "seek", "filter", "equalizer", "lyrics", "volume"];
-      if (musicCommands.includes(commandName) && !isLavalinkReady()) {
-        return message.channel.send({ embeds: [ErrorEmbed.build("Music service is currently unavailable. Please try again in a few minutes.")] });
-      }
 
       const cmd = client.prefixCommands?.get(commandName);
       if (!cmd) {
@@ -46,9 +43,15 @@ export function start(client: any): void {
           c.aliases?.includes?.(commandName)
         );
         if (found) {
+          if (!isLavalinkReady() && musicCommands.includes(found.name)) {
+            return message.channel.send({ embeds: [ErrorEmbed.build("Music service is currently unavailable. Please try again in a few minutes.")] });
+          }
           try { return await found.execute(message, args); } catch (e: any) { Logger.error(`Prefix command alias "${commandName}" error:`, e); return message.channel.send("Command error.").catch(() => {}); }
         }
         return; // unknown prefix command
+      }
+      if (!isLavalinkReady() && musicCommands.includes(cmd.name)) {
+        return message.channel.send({ embeds: [ErrorEmbed.build("Music service is currently unavailable. Please try again in a few minutes.")] });
       }
       try { return await cmd.execute(message, args); } catch (e: any) { Logger.error(`Prefix command "${commandName}" error:`, e); return message.channel.send("Command error.").catch(() => {}); }
     }

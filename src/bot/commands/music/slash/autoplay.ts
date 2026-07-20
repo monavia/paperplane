@@ -31,6 +31,8 @@ export default {
   async execute(interaction: import("discord.js").ChatInputCommandInteraction) {
     const vc = checkSameVoice(interaction);
     if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], flags: 64 });
+    const down = MusicService.requireLavalink();
+    if (down) return interaction.reply({ ...down, flags: 64 });
 
     const guildId = interaction.guildId!;
     const engine = MusicService.getEngine(guildId);

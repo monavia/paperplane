@@ -47,6 +47,8 @@ export default {
     if (!message.member) return;
     const vc = checkSameVoice(message);
     if (!vc.ok) return (message.channel as any).send({ embeds: [ErrorEmbed.build(vc.message)] });
+    const down = MusicService.requireLavalink();
+    if (down) return (message.channel as any).send(down);
 
     const guildId = message.guildId!;
     const engine = MusicService.getEngine(guildId);
