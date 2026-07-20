@@ -256,7 +256,7 @@ export async function init(client: any): Promise<boolean> {
   const nodes: any[] = [];
   for (let i = 1; i <= 20; i++) {
     const host = process.env[`NODELINK_HOST${i > 1 ? `_${i}` : ""}`];
-    if (!host) break;
+    if (!host) continue;
     nodes.push({
       id: `node${i}`,
       host,
