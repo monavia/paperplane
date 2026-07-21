@@ -28,6 +28,7 @@ type StrategyType = "penalty" | "roundrobin" | "leastplayers";
 
 const STRATEGY: StrategyType = (process.env.LOAD_BALANCE_STRATEGY as StrategyType) || "penalty";
 let roundRobinIndex = 0;
+let lastRoundRobinCount = 0;
 
 function getOrCreate(name: string): NodeMetrics {
   if (!metrics.has(name)) {
@@ -110,6 +111,10 @@ function selectPenalty(connected: any[]): any {
 }
 
 function selectRoundRobin(connected: any[]): any {
+  if (connected.length !== lastRoundRobinCount) {
+    roundRobinIndex = 0;
+    lastRoundRobinCount = connected.length;
+  }
   const idx = roundRobinIndex % connected.length;
   roundRobinIndex = (roundRobinIndex + 1) % connected.length;
   return connected[idx];

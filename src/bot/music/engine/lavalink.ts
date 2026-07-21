@@ -12,7 +12,7 @@ import PlayerState from "../../database/models/PlayerState";
 import { getEngine } from "../services/PlayerService";
 import { setFilter, setEqualizer } from "../services/PlayerService";
 import { getBestNode, recordDisconnect, recordError } from "./NodePenaltyService";
-import { setLavalinkRef } from "./FailoverManager";
+import * as FailoverManager from "./FailoverManager";
 import { clearStuckTimer, startStuckTimer } from "./musicEvents";
 import { setGuildCount, setVoiceConnections, setActivePlayers, setActiveGuilds, setLavalinkNodePlayers, setLavalinkNodeLatency, setLavalinkNodesOnline, setLavalinkNodePenalty } from "../../telemetry/MetricsCollector";
 import { getPenalty } from "./NodePenaltyService";
@@ -84,148 +84,7 @@ export async function connectWithRetry(player: any, guildId: string, retries = 3
 
 const globalFailoverLocks = new Set<string>();
 
-export async function failoverFromNode(nodeId: string) {
-  if (!lavalink?.nodeManager) return;
-  
-
-  
-
-  const failoverLocks = new Set<string>();
-
-  for (const [guildId, player] of lavalink.players) {
-    if (player.node?.id !== nodeId) continue;
-    if (failoverLocks.has(guildId)) continue;
-    failoverLocks.add(guildId);
-    if (globalFailoverLocks.has(guildId)) continue;
-    globalFailoverLocks.add(guildId);
-    failoverGuilds.add(guildId);
-
-    // Find a healthy target node using NodePenaltyService scoring
-    
-
-    recordDisconnect(nodeId);
-    const target = getBestNode(lavalink);
-    if (!target || target.id === nodeId) {
-      Logger.warn(`[NodeLink] Failover: no healthy nodes for guild ${guildId}`);
-      continue;
-    }
-
-    // Double-check target is actually usable (connected + has sessionId)
-    if (!target.sessionId) {
-      Logger.warn(`[NodeLink] Failover: target ${target.id} seems connected but no session yet — skipping failover for ${guildId}`);
-      continue;
-    }
-
-    try {
-      await player.changeNode(target.id, false);
-      Logger.info(`[NodeLink] Failover: moved player ${guildId} from node=${nodeId} region=${player.node?.options?.regions?.[0] || "?"} → node=${target.id} region=${target.options?.regions?.[0] || "?"}`);
-      const curTrack = state.nowPlaying.get(guildId);
-      if (curTrack && !player.playing) {
-        const encoded = curTrack?.encoded || getCachedTrack(guildId);
-        if (encoded) {
-          await (player.play as any)({ encoded, position: player.position || 0 }).catch(Logger.safe("bot/music/engine/lavalink.ts"));
-        } else if (curTrack.info?.uri) {
-          const uri = curTrack.info.uri;
-          const isSpotify = /^spotify:(track|album|playlist):/.test(uri) || /open\.spotify\.com/i.test(uri);
-          const savedMeta = saveSpotifyMeta(curTrack);
-          let resolved: any = null;
-          if (isSpotify) {
-            const q = `${curTrack.info.author || ""} ${curTrack.info.title || ""}`.trim();
-            for (const prefix of ["ytmsearch", "ytsearch", "scsearch"]) {
-              const search = await player.search({ query: `${prefix}:${q}` }, { id: "system" }).catch(() => null);
-              if (search?.tracks?.length) { resolved = pickBestTrack(search.tracks); if (resolved) break; }
-            }
-          } else {
-            const search = await player.search({ query: uri }, { id: "system" }).catch(() => null);
-            resolved = search?.tracks?.length ? pickBestTrack(search.tracks) : null;
-          }
-          if (resolved) {
-            applySpotifyMeta(resolved, savedMeta);
-            await player.play({ track: resolved, clientTrack: resolved, position: player.position || 0 }).catch(Logger.safe("bot/music/engine/lavalink.ts"));
-          }
-        }
-        
-
-        getEngine(guildId).player = player;
-        const savedFilter = state.filter.get(guildId);
-        if (savedFilter && savedFilter !== "none") {
-          
-
-          setFilter(guildId, savedFilter, "system", "System").catch(Logger.safe("bot/music/engine/lavalink.ts"));
-        }
-        const savedBands = state.equalizer.get(guildId);
-        if (savedBands) {
-          
-
-          setEqualizer(guildId, savedBands, "system", "System").catch(Logger.safe("bot/music/engine/lavalink.ts"));
-        }
-      }
-    } catch {
-      Logger.warn(`[NodeLink] Failover: changeNode failed for ${guildId} — retrying with destroy`);
-      try {
-        // Retry with destroyAfterDisconnect=true for cleaner transition
-        await player.changeNode(target.id, true);
-        Logger.info(`[NodeLink] Failover: retry changeNode succeeded for ${guildId} to ${target.id}`);
-      } catch {
-        Logger.warn(`[NodeLink] Failover: changeNode retry failed for ${guildId} — recreating player`);
-        try {
-          const savedPos = player.position || 0;
-          const track = state.nowPlaying.get(guildId);
-          const vcId = player.voiceChannelId;
-          if (!vcId) continue;
-          await player.destroy().catch(Logger.safe("bot/music/engine/lavalink.ts"));
-          const newPlayer = lavalink.createPlayer({
-            guildId,
-            voiceChannelId: vcId,
-            textChannelId: getTextChannelId(guildId) || "",
-            selfDeaf: true,
-            selfMute: false,
-            node: target.id,
-          });
-          await newPlayer.connect();
-          const encoded = track?.encoded || getCachedTrack(guildId);
-          if (encoded) {
-            await (newPlayer.play as any)({ encoded, position: savedPos }).catch(Logger.safe("bot/music/engine/lavalink.ts"));
-          } else if (track?.info?.uri) {
-            const uri = track.info.uri;
-            const isSpotify = /^spotify:(track|album|playlist):/.test(uri) || /open\.spotify\.com/i.test(uri);
-            const savedMeta = saveSpotifyMeta(track);
-            let resolved: any = track;
-            if (isSpotify) {
-              const q = `${track.info.author || ""} ${track.info.title || ""}`.trim();
-              for (const prefix of ["ytmsearch", "ytsearch", "scsearch"]) {
-                const search = await newPlayer.search({ query: `${prefix}:${q}` }, { id: "system" }).catch(() => null);
-              if (search?.tracks?.length) { resolved = pickBestTrack(search.tracks); if (resolved) break; }
-            }
-          } else {
-            const search = await newPlayer.search({ query: uri }, { id: "system" }).catch(() => null);
-            if (search?.tracks?.length) resolved = pickBestTrack(search.tracks);
-            }
-            applySpotifyMeta(resolved, savedMeta);
-            await newPlayer.play({ track: resolved, clientTrack: resolved, position: savedPos });
-          }
-          
-
-          getEngine(guildId).player = newPlayer;
-          const savedFilter = state.filter.get(guildId);
-          if (savedFilter && savedFilter !== "none") {
-            
-
-            setFilter(guildId, savedFilter, "system", "System").catch(Logger.safe("bot/music/engine/lavalink.ts"));
-          }
-          const savedBands = state.equalizer.get(guildId);
-          if (savedBands) {
-            
-
-            setEqualizer(guildId, savedBands, "system", "System").catch(Logger.safe("bot/music/engine/lavalink.ts"));
-          }
-          Logger.info(`[NodeLink] Failover: recreated player ${guildId} (auto node)`);
-        } catch (err2: any) { Logger.warn(`[NodeLink] Failover: recreate failed for ${guildId}: ${err2.message}`); }
-      }
-    }
-    globalFailoverLocks.delete(guildId);
-  }
-}
+export const failoverFromNode = FailoverManager.failoverFromNode;
 
 function handleAllNodesDown(): void {
   allNodesDownTimer = null;
@@ -303,7 +162,7 @@ export async function init(client: any): Promise<boolean> {
     },
   });
 
-  setLavalinkRef(lavalink, client);
+  FailoverManager.setLavalinkRef(lavalink, client);
 
   const l: any = lavalink;
 
@@ -475,7 +334,14 @@ export async function init(client: any): Promise<boolean> {
         player.lastPositionChange = Date.now();
         // Actually resume playback — property changes alone don't start audio
         if (data.track && !data.paused) {
-          await player.play({ encoded: data.track, position: data.state.position || 0 }).catch(Logger.safe("bot/music/engine/lavalink.ts"));
+          await player.play({ encoded: data.track, position: data.state.position || 0 }).catch(async () => {
+            Logger.warn(`[NodeLink] Stale encoded track for ${data.guildId} — fallback to re-search`);
+            const saved = state.nowPlaying.get(data.guildId);
+            if (saved?.info?.uri) {
+              const fallback = await player.search({ query: saved.info.uri }, { id: "system" }).catch(() => null);
+              if (fallback?.tracks?.length) await player.play({ track: fallback.tracks[0], clientTrack: fallback.tracks[0], position: data.state.position || 0 }).catch(Logger.safe("bot/music/engine/lavalink.ts"));
+            }
+          });
           Logger.ready(`[NodeLink] Resumed playback for ${data.guildId} at pos ${data.state.position || 0}`);
         }
         EventBus.emit('state:addRestored', { guildId: data.guildId });
@@ -603,10 +469,9 @@ export function getConnectedNodes(): string[] {
     .map((n: any) => n.id);
 }
 
-export function getLeastLoadedNode(): string | null {
+export function getLeastLoadedNode(preferredRegion?: string): string | null {
   if (!lavalink?.nodeManager) return null;
-  
-  const best = getBestNode(lavalink);
+  const best = getBestNode(lavalink, preferredRegion);
   return best?.id || null;
 }
 EventBus.on('lavalink:cacheTrack', (p: any) => { if (p?.guildId) cacheTrack(p.guildId, p.track); });

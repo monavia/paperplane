@@ -5,6 +5,7 @@ import { getTextChannelId } from "../services/TextChannelStore";
 import { getEngine } from "../services/PlayerService";
 import { getBestNode, recordDisconnect, recordError } from "./NodePenaltyService";
 import { setFilter, setEqualizer } from "../services/PlayerService";
+import { searchWithRetry } from "../services/SearchService";
 import type { LavalinkManager } from "lavalink-client" with { "resolution-mode": "require" };
 
 let lavalink: LavalinkManager | null = null;
@@ -104,11 +105,11 @@ export async function failoverFromNode(nodeId: string) {
           if (isSpotify) {
             const q = `${curTrack.info.author || ""} ${curTrack.info.title || ""}`.trim();
             for (const prefix of ["ytmsearch", "ytsearch", "scsearch"]) {
-              const search = await player.search({ query: `${prefix}:${q}` }, { id: "system" }).catch(() => null);
+              const search = await searchWithRetry(player, { query: `${prefix}:${q}` }, { id: "system" }).catch(() => null);
               if (search?.tracks?.length) { resolved = search.tracks.find((t: any) => t.info?.sourceName !== "deezer") || search.tracks[0]; if (resolved) break; }
             }
           } else {
-            const search = await player.search({ query: uri }, { id: "system" }).catch(() => null);
+            const search = await searchWithRetry(player, { query: uri }, { id: "system" }).catch(() => null);
             if (search?.tracks?.length) {
               const preferred = search.tracks.find((t: any) => t.info?.sourceName === "youtube" || t.info?.sourceName === "ytmusic");
               resolved = preferred || search.tracks.find((t: any) => t.info?.sourceName !== "deezer") || search.tracks[0];
@@ -161,11 +162,11 @@ export async function failoverFromNode(nodeId: string) {
             if (isSpotify) {
               const q = `${track.info.author || ""} ${track.info.title || ""}`.trim();
               for (const prefix of ["ytmsearch", "ytsearch", "scsearch"]) {
-                const search = await newPlayer.search({ query: `${prefix}:${q}` }, { id: "system" }).catch(() => null);
+                const search = await searchWithRetry(newPlayer, { query: `${prefix}:${q}` }, { id: "system" }).catch(() => null);
                 if (search?.tracks?.length) { resolved = search.tracks.find((t: any) => t.info?.sourceName !== "deezer") || search.tracks[0]; if (resolved) break; }
               }
             } else {
-              const search = await newPlayer.search({ query: uri }, { id: "system" }).catch(() => null);
+              const search = await searchWithRetry(newPlayer, { query: uri }, { id: "system" }).catch(() => null);
               if (search?.tracks?.length) {
                 const preferred = search.tracks.find((t: any) => t.info?.sourceName === "youtube" || t.info?.sourceName === "ytmusic");
                 resolved = preferred || search.tracks.find((t: any) => t.info?.sourceName !== "deezer") || search.tracks[0];
