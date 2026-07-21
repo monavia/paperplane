@@ -5,7 +5,7 @@ import Logger from "../../core/utils/Logger";
 class RecommendationEngine {
   private playedTracks: Map<string, Set<string>> = new Map();
 
-  async _searchWithRetry(player: any, query: any, retries = 2): Promise<any> {
+  async _searchWithRetry(player: any, query: any, retries = 3): Promise<any> {
     for (let i = 0; i <= retries; i++) {
       try {
         return await player.search(query, { id: "system" });
@@ -70,19 +70,9 @@ class RecommendationEngine {
     try {
       let candidates: any[] = [];
 
-      // 1. YouTube Mix (radio) — rekomendasi algoritma YouTube
-      candidates = await this._getYouTubeMix(player, track);
-
-      // 2. Fallback: search by source URI (preserves exact track when available)
-      if (!candidates.length && track.info?.uri && track.info.sourceName === "youtube") {
-        const result = await this._searchWithRetry(player, { query: track.info.uri }).catch(() => null);
-        if (result?.tracks?.length) candidates = result.tracks;
-      }
-
-      // 3. Fallback: multi-source search pake judul
-      if (!candidates.length) {
-        const query = this._buildQuery(track.info);
-        if (!query) return [];
+      // 1. Multi-source search pake judul (paling reliable buat cloud Lavalink)
+      const query = this._buildQuery(track.info);
+      if (query) {
         const searches = [
           `ytmsearch:${query}`,
           `ytsearch:${query}`,
@@ -92,6 +82,17 @@ class RecommendationEngine {
           const r = await this._searchWithRetry(player, { query: sq }).catch(() => null);
           if (r?.tracks?.length) { candidates = r.tracks; break; }
         }
+      }
+
+      // 2. Fallback: YouTube Mix (radio) — sering gagal di cloud Lavalink
+      if (!candidates.length) {
+        candidates = await this._getYouTubeMix(player, track);
+      }
+
+      // 3. Fallback: search by source URI
+      if (!candidates.length && track.info?.uri && track.info.sourceName === "youtube") {
+        const result = await this._searchWithRetry(player, { query: track.info.uri }).catch(() => null);
+        if (result?.tracks?.length) candidates = result.tracks;
       }
 
       if (!candidates.length) {

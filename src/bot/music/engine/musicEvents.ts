@@ -18,7 +18,7 @@ import * as EventBus from "../events/EventBus";
 import { cleanTitle, saveSpotifyMeta, applySpotifyMeta } from "../services/TitleResolver";
 import AutoplayEngine from "./AutoplayEngine";
 
-
+const autoplayInst = new AutoplayEngine();
 
 const disconnectTimers = new Map<string, any>();
 const errorTimestamps = new Map<string, number[]>();
@@ -313,8 +313,7 @@ const queueEndGuard = new Set<string>();
       try {
         if (state.autoplay.get(player.guildId)) {
           
-          const autoplay = new AutoplayEngine();
-          const autoTrack = await autoplay.getNextTrack(player, track, player.guildId);
+          const autoTrack = await autoplayInst.getNextTrack(player, track, player.guildId);
           if (autoTrack) {
             state.nowPlaying.set(player.guildId, autoTrack);
             await player.play({ track: autoTrack, clientTrack: autoTrack }).catch((err: any) => Logger.warn(`[autoplay] Play failed: ${err.message}`));
