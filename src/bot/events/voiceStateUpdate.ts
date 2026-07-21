@@ -2,7 +2,7 @@ import { EmbedBuilder } from "discord.js";
 import Logger from "../core/utils/Logger";
 import Colors from "../core/constants/Colors";
 import { getTextChannelId } from "../music/services/TextChannelStore";
-import { setLastFilter } from "../database/repositories/GuildRepository";
+import { setLastFilter, setAutoplay, setShuffle } from "../database/repositories/GuildRepository";
 import { isIdleDisconnect, clearIdleDisconnect } from "../music/engine/musicEvents";
 import state from "../core/state/StateManager";
 import { isLavalinkReady } from "../music/services/MusicService";
@@ -52,7 +52,9 @@ export function start(client: any): void {
       await deleteState(guildId).catch(Logger.safe("bot/events/voiceStateUpdate.ts"));
       if (!state.twentyFourSeven.isEnabled(guildId)) {
         state.autoplay.delete(guildId);
+        setAutoplay(guildId, false).catch(Logger.safe("bot/events/voiceStateUpdate.ts"));
         state.shuffle.delete(guildId);
+        setShuffle(guildId, false).catch(Logger.safe("bot/events/voiceStateUpdate.ts"));
         state.filter.delete(guildId);
         state.equalizer.delete(guildId);
       }

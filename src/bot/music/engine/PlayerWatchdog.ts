@@ -1,6 +1,7 @@
 import Logger from "../../core/utils/Logger";
 import { destroyEngine } from "../services/PlayerService";
 import { failoverFromNode, connectWithRetry } from "./lavalink";
+import { markTrackStartSuppressed } from "./musicEvents";
 
 const STUCK_TIMEOUT_MS = 15000;
 const CHECK_INTERVAL_MS = 30000;
@@ -96,7 +97,10 @@ async function checkPlayer(guildId: string, player: any, clientRef: any): Promis
         try {
           await connectWithRetry(player, guildId);
           await new Promise(r => setTimeout(r, 500));
-          if (current?.encoded) await player.play({ track: current, clientTrack: current, position: player.position || 0 });
+          if (current?.encoded) {
+            markTrackStartSuppressed(guildId);
+            await player.play({ track: current, clientTrack: current, position: player.position || 0 });
+          }
           else { await player.stopPlaying().catch(Logger.safe("bot/music/engine/PlayerWatchdog.ts")); }
         } catch {
           await player.stopPlaying().catch(Logger.safe("bot/music/engine/PlayerWatchdog.ts"));

@@ -178,9 +178,7 @@ async function restoreGuildState(client: any, saved: any): Promise<boolean> {
   if (saved.textChannelId) setTextChannelId(saved.guildId, saved.textChannelId);
 
   const engine = getEngine(saved.guildId);
-  // Autoplay: reset ke false abis restart biar gak ON sendiri dari DB
-  // User bisa enable manual via -ap command
-  state.autoplay.set(saved.guildId, false);
+  state.autoplay.set(saved.guildId, await getAutoplay(saved.guildId));
   state.loop.set(saved.guildId, await getLoop(saved.guildId) as "off" | "track" | "playlist");
   state.shuffle.set(saved.guildId, await getShuffle(saved.guildId));
   state.twentyFourSeven.set(saved.guildId, await get247(saved.guildId), "");
