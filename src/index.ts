@@ -1,7 +1,11 @@
+import "./instrument";
 import "reflect-metadata";
 import "dotenv/config";
 
+
+
 // Suppress lavalink-client internal console.error dumps
+
 // Verified: lavalink-client v2.10 debugOptions only has {noAudio, playerDestroy} — no console.error suppress.
 const _origConsoleError = console.error;
 console.error = (...args: any[]) => {
@@ -95,7 +99,7 @@ async function main() {
     process.on("SIGTERM", () => shutdownManager.startShutdown());
 
     // AI status
-    const { default: AIEngine } = await import("./bot/ai/engine/AIEngine");
+    const { default: AIEngine } = await import("./bot/ai/engine/AIEngine.js") as any;
     const aiReady = AIEngine.isReady();
     if (aiReady) Logger.ready("AI assistant ready");
 
@@ -123,6 +127,7 @@ async function main() {
 process.on("unhandledRejection", (err: any) => {
   if (err instanceof Error) {
     Logger.error("Unhandled rejection:", err?.message || String(err));
+    import("@sentry/node").then(S => S.captureException(err));
   } else {
     Logger.warn("Unhandled rejection (non-Error):", String(err));
   }
@@ -131,6 +136,7 @@ process.on("uncaughtException", (err: any) => {
   if (!(err instanceof Error)) return;
   if (err.message?.includes("Unhandled error")) return;
   Logger.error("Uncaught exception:", err?.message || String(err));
+  import("@sentry/node").then(S => S.captureException(err));
 });
 
 main();

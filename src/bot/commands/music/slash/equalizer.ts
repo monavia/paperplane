@@ -4,7 +4,7 @@ import { setLastEqualizer, getLastEqualizer } from "@/bot/database/repositories/
 import * as SuccessEmbed from "@/bot/ui/embeds/SuccessEmbed";
 import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
 import Colors from "@/bot/core/constants/Colors";
-import { checkSameVoice } from "@/bot/core/utils/VoiceCheck";
+import { requireSameVoice } from "@/bot/core/utils/VoiceCheck";
 import state from "@/bot/core/state/StateManager";
 
 const EQ_PRESETS: Record<string, { band: number; gain: number }[]> = {
@@ -41,8 +41,7 @@ export default {
     .setDescription("Set equalizer preset"),
 
   async execute(interaction: any) {
-    const vc = checkSameVoice(interaction);
-    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], flags: 64 });
+    if (!await requireSameVoice(interaction)) return;
     const down = MusicService.requireLavalink();
     if (down) return interaction.reply({ ...down, flags: 64 });
 
@@ -62,8 +61,8 @@ export default {
       .setDescription(`Current EQ: **${current}**`)
       .setColor(Colors.INFO);
 
-    await interaction.reply({ embeds: [embed], components: [row] });
-    const msg = await interaction.fetchReply();
+    await interaction.deferReply();
+    const msg = await interaction.editReply({ embeds: [embed], components: [row] });
 
     const collector = msg.createMessageComponentCollector({
       filter: (i: any) => i.user.id === interaction.user.id,

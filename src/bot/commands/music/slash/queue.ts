@@ -12,7 +12,8 @@ export default {
       return interaction.reply({ embeds: [embed] });
     }
     const { embed, buttonRow, totalPages } = buildQueueEmbed(tracks, 1);
-    const msg = await interaction.reply({ embeds: [embed], components: [buttonRow], fetchReply: true });
+    await interaction.deferReply();
+    const msg = await interaction.editReply({ embeds: [embed], components: [buttonRow] });
 
     const collector = msg.createMessageComponentCollector({
       filter: (i: any) => i.user.id === interaction.user.id,

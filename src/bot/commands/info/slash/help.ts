@@ -14,6 +14,7 @@ export default {
       .setDescription(lines.join("\n"))
       .setColor(Colors.INFO)
       .setFooter({ text: `${commands.size} slash commands • Prefix: \`${botConfig.prefix}\`` });
-    await interaction.reply({ embeds: [embed], flags: 64 });
+    await interaction.deferReply({ flags: 64 });
+    await interaction.editReply({ embeds: [embed] });
   },
 };

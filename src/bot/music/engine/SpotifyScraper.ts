@@ -145,7 +145,7 @@ class SpotifyScraper {
     if (embedHtml) {
       const match = embedHtml.match(/<script id="__NEXT_DATA__" type="application\/json">(.+?)<\/script>/s);
       if (match) {
-        try { const json = JSON.parse(match[1]); const d = json.props?.pageProps?.state?.data; if (d) return d; } catch {}
+        try { const json = JSON.parse(match[1]); const d = json.props?.pageProps?.state?.data; if (d) return d; } catch { Logger.safe("SpotifyScraper")(); }
       }
       Logger.info(`[SpotifyScraper] Embed ${type}/${id}: html ${embedHtml.length}B, __NEXT_DATA__ ${match ? "found" : "missing"}`);
     } else {
@@ -201,11 +201,11 @@ class SpotifyScraper {
 
   _extractFromHtml(html: any): any {
     const n = html.match(/<script id="__NEXT_DATA__"[^>]*type="application\/json"[^>]*>([\s\S]*?)<\/script>/);
-    if (n) { try { const d = JSON.parse(n[1]); const c = this._findAllItems(d); if (c.length) { const b = c.reduce((a: any, b: any) => a.length >= b.length ? a : b); if (b?.length) return this._mapTracks(b); } } catch {} }
+    if (n) { try { const d = JSON.parse(n[1]); const c = this._findAllItems(d); if (c.length) { const b = c.reduce((a: any, b: any) => a.length >= b.length ? a : b); if (b?.length) return this._mapTracks(b); } } catch { Logger.safe("SpotifyScraper")(); } }
     const s = html.match(/<script[^>]*type="text\/json"[^>]*>([A-Za-z0-9+/=]+)<\/script>/);
-    if (s) { try { const d = JSON.parse(Buffer.from(s[1], "base64").toString("utf-8")); const c = this._findAllItems(d); if (c.length) { const b = c.reduce((a: any, b: any) => a.length >= b.length ? a : b); if (b?.length) return this._mapTracks(b); } } catch {} }
+    if (s) { try { const d = JSON.parse(Buffer.from(s[1], "base64").toString("utf-8")); const c = this._findAllItems(d); if (c.length) { const b = c.reduce((a: any, b: any) => a.length >= b.length ? a : b); if (b?.length) return this._mapTracks(b); } } catch { Logger.safe("SpotifyScraper")(); } }
     const m = html.match(/window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\})\s*;?\s*\n?<\/script>/);
-    if (m) { try { const d = JSON.parse(m[1]); const c = this._findAllItems(d); if (c.length) { const b = c.reduce((a: any, b: any) => a.length >= b.length ? a : b); if (b?.length) return this._mapTracks(b); } } catch {} }
+    if (m) { try { const d = JSON.parse(m[1]); const c = this._findAllItems(d); if (c.length) { const b = c.reduce((a: any, b: any) => a.length >= b.length ? a : b); if (b?.length) return this._mapTracks(b); } } catch { Logger.safe("SpotifyScraper")(); } }
     return null;
   }
 

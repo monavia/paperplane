@@ -4,9 +4,8 @@ import { saveSpotifyMeta, applySpotifyMeta } from "../services/TitleResolver";
 import { getTextChannelId } from "../services/TextChannelStore";
 import { getEngine } from "../services/PlayerService";
 import { getBestNode, recordDisconnect, recordError } from "./NodePenaltyService";
-import { addRestoredGuild } from "../services/StateService";
-import { setFilter, setEqualizer } from "../services/MusicService";
-import type { LavalinkManager } from "lavalink-client";
+import { setFilter, setEqualizer } from "../services/PlayerService";
+import type { LavalinkManager } from "lavalink-client" with { "resolution-mode": "require" };
 
 let lavalink: LavalinkManager | null = null;
 let clientRef: any = null;
@@ -96,7 +95,7 @@ export async function failoverFromNode(nodeId: string) {
       if (curTrack && !player.playing) {
         const encoded = curTrack?.encoded || getCachedTrack(guildId);
         if (encoded) {
-          await (player.play as any)({ encoded, position: player.position || 0 }).catch(() => {});
+          await (player.play as any)({ encoded, position: player.position || 0 }).catch(Logger.safe("bot/music/engine/FailoverManager.ts"));
         } else if (curTrack.info?.uri) {
           const uri = curTrack.info.uri;
           const isSpotify = /^spotify:(track|album|playlist):/.test(uri) || /open\.spotify\.com/i.test(uri);
@@ -117,17 +116,17 @@ export async function failoverFromNode(nodeId: string) {
           }
           if (resolved) {
             applySpotifyMeta(resolved, savedMeta);
-            await player.play({ track: resolved, clientTrack: resolved, position: player.position || 0 }).catch(() => {});
+            await player.play({ track: resolved, clientTrack: resolved, position: player.position || 0 }).catch(Logger.safe("bot/music/engine/FailoverManager.ts"));
           }
         }
         getEngine(guildId).player = player;
         const savedFilter = state.filter.get(guildId);
         if (savedFilter && savedFilter !== "none") {
-          setFilter(guildId, savedFilter, "system", "System").catch(() => {});
+          setFilter(guildId, savedFilter, "system", "System").catch(Logger.safe("bot/music/engine/FailoverManager.ts"));
         }
         const savedBands = state.equalizer.get(guildId);
         if (savedBands) {
-          setEqualizer(guildId, savedBands, "system", "System").catch(() => {});
+          setEqualizer(guildId, savedBands, "system", "System").catch(Logger.safe("bot/music/engine/FailoverManager.ts"));
         }
       }
     } catch (err: any) {
@@ -142,7 +141,7 @@ export async function failoverFromNode(nodeId: string) {
           const track = state.nowPlaying.get(guildId);
           const vcId = player.voiceChannelId;
           if (!vcId) continue;
-          await player.destroy().catch(() => {});
+          await player.destroy().catch(Logger.safe("bot/music/engine/FailoverManager.ts"));
           const newPlayer = lavalink.createPlayer({
             guildId,
             voiceChannelId: vcId,
@@ -153,7 +152,7 @@ export async function failoverFromNode(nodeId: string) {
           await newPlayer.connect();
           const encoded = track?.encoded || getCachedTrack(guildId);
           if (encoded) {
-            await (newPlayer.play as any)({ encoded, position: savedPos }).catch(() => {});
+            await (newPlayer.play as any)({ encoded, position: savedPos }).catch(Logger.safe("bot/music/engine/FailoverManager.ts"));
           } else if (track?.info?.uri) {
             const uri = track.info.uri;
             const isSpotify = /^spotify:(track|album|playlist):/.test(uri) || /open\.spotify\.com/i.test(uri);
@@ -178,11 +177,11 @@ export async function failoverFromNode(nodeId: string) {
           getEngine(guildId).player = newPlayer;
           const savedFilter = state.filter.get(guildId);
           if (savedFilter && savedFilter !== "none") {
-            setFilter(guildId, savedFilter, "system", "System").catch(() => {});
+            setFilter(guildId, savedFilter, "system", "System").catch(Logger.safe("bot/music/engine/FailoverManager.ts"));
           }
           const savedBands = state.equalizer.get(guildId);
           if (savedBands) {
-            setEqualizer(guildId, savedBands, "system", "System").catch(() => {});
+            setEqualizer(guildId, savedBands, "system", "System").catch(Logger.safe("bot/music/engine/FailoverManager.ts"));
           }
           Logger.info(`[NodeLink] Failover: recreated player ${guildId} (auto node)`);
         } catch (err2: any) { Logger.warn(`[NodeLink] Failover: recreate failed for ${guildId}: ${err2.message}`); }

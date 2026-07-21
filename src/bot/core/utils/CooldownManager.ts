@@ -3,11 +3,28 @@ interface CooldownEntry {
   uses: number;
 }
 
+const TTL_MS = 3600000; // 1 jam
+
 class CooldownManager {
   private _cooldowns: Map<string, CooldownEntry> = new Map();
+  private _cleanupTimer: any = null;
+
+  constructor() {
+    this._cleanupTimer = setInterval(() => this._cleanup(), TTL_MS);
+    if (this._cleanupTimer?.unref) this._cleanupTimer.unref();
+  }
 
   private _key(userId: string, command: string): string {
     return `${userId}:${command}`;
+  }
+
+  private _cleanup(): void {
+    const now = Date.now();
+    let deleted = 0;
+    for (const [key, entry] of this._cooldowns) {
+      if (now - entry.lastUsed > TTL_MS) { this._cooldowns.delete(key); deleted++; }
+    }
+    if (deleted > 0) console.log(`[Cooldown] Cleaned ${deleted} stale entries (${this._cooldowns.size} remaining)`);
   }
 
   check(userId: string, command: string, cooldownMs = 3000): boolean {
@@ -31,11 +48,9 @@ class CooldownManager {
   reset(userId: string, command?: string): void {
     if (command) { this._cooldowns.delete(this._key(userId, command)); }
     else {
-      const keysToDelete: string[] = [];
       for (const key of this._cooldowns.keys()) {
-        if (key.startsWith(`${userId}:`)) keysToDelete.push(key);
+        if (key.startsWith(`${userId}:`)) this._cooldowns.delete(key);
       }
-      for (const key of keysToDelete) this._cooldowns.delete(key);
     }
   }
 

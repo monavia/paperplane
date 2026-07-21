@@ -1,7 +1,7 @@
 import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
 import Colors from "@/bot/core/constants/Colors";
 import * as MusicService from "@/bot/music/services/MusicService";
-import { checkSameVoice } from "@/bot/core/utils/VoiceCheck";
+import { requireSameVoice } from "@/bot/core/utils/VoiceCheck";
 import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
 import { setAutoplay } from "@/bot/database/repositories/GuildRepository";
 import state from "@/bot/core/state/StateManager";
@@ -29,8 +29,7 @@ export default {
     .setDescription("Toggle autoplay for similar tracks"),
 
   async execute(interaction: import("discord.js").ChatInputCommandInteraction) {
-    const vc = checkSameVoice(interaction);
-    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], flags: 64 });
+    if (!await requireSameVoice(interaction)) return;
     const down = MusicService.requireLavalink();
     if (down) return interaction.reply({ ...down, flags: 64 });
 
@@ -45,8 +44,8 @@ export default {
       .setColor(isAutoplayOn ? Colors.SUCCESS : Colors.ERROR);
 
     const row = buildButtons(isAutoplayOn);
-    await interaction.reply({ embeds: [embed], components: [row] });
-    const msg = await interaction.fetchReply();
+    await interaction.deferReply();
+    const msg = await interaction.editReply({ embeds: [embed], components: [row] });
     const collector = msg.createMessageComponentCollector({
       filter: (i: any) => i.user.id === interaction.user.id,
       time: TIMEOUT,

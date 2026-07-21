@@ -3,14 +3,13 @@ import * as MusicService from "@/bot/music/services/MusicService";
 import * as NowPlayingEmbed from "@/bot/ui/embeds/NowPlayingEmbed";
 import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
 import Colors from "@/bot/core/constants/Colors";
-import { checkSameVoice } from "@/bot/core/utils/VoiceCheck";
+import { requireSameVoice } from "@/bot/core/utils/VoiceCheck";
 import state from "@/bot/core/state/StateManager";
 
 export default {
   name: "skip", aliases: ["s"],
   async execute(message: any, _args: string[]) {
-    const vc = checkSameVoice(message);
-    if (!vc.ok) return message.channel.send({ embeds: [ErrorEmbed.build(vc.message)] });
+    if (!await requireSameVoice(message)) return;
     const player = MusicService.getEngine(message.guildId!).player;
     if (!player) return message.channel.send({ embeds: [ErrorEmbed.build("No track is currently playing.")] });
     try {

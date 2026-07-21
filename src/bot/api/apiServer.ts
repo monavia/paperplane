@@ -6,32 +6,18 @@ import { getQueue } from "../music/services/QueueService";
 import { getClient, get as getLavalink } from "../music/engine/lavalink";
 import { getVoiceJoinDuration } from "../music/engine/PlayerManager";
 import state from "../core/state/StateManager";
-import { getLastEqualizer, setLastEqualizer, getLastFilter, setLastFilter } from "../database/repositories/GuildRepository";
+import {
+  getLastEqualizer, setLastEqualizer, getLastFilter, setLastFilter,
+  getPrefix, setPrefix, updateVolume,
+  getAutoplay, setAutoplay, getLoop, setLoop, getShuffle, setShuffle, get247, set247,
+} from "../database/repositories/GuildRepository";
 import { getHistory } from "../music/services/HistoryService";
 import { fetchLyrics } from "../music/services/LyricsService";
+import { removeFromQueue, swapTracks, moveTrack, clearQueue } from "../music/services/QueueService";
 import mongoose from "mongoose";
 import { getMetrics } from "../telemetry/MetricsCollector";
-
-const TRUSTED_IPS = (process.env.TRUSTED_IPS || "").split(",").map((s) => s.trim()).filter(Boolean);
-const API_TOKEN = process.env.BOT_API_TOKEN || "";
-const LOCAL_IPS = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
-
-function isTrusted(req: any): boolean {
-  const ip = req.ip || req.connection?.remoteAddress;
-  if (LOCAL_IPS.has(ip)) return true;
-  if (TRUSTED_IPS.includes(ip)) return true;
-  if (API_TOKEN) {
-    const header = req.headers.authorization || "";
-    return header === `Bearer ${API_TOKEN}`;
-  }
-  return false;
-}
-
-function requireApiAuth(req: any, res: any, next: any) {
-  if (req.path === "/api/health") return next();
-  if (isTrusted(req)) return next();
-  res.status(401).json({ success: false, error: "Unauthorized" });
-}
+import * as Sentry from "@sentry/node";
+import { createApiHandler, jsonResponse, ApiError, withAuth, getUserId, requireApiSameVoice, guildRateLimit } from "../../lib/api-base";
 
 const SNOWFLAKE_RE = /^\d{17,20}$/;
 function validateGuildId(req: any, res: any, next: any) {
@@ -71,9 +57,25 @@ function formatTrack(track: any) {
 export async function startApiServer(_status?: any): Promise<void> {
   const app = express();
   app.use(express.json());
-  app.use(requireApiAuth);
+  app.use(withAuth());
   app.use("/api/guild/:guildId", validateGuildId);
   app.use("/api/activities/:guildId", validateGuildId);
+
+  // Per-guild rate limiting
+  app.use("/api/guild/:guildId/player", guildRateLimit(30, 60000));
+  app.use("/api/guild/:guildId/queue", guildRateLimit(20, 60000));
+  app.use("/api/guild/:guildId/filter", guildRateLimit(20, 60000));
+  app.use("/api/guild/:guildId/equalizer", guildRateLimit(20, 60000));
+  app.use("/api/guild/:guildId/search", guildRateLimit(15, 60000));
+  app.use("/api/guild/:guildId/settings", guildRateLimit(20, 60000));
+  app.use("/api/guild/:guildId", guildRateLimit(60, 60000)); // catch-all GET
+
+  // Swagger UI — API Docs (exempt from auth)
+  const swaggerUi = await import("swagger-ui-express").then(m => m.default || m).catch(() => null);
+  if (swaggerUi) {
+    const spec = await import("./openapi.json", { with: { type: "json" } }).then(m => m.default || m).catch(() => null);
+    if (spec) app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(spec));
+  }
 
   app.get("/api/metrics", (_req, res) => {
     const m = getMetrics();
@@ -115,530 +117,411 @@ export async function startApiServer(_status?: any): Promise<void> {
     for (const [key, val] of Object.entries(m.tracksFailedByLabel || {})) {
       lines.push(`paperplane_tracks_failed_total{error="${key}"} ${val}`);
     }
+    for (const [key, val] of Object.entries(m.commandsExecutedByLabel || {})) {
+      lines.push(`paperplane_commands_executed_total{command="${key}"} ${val}`);
+    }
+    for (const [key, val] of Object.entries(m.commandLatency || {})) {
+      lines.push(`paperplane_command_latency_ms{command="${key}"} ${val}`);
+    }
     res.type("text/plain").send(lines.join("\n") + "\n");
   });
 
-app.get("/api/health", (_req, res) => {
+app.get("/api/health", createApiHandler(async (_req, res) => {
     const client = getClient();
-    res.json({
+    jsonResponse(res, {
       status: "ok",
       uptime: process.uptime(),
       guilds: client?.guilds?.cache?.size || 0,
     });
-  });
+  }));
 
-  app.get("/api/guilds", (_req, res) => {
-    try {
-      const client = getClient();
-      if (!client?.guilds?.cache) {
-        Logger.warn("[API] getClient() returned null or no guilds cache");
-        return res.json([]);
-      }
-      const cacheSize = client.guilds.cache.size;
-      Logger.info(`[API] Guilds cache size: ${cacheSize}, client user: ${client.user?.tag}`);
-      const guilds = client.guilds.cache.values().map((g: any) => ({
-        id: g.id,
-        name: g.name,
-        memberCount: g.memberCount,
-        banner: g.banner || null,
-      }));
-      res.json(Array.from(guilds));
-    } catch (error) {
-      Logger.error("Error fetching guilds:", error);
-      res.json([]);
+  app.get("/api/guilds", createApiHandler(async (_req, res) => {
+    const client = getClient();
+    if (!client?.guilds?.cache) {
+      Logger.warn("[API] getClient() returned null or no guilds cache");
+      jsonResponse(res, []);
+      return;
     }
-  });
+    Logger.info(`[API] Guilds cache size: ${client.guilds.cache.size}, client user: ${client.user?.tag}`);
+    const guilds = client.guilds.cache.values().map((g: any) => ({
+      id: g.id,
+      name: g.name,
+      memberCount: g.memberCount,
+      banner: g.banner || null,
+    }));
+    jsonResponse(res, Array.from(guilds));
+  }));
 
-  // GET /api/guild/:guildId/equalizer — get current EQ state
-  app.get("/api/guild/:guildId/equalizer", async (req, res) => {
-    try {
-      const { guildId } = req.params;
-const current = await getLastEqualizer(guildId);
-      res.json({
-        success: true,
-        data: {
-          current: typeof current === 'string' ? current : "flat",
-          presets: ["flat", "bass", "treble", "rock", "jazz", "pop", "edm", "classical"],
-        },
-      });
-    } catch (error) {
-      Logger.error("Error fetching equalizer:", error);
-      res.json({ success: true, data: { current: "flat", presets: ["flat", "bass", "treble", "rock", "jazz", "pop", "edm", "classical"] } });
+  app.get("/api/guild/:guildId/equalizer", createApiHandler(async (req, res) => {
+    const { guildId } = req.params;
+    const current = await getLastEqualizer(guildId);
+    jsonResponse(res, {
+      current: typeof current === 'string' ? current : "flat",
+      presets: ["flat", "bass", "treble", "rock", "jazz", "pop", "edm", "classical"],
+    });
+  }));
+
+  app.post("/api/guild/:guildId/equalizer", createApiHandler(async (req, res) => {
+    const { guildId } = req.params;
+    const { preset } = req.body;
+    const EQ_PRESETS: Record<string, { band: number; gain: number }[]> = {
+      flat: Array.from({ length: 15 }, (_, i) => ({ band: i, gain: 0.0 })),
+      bass: Array.from({ length: 15 }, (_, i) => ({ band: i, gain: i < 5 ? 0.4 - i * 0.1 : -0.05 - (i - 5) * 0.02 })),
+      treble: Array.from({ length: 15 }, (_, i) => ({ band: i, gain: i < 5 ? -0.2 + i * 0.05 : -0.1 + (i - 5) * 0.05 })),
+      rock: [
+        { band: 0, gain: 0.2 }, { band: 1, gain: 0.1 }, { band: 2, gain: 0.0 },
+        { band: 3, gain: -0.1 }, { band: 4, gain: -0.1 }, { band: 5, gain: 0.0 },
+        { band: 6, gain: 0.1 }, { band: 7, gain: 0.2 }, { band: 8, gain: 0.3 },
+        { band: 9, gain: 0.3 }, { band: 10, gain: 0.3 }, { band: 11, gain: 0.2 },
+        { band: 12, gain: 0.1 }, { band: 13, gain: 0.0 }, { band: 14, gain: -0.1 },
+      ],
+      jazz: [
+        { band: 0, gain: 0.2 }, { band: 1, gain: 0.15 }, { band: 2, gain: 0.1 },
+        { band: 3, gain: 0.05 }, { band: 4, gain: 0.0 }, { band: 5, gain: -0.05 },
+        { band: 6, gain: -0.1 }, { band: 7, gain: -0.05 }, { band: 8, gain: 0.0 },
+        { band: 9, gain: 0.05 }, { band: 10, gain: 0.1 }, { band: 11, gain: 0.15 },
+        { band: 12, gain: 0.2 }, { band: 13, gain: 0.25 }, { band: 14, gain: 0.3 },
+      ],
+      pop: [
+        { band: 0, gain: -0.05 }, { band: 1, gain: 0.0 }, { band: 2, gain: 0.05 },
+        { band: 3, gain: 0.1 }, { band: 4, gain: 0.15 }, { band: 5, gain: 0.2 },
+        { band: 6, gain: 0.2 }, { band: 7, gain: 0.15 }, { band: 8, gain: 0.1 },
+        { band: 9, gain: 0.05 }, { band: 10, gain: 0.0 }, { band: 11, gain: -0.05 },
+        { band: 12, gain: -0.1 }, { band: 13, gain: -0.1 }, { band: 14, gain: -0.05 },
+      ],
+      edm: [
+        { band: 0, gain: 0.3 }, { band: 1, gain: 0.25 }, { band: 2, gain: 0.15 },
+        { band: 3, gain: 0.0 }, { band: 4, gain: -0.05 }, { band: 5, gain: 0.0 },
+        { band: 6, gain: 0.1 }, { band: 7, gain: 0.2 }, { band: 8, gain: 0.25 },
+        { band: 9, gain: 0.3 }, { band: 10, gain: 0.35 }, { band: 11, gain: 0.3 },
+        { band: 12, gain: 0.2 }, { band: 13, gain: 0.1 }, { band: 14, gain: 0.0 },
+      ],
+      classical: [
+        { band: 0, gain: 0.1 }, { band: 1, gain: 0.05 }, { band: 2, gain: 0.0 },
+        { band: 3, gain: -0.05 }, { band: 4, gain: -0.1 }, { band: 5, gain: -0.05 },
+        { band: 6, gain: 0.0 }, { band: 7, gain: 0.05 }, { band: 8, gain: 0.1 },
+        { band: 9, gain: 0.15 }, { band: 10, gain: 0.2 }, { band: 11, gain: 0.25 },
+        { band: 12, gain: 0.3 }, { band: 13, gain: 0.25 }, { band: 14, gain: 0.2 },
+      ],
+    };
+
+    const bands = EQ_PRESETS[preset] || EQ_PRESETS.flat;
+    const ok = await PlayerService.setEqualizer(guildId, bands, "dashboard", "Dashboard");
+    if (ok) await setLastEqualizer(guildId, preset);
+    jsonResponse(res, { success: ok });
+  }));
+
+  app.get("/api/guild/:guildId/insights", createApiHandler(async (req, res) => {
+    const { guildId } = req.params;
+    const days = parseInt(req.query.days as string) || 7;
+    const history = await getHistory(guildId, 500);
+    const cutoff = new Date(Date.now() - days * 86400000);
+    const filtered = history.filter((h: any) => new Date(h.playedAt || h.timestamp) >= cutoff);
+
+    const totalPlays = filtered.length;
+    const uniqueUsers = new Set(filtered.map((h: any) => h.userId)).size;
+
+    const dailyMap: Record<string, number> = {};
+    filtered.forEach((h: any) => {
+      const d = new Date(h.playedAt || h.timestamp).toISOString().split('T')[0];
+      dailyMap[d] = (dailyMap[d] || 0) + 1;
+    });
+    const dailyPlays = Object.entries(dailyMap).map(([date, plays]) => ({ date, plays })).sort((a, b) => a.date.localeCompare(b.date));
+
+    const trackMap: Record<string, { title: string; author: string; plays: number; thumbnail: string | null }> = {};
+    filtered.forEach((h: any) => {
+      const title = h.songTitle || h.track?.info?.title || "Unknown";
+      const author = h.artist || h.track?.info?.author || "";
+      const identifier = h.identifier || h.track?.info?.identifier || "";
+      const artworkUrl = h.artworkUrl || h.track?.info?.artworkUrl || null;
+      const thumbnail = artworkUrl || (identifier && identifier.length === 11 ? `https://img.youtube.com/vi/${identifier}/mqdefault.jpg` : null);
+      if (!trackMap[title]) trackMap[title] = { title, author, plays: 0, thumbnail };
+      trackMap[title].plays++;
+    });
+    const topTracks = Object.values(trackMap).sort((a, b) => b.plays - a.plays).slice(0, 10);
+
+    const hourlyMap: Record<number, number> = {};
+    for (let i = 0; i < 24; i++) hourlyMap[i] = 0;
+    filtered.forEach((h: any) => {
+      const hour = new Date(h.playedAt || h.timestamp).getHours();
+      hourlyMap[hour]++;
+    });
+    const hourlyActivity = Object.entries(hourlyMap).map(([hour, plays]) => ({ hour: parseInt(hour), plays }));
+
+    const totalPlayTime = totalPlays * 210000;
+    const avgSession = uniqueUsers > 0 ? Math.round(totalPlays / uniqueUsers) : 0;
+
+    jsonResponse(res, { totalPlays, uniqueUsers, totalPlayTime, avgSession, dailyPlays, topTracks, hourlyActivity });
+  }));
+
+  app.get("/api/guild/:guildId/filter", createApiHandler(async (req, res) => {
+    const { guildId } = req.params;
+    const current = await getLastFilter(guildId);
+    jsonResponse(res, {
+      current,
+      filters: ["none", "nightcore", "vaporwave", "slowmo", "soft", "treble", "bassboost", "8d"],
+    });
+  }));
+
+  app.post("/api/guild/:guildId/filter", createApiHandler(async (req, res) => {
+    const { guildId } = req.params;
+    const { filter } = req.body;
+    let ok;
+    if (!filter || filter === "none") {
+      ok = await PlayerService.resetFilters(guildId, "dashboard", "Dashboard");
+    } else {
+      ok = await PlayerService.setFilter(guildId, filter, "dashboard", "Dashboard");
     }
-  });
+    if (ok) await setLastFilter(guildId, filter || "none");
+    jsonResponse(res, { success: ok });
+  }));
 
-  // POST /api/guild/:guildId/equalizer — apply EQ preset
-  app.post("/api/guild/:guildId/equalizer", async (req, res) => {
-    try {
-      const { guildId } = req.params;
-      const { preset } = req.body;
-      const userId = "dashboard";
-      const userName = "Dashboard";
-      const EQ_PRESETS: Record<string, { band: number; gain: number }[]> = {
-        flat: Array.from({ length: 15 }, (_, i) => ({ band: i, gain: 0.0 })),
-        bass: Array.from({ length: 15 }, (_, i) => ({ band: i, gain: i < 5 ? 0.4 - i * 0.1 : -0.05 - (i - 5) * 0.02 })),
-        treble: Array.from({ length: 15 }, (_, i) => ({ band: i, gain: i < 5 ? -0.2 + i * 0.05 : -0.1 + (i - 5) * 0.05 })),
-        rock: [
-          { band: 0, gain: 0.2 }, { band: 1, gain: 0.1 }, { band: 2, gain: 0.0 },
-          { band: 3, gain: -0.1 }, { band: 4, gain: -0.1 }, { band: 5, gain: 0.0 },
-          { band: 6, gain: 0.1 }, { band: 7, gain: 0.2 }, { band: 8, gain: 0.3 },
-          { band: 9, gain: 0.3 }, { band: 10, gain: 0.3 }, { band: 11, gain: 0.2 },
-          { band: 12, gain: 0.1 }, { band: 13, gain: 0.0 }, { band: 14, gain: -0.1 },
-        ],
-        jazz: [
-          { band: 0, gain: 0.2 }, { band: 1, gain: 0.15 }, { band: 2, gain: 0.1 },
-          { band: 3, gain: 0.05 }, { band: 4, gain: 0.0 }, { band: 5, gain: -0.05 },
-          { band: 6, gain: -0.1 }, { band: 7, gain: -0.05 }, { band: 8, gain: 0.0 },
-          { band: 9, gain: 0.05 }, { band: 10, gain: 0.1 }, { band: 11, gain: 0.15 },
-          { band: 12, gain: 0.2 }, { band: 13, gain: 0.25 }, { band: 14, gain: 0.3 },
-        ],
-        pop: [
-          { band: 0, gain: -0.05 }, { band: 1, gain: 0.0 }, { band: 2, gain: 0.05 },
-          { band: 3, gain: 0.1 }, { band: 4, gain: 0.15 }, { band: 5, gain: 0.2 },
-          { band: 6, gain: 0.2 }, { band: 7, gain: 0.15 }, { band: 8, gain: 0.1 },
-          { band: 9, gain: 0.05 }, { band: 10, gain: 0.0 }, { band: 11, gain: -0.05 },
-          { band: 12, gain: -0.1 }, { band: 13, gain: -0.1 }, { band: 14, gain: -0.05 },
-        ],
-        edm: [
-          { band: 0, gain: 0.3 }, { band: 1, gain: 0.25 }, { band: 2, gain: 0.15 },
-          { band: 3, gain: 0.0 }, { band: 4, gain: -0.05 }, { band: 5, gain: 0.0 },
-          { band: 6, gain: 0.1 }, { band: 7, gain: 0.2 }, { band: 8, gain: 0.25 },
-          { band: 9, gain: 0.3 }, { band: 10, gain: 0.35 }, { band: 11, gain: 0.3 },
-          { band: 12, gain: 0.2 }, { band: 13, gain: 0.1 }, { band: 14, gain: 0.0 },
-        ],
-        classical: [
-          { band: 0, gain: 0.1 }, { band: 1, gain: 0.05 }, { band: 2, gain: 0.0 },
-          { band: 3, gain: -0.05 }, { band: 4, gain: -0.1 }, { band: 5, gain: -0.05 },
-          { band: 6, gain: 0.0 }, { band: 7, gain: 0.05 }, { band: 8, gain: 0.1 },
-          { band: 9, gain: 0.15 }, { band: 10, gain: 0.2 }, { band: 11, gain: 0.25 },
-          { band: 12, gain: 0.3 }, { band: 13, gain: 0.25 }, { band: 14, gain: 0.2 },
-        ],
-      };
+  app.get("/api/guild/:guildId/health", createApiHandler(async (req, res) => {
+    const { guildId } = req.params;
+    const engine = PlayerService.getEngine(guildId);
+    const player = engine?.player;
+    const client = getClient();
 
-      const bands = EQ_PRESETS[preset] || EQ_PRESETS.flat;
-      const ok = await PlayerService.setEqualizer(guildId, bands, userId, userName);
-      if (ok) {
-        await setLastEqualizer(guildId, preset);
-      }
-      res.json({ success: ok });
-    } catch (error) {
-      Logger.error("Error setting equalizer:", error);
-      res.status(500).json({ success: false, error: "Failed to set equalizer" });
-    }
-  });
+    let channel = "None";
+    let channelName = "None";
+    let latency = 0;
+    let region = "unknown";
 
-  // GET /api/guild/:guildId/insights — music analytics
-  app.get("/api/guild/:guildId/insights", async (req, res) => {
-    try {
-      const { guildId } = req.params;
-      const days = parseInt(req.query.days as string) || 7;
-const history = await getHistory(guildId, 500);
-      const cutoff = new Date(Date.now() - days * 86400000);
-      const filtered = history.filter((h: any) => new Date(h.playedAt || h.timestamp) >= cutoff);
-
-      const totalPlays = filtered.length;
-      const uniqueUsers = new Set(filtered.map((h: any) => h.userId)).size;
-
-      // Daily plays
-      const dailyMap: Record<string, number> = {};
-      filtered.forEach((h: any) => {
-        const d = new Date(h.playedAt || h.timestamp).toISOString().split('T')[0];
-        dailyMap[d] = (dailyMap[d] || 0) + 1;
-      });
-      const dailyPlays = Object.entries(dailyMap).map(([date, plays]) => ({ date, plays })).sort((a, b) => a.date.localeCompare(b.date));
-
-      // Top tracks
-      const trackMap: Record<string, { title: string; author: string; plays: number; thumbnail: string | null }> = {};
-      filtered.forEach((h: any) => {
-        const title = h.songTitle || h.track?.info?.title || "Unknown";
-        const author = h.artist || h.track?.info?.author || "";
-        const identifier = h.identifier || h.track?.info?.identifier || "";
-        const artworkUrl = h.artworkUrl || h.track?.info?.artworkUrl || null;
-        const thumbnail = artworkUrl || (identifier && identifier.length === 11 ? `https://img.youtube.com/vi/${identifier}/mqdefault.jpg` : null);
-        if (!trackMap[title]) trackMap[title] = { title, author, plays: 0, thumbnail };
-        trackMap[title].plays++;
-      });
-      const topTracks = Object.values(trackMap).sort((a, b) => b.plays - a.plays).slice(0, 10);
-
-      // Hourly activity
-      const hourlyMap: Record<number, number> = {};
-      for (let i = 0; i < 24; i++) hourlyMap[i] = 0;
-      filtered.forEach((h: any) => {
-        const hour = new Date(h.playedAt || h.timestamp).getHours();
-        hourlyMap[hour]++;
-      });
-      const hourlyActivity = Object.entries(hourlyMap).map(([hour, plays]) => ({ hour: parseInt(hour), plays }));
-
-      // Total playtime estimate (avg 3.5 min per play)
-      const totalPlayTime = totalPlays * 210000;
-
-      // Avg session (plays per unique user)
-      const avgSession = uniqueUsers > 0 ? Math.round(totalPlays / uniqueUsers) : 0;
-
-      res.json({
-        success: true,
-        data: {
-          totalPlays,
-          uniqueUsers,
-          totalPlayTime,
-          avgSession,
-          dailyPlays,
-          topTracks,
-          hourlyActivity,
-        },
-      });
-    } catch (error) {
-      Logger.error("Error fetching insights:", error);
-      res.json({ success: true, data: { totalPlays: 0, uniqueUsers: 0, totalPlayTime: 0, avgSession: 0, dailyPlays: [], topTracks: [], hourlyActivity: [] } });
-    }
-  });
-
-  // GET /api/guild/:guildId/filter — get current filter state
-  app.get("/api/guild/:guildId/filter", async (req, res) => {
-    try {
-      const { guildId } = req.params;
-const fm = PlayerService.getFilterState(guildId);
-      const current = await getLastFilter(guildId);
-      res.json({
-        success: true,
-        data: {
-          current,
-          filters: ["none", "nightcore", "vaporwave", "slowmo", "soft", "treble", "bassboost", "8d"],
-        },
-      });
-    } catch (error) {
-      Logger.error("Error fetching filter:", error);
-      res.json({ success: true, data: { current: "none", filters: ["none", "nightcore", "vaporwave", "slowmo", "soft", "treble", "bassboost", "8d"] } });
-    }
-  });
-
-  // POST /api/guild/:guildId/filter — apply or reset filter
-  app.post("/api/guild/:guildId/filter", async (req, res) => {
-    try {
-      const { guildId } = req.params;
-      const { filter } = req.body;
-      const userId = "dashboard";
-      const userName = "Dashboard";
-      let ok;
-      if (!filter || filter === "none") {
-        ok = await PlayerService.resetFilters(guildId, userId, userName);
-      } else {
-        ok = await PlayerService.setFilter(guildId, filter, userId, userName);
-      }
-
-      if (ok) {
-        await setLastFilter(guildId, filter || "none");
-      }
-
-      res.json({ success: ok });
-    } catch (error) {
-      Logger.error("Error setting filter:", error);
-      res.status(500).json({ success: false, error: "Failed to set filter" });
-    }
-  });
-
-  // GET /api/guild/:guildId/health — voice channel health
-  app.get("/api/guild/:guildId/health", async (req, res) => {
-    try {
-      const { guildId } = req.params;
-      const engine = PlayerService.getEngine(guildId);
-      const player = engine?.player;
-      const client = getClient();
-
-      let channel = "None";
-      let channelName = "None";
-      let latency = 0;
-      let region = "unknown";
-
-      if (player?.voiceChannelId) {
-        channel = player.voiceChannelId;
-        region = (player.node as any)?.options?.region || player.node?.options?.regions?.[0] || "unknown";
-        if (client?.guilds) {
-          const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
-          if (guild?.channels) {
-            const vc = guild.channels.cache.get(player.voiceChannelId) || await guild.channels.fetch(player.voiceChannelId).catch(() => null);
-            if (vc) channelName = vc.name;
-          }
+    if (player?.voiceChannelId) {
+      channel = player.voiceChannelId;
+      region = (player.node as any)?.options?.region || player.node?.options?.regions?.[0] || "unknown";
+      if (client?.guilds) {
+        const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
+        if (guild?.channels) {
+          const vc = guild.channels.cache.get(player.voiceChannelId) || await guild.channels.fetch(player.voiceChannelId).catch(() => null);
+          if (vc) channelName = vc.name;
         }
-        if (player.state?.ping !== undefined && player.state.ping >= 0) latency = player.state.ping;
       }
-
-      res.json({
-        success: true,
-        data: {
-          latency,
-          channel: channelName,
-          channelId: channel,
-          status: player?.paused ? "Paused" : player?.playing ? "Playing" : channel !== "None" ? "Connected" : "Idle",
-          playing: player?.playing || false,
-          paused: player?.paused || false,
-          lavalinkNode: player?.node?.name || "None",
-          lavalinkRegion: region,
-        },
-      });
-    } catch (error) {
-      Logger.error("Error fetching health:", error);
-      res.json({ success: true, data: { latency: 0, channel: "None", status: "Idle", playing: false, paused: false, lavalinkNode: "None", lavalinkRegion: "unknown" } });
+      if (player.state?.ping !== undefined && player.state.ping >= 0) latency = player.state.ping;
     }
-  });
 
-  app.get("/api/guild/:guildId/nowplaying", async (req, res) => {
-    try {
-      const { guildId } = req.params;
-      const engine = PlayerService.getEngine(guildId);
-      const player = engine?.player;
+    jsonResponse(res, {
+      latency,
+      channel: channelName,
+      channelId: channel,
+      status: player?.paused ? "Paused" : player?.playing ? "Playing" : channel !== "None" ? "Connected" : "Idle",
+      playing: player?.playing || false,
+      paused: player?.paused || false,
+      lavalinkNode: player?.node?.name || "None",
+      lavalinkRegion: region,
+    });
+  }));
 
-      if (!player || (!player.playing && !player.paused)) {
-        return res.json({ success: true, data: null });
-      }
+  app.get("/api/guild/:guildId/nowplaying", createApiHandler(async (req, res) => {
+    const { guildId } = req.params;
+    const engine = PlayerService.getEngine(guildId);
+    const player = engine?.player;
 
-      const track = state.nowPlaying.get(guildId);
-      if (!track) {
-        return res.json({ success: true, data: null });
-      }
-
-      const thumb = track.info.artworkUrl || (track.info.identifier?.length === 11 ? `https://img.youtube.com/vi/${track.info.identifier}/maxresdefault.jpg` : null);
-
-      res.json({
-        success: true,
-        data: {
-          title: track.info.title,
-          artist: track.info.artist,
-          album: track.info.album || null,
-          thumbnail: thumb,
-          progress: ((player.position || 0) / (track.info.duration || 1)) * 100,
-          duration: track.info.duration,
-          current: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          requester: getRequesterId(track),
-        },
-      });
-    } catch (error) {
-      Logger.error("Error fetching nowplaying:", error);
-      res.status(500).json({ success: false, error: "Failed to fetch now playing" });
+    if (!player || (!player.playing && !player.paused)) {
+      jsonResponse(res, null);
+      return;
     }
-  });
 
-  app.get("/api/guild/:guildId/queue", async (req, res) => {
-    try {
-      const { guildId } = req.params;
-      const tracks = getQueue(guildId);
-      const current = state.nowPlaying.get(guildId);
-      const hasCurrent = !!current;
-
-      res.json({
-        success: true,
-        data: {
-          current: current ? formatTrack(current) : null,
-          upcoming: (hasCurrent ? tracks.slice(1) : tracks).map(formatTrack),
-          total: tracks.length,
-        },
-      });
-    } catch (error) {
-      Logger.error("Error fetching queue:", error);
-      res.status(500).json({ success: false, error: "Failed to fetch queue" });
+    const track = state.nowPlaying.get(guildId);
+    if (!track) {
+      jsonResponse(res, null);
+      return;
     }
-  });
 
-  app.get("/api/guild/:guildId/stats", async (req, res) => {
-    try {
-      const { guildId } = req.params;
-      const engine = PlayerService.getEngine(guildId);
-      const player = engine?.player;
-      const queueLength = engine?.queue?.getAll()?.length || 0;
-      const voiceMs = getVoiceJoinDuration(guildId);
-      const uptime = voiceMs > 0 ? formatUptime(voiceMs) : "0h 0m";
+    const thumb = track.info.artworkUrl || (track.info.identifier?.length === 11 ? `https://img.youtube.com/vi/${track.info.identifier}/maxresdefault.jpg` : null);
 
-      let activeUsers = 0;
-      const voiceChannelId = player?.voiceChannelId;
-      if (voiceChannelId) {
-        try {
-          const client = getClient();
-          if (client?.guilds) {
-            const guild = client.guilds.cache.get(guildId) || (await client.guilds.fetch(guildId).catch(() => null));
-            if (guild?.channels) {
-              const vc = guild.channels.cache.get(voiceChannelId) || (await guild.channels.fetch(voiceChannelId).catch(() => null));
-              if (vc?.members) {
-                activeUsers = vc.members.filter((m: any) => !m?.user?.bot).size;
-              }
+    jsonResponse(res, {
+      title: track.info.title,
+      artist: track.info.artist,
+      album: track.info.album || null,
+      thumbnail: thumb,
+      progress: ((player.position || 0) / (track.info.duration || 1)) * 100,
+      duration: track.info.duration,
+      current: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      requester: getRequesterId(track),
+    });
+  }));
+
+  app.get("/api/guild/:guildId/queue", createApiHandler(async (req, res) => {
+    const { guildId } = req.params;
+    const tracks = getQueue(guildId);
+    const current = state.nowPlaying.get(guildId);
+    const hasCurrent = !!current;
+
+    jsonResponse(res, {
+      current: current ? formatTrack(current) : null,
+      upcoming: (hasCurrent ? tracks.slice(1) : tracks).map(formatTrack),
+      total: tracks.length,
+    });
+  }));
+
+  app.get("/api/guild/:guildId/stats", createApiHandler(async (req, res) => {
+    const { guildId } = req.params;
+    const engine = PlayerService.getEngine(guildId);
+    const player = engine?.player;
+    const queueLength = engine?.queue?.getAll()?.length || 0;
+    const voiceMs = getVoiceJoinDuration(guildId);
+    const uptime = voiceMs > 0 ? formatUptime(voiceMs) : "0h 0m";
+
+    let activeUsers = 0;
+    const voiceChannelId = player?.voiceChannelId;
+    if (voiceChannelId) {
+      try {
+        const client = getClient();
+        if (client?.guilds) {
+          const guild = client.guilds.cache.get(guildId) || (await client.guilds.fetch(guildId).catch(() => null));
+          if (guild?.channels) {
+            const vc = guild.channels.cache.get(voiceChannelId) || (await guild.channels.fetch(voiceChannelId).catch(() => null));
+            if (vc?.members) {
+              activeUsers = vc.members.filter((m: any) => !m?.user?.bot).size;
             }
           }
-        } catch (e) {
-          Logger.error("[Stats] Voice channel members error:", e);
+        }
+      } catch (e) {
+        Logger.error("[Stats] Voice channel members error:", e);
+      }
+    }
+
+    jsonResponse(res, {
+      activeUsers,
+      queueLength,
+      uptime,
+      playing: player?.playing || false,
+      paused: player?.paused || false,
+      status: player?.paused ? "Paused" : player?.playing ? "Playing" : "Idle",
+    });
+  }));
+
+  app.post("/api/guild/:guildId/player", createApiHandler(async (req, res) => {
+    const { guildId } = req.params;
+    const { action, value } = req.body;
+    const userId = getUserId(req);
+    const engine = PlayerService.getEngine(guildId);
+    requireApiSameVoice(getClient(), engine, guildId, userId);
+
+    switch (action) {
+      case "pause":
+        await PlayerService.pause(guildId, "dashboard", "Dashboard");
+        jsonResponse(res, { success: true });
+        break;
+      case "resume":
+        await PlayerService.resume(guildId, "dashboard", "Dashboard");
+        jsonResponse(res, { success: true });
+        break;
+      case "stop":
+        await PlayerService.stop(guildId, "dashboard", "Dashboard");
+        jsonResponse(res, { success: true });
+        break;
+      case "skip":
+        await PlayerService.skip(guildId, "dashboard", "Dashboard");
+        jsonResponse(res, { success: true });
+        break;
+      case "volume":
+        PlayerService.setVolume(guildId, value ?? 100, "dashboard", "Dashboard");
+        jsonResponse(res, { success: true });
+        break;
+      case "seek":
+        PlayerService.seek(guildId, value ?? 0, "dashboard", "Dashboard");
+        jsonResponse(res, { success: true });
+        break;
+      default:
+        throw new ApiError(400, `Unknown action: ${action}`);
+    }
+  }));
+
+  app.get("/api/guild/:guildId/lyrics", createApiHandler(async (req, res) => {
+    const { guildId } = req.params;
+    const engine = PlayerService.getEngine(guildId);
+    const player = engine?.player;
+
+    if (!player || (!player.playing && !player.paused)) {
+      jsonResponse(res, null);
+      return;
+    }
+
+    const track = state.nowPlaying.get(guildId);
+    if (!track) {
+      jsonResponse(res, null);
+      return;
+    }
+
+    const lyrics = await fetchLyrics(track);
+    if (!lyrics) {
+      jsonResponse(res, null);
+      return;
+    }
+
+    jsonResponse(res, {
+      track: {
+        title: track.info.title,
+        artist: track.info.author || track.info.artist || "",
+        album: track.info.album || null,
+        thumbnail: track.info.artworkUrl || (track.info.identifier?.length === 11 ? `https://img.youtube.com/vi/${track.info.identifier}/maxresdefault.jpg` : null),
+      },
+      text: lyrics.text,
+      source: lyrics.source,
+      synced: lyrics.synced || null,
+    });
+  }));
+
+  app.get("/api/activities/:guildId", createApiHandler(async (req, res) => {
+    const { guildId } = req.params;
+    const limit = parseInt(req.query.limit as string) || 20;
+    const history = await getHistory(guildId, limit);
+    const client = getClient();
+
+    const data = await Promise.all(history.map(async (h: any) => {
+      let userName = null;
+      if (client?.users?.cache) {
+        const guild = client.guilds?.cache?.get(guildId);
+        const member = guild?.members?.cache?.get(h.userId) || await guild?.members?.fetch(h.userId).catch(() => null);
+        if (member?.displayName) {
+          userName = member.displayName;
+        } else {
+          const user = client.users.cache.get(h.userId) || await client.users.fetch(h.userId).catch(() => null);
+          userName = user?.globalName || user?.username || null;
         }
       }
+      return {
+        userId: h.userId,
+        userName,
+        action: "played",
+        songTitle: h.track?.info?.title || h.songTitle || "Unknown",
+        artist: h.track?.info?.artist || h.artist || "",
+        timestamp: h.playedAt || h.timestamp || new Date(),
+      };
+    }));
+    jsonResponse(res, data);
+  }));
 
-      res.json({
-        success: true,
-        data: {
-          activeUsers,
-          queueLength,
-          uptime,
-          playing: player?.playing || false,
-          paused: player?.paused || false,
-          status: player?.paused ? "Paused" : player?.playing ? "Playing" : "Idle",
-        },
-      });
-    } catch (error) {
-      Logger.error("Error fetching stats:", error);
-      res.status(500).json({ success: false, error: "Failed to fetch stats" });
-    }
-  });
+  app.get("/api/guild/:guildId/dj-check/:userId", createApiHandler(async (req, res) => {
+    const { guildId, userId } = req.params;
+    const client = getClient();
+    let isDj = false;
 
-  // POST /api/guild/:guildId/player — player control (pause/resume/stop/skip/volume/seek/shuffle/loop)
-  app.post("/api/guild/:guildId/player", async (req, res) => {
-    try {
-      const { guildId } = req.params;
-      const { action, value } = req.body;
-      // Ignore userId/userName from body — prevents impersonation via API
-      const userId = "dashboard";
-      const userName = "Dashboard";
-
-      switch (action) {
-        case "pause":
-          await PlayerService.pause(guildId, userId, userName);
-          res.json({ success: true });
-          break;
-        case "resume":
-          await PlayerService.resume(guildId, userId, userName);
-          res.json({ success: true });
-          break;
-        case "stop":
-          await PlayerService.stop(guildId, userId, userName);
-          res.json({ success: true });
-          break;
-        case "skip":
-          await PlayerService.skip(guildId, userId, userName);
-          res.json({ success: true });
-          break;
-        case "volume":
-          PlayerService.setVolume(guildId, value ?? 100, userId, userName);
-          res.json({ success: true });
-          break;
-        case "seek":
-          PlayerService.seek(guildId, value ?? 0, userId, userName);
-          res.json({ success: true });
-          break;
-        default:
-          res.status(400).json({ success: false, error: `Unknown action: ${action}` });
-      }
-    } catch (error) {
-      Logger.error("Error in player action:", error);
-      res.status(500).json({ success: false, error: "Player action failed" });
-    }
-  });
-
-  // GET /api/guild/:guildId/lyrics — fetch lyrics for current track
-  app.get("/api/guild/:guildId/lyrics", async (req, res) => {
-    try {
-      const { guildId } = req.params;
-const engine = PlayerService.getEngine(guildId);
-      const player = engine?.player;
-
-      if (!player || (!player.playing && !player.paused)) {
-        return res.json({ success: true, data: null });
-      }
-
-      const track = state.nowPlaying.get(guildId);
-      if (!track) {
-        return res.json({ success: true, data: null });
-      }
-
-      const lyrics = await fetchLyrics(track);
-      if (!lyrics) {
-        return res.json({ success: true, data: null });
-      }
-
-      res.json({
-        success: true,
-        data: {
-          track: {
-            title: track.info.title,
-            artist: track.info.author || track.info.artist || "",
-            album: track.info.album || null,
-            thumbnail: track.info.artworkUrl || (track.info.identifier?.length === 11 ? `https://img.youtube.com/vi/${track.info.identifier}/maxresdefault.jpg` : null),
-          },
-          text: lyrics.text,
-          source: lyrics.source,
-          synced: lyrics.synced || null,
-        },
-      });
-    } catch (error) {
-      Logger.error("Error fetching lyrics:", error);
-      res.json({ success: true, data: null });
-    }
-  });
-
-  // GET /api/activities/:guildId — activity history
-  app.get("/api/activities/:guildId", async (req, res) => {
-    try {
-      const { guildId } = req.params;
-      const limit = parseInt(req.query.limit as string) || 20;
-const history = await getHistory(guildId, limit);
-      const client = getClient();
-
-      const data = await Promise.all(history.map(async (h: any) => {
-        let userName = null;
-        if (client?.users?.cache) {
-          const guild = client.guilds?.cache?.get(guildId);
-          const member = guild?.members?.cache?.get(h.userId) || await guild?.members?.fetch(h.userId).catch(() => null);
-          if (member?.displayName) {
-            userName = member.displayName;
-          } else {
-            const user = client.users.cache.get(h.userId) || await client.users.fetch(h.userId).catch(() => null);
-            userName = user?.globalName || user?.username || null;
-          }
-        }
-        return {
-          userId: h.userId,
-          userName,
-          action: "played",
-          songTitle: h.track?.info?.title || h.songTitle || "Unknown",
-          artist: h.track?.info?.artist || h.artist || "",
-          timestamp: h.playedAt || h.timestamp || new Date(),
-        };
-      }));
-      res.json({ success: true, data });
-    } catch (error) {
-      Logger.error("Error fetching activities:", error);
-      res.json({ success: true, data: [] });
-    }
-  });
-
-  // GET /api/guild/:guildId/dj-check/:userId — check if user has DJ role
-  app.get("/api/guild/:guildId/dj-check/:userId", async (req, res) => {
-    try {
-      const { guildId, userId } = req.params;
-      const client = getClient();
-      let isDj = false;
-
-      if (client?.guilds) {
-        const guild = client.guilds.cache.get(guildId) || (await client.guilds.fetch(guildId).catch(() => null));
-        if (guild) {
-          const member = guild.members.cache.get(userId) || (await guild.members.fetch(userId).catch(() => null));
-          if (member) {
-            isDj = member.permissions.has("0x00000020") || member.roles.cache.some((r: any) => r.name.toLowerCase().includes("dj"));
-          }
+    if (client?.guilds) {
+      const guild = client.guilds.cache.get(guildId) || (await client.guilds.fetch(guildId).catch(() => null));
+      if (guild) {
+        const member = guild.members.cache.get(userId) || (await guild.members.fetch(userId).catch(() => null));
+        if (member) {
+          isDj = member.permissions.has("0x00000020") || member.roles.cache.some((r: any) => r.name.toLowerCase().includes("dj"));
         }
       }
-
-      res.json({ success: true, isDj });
-    } catch (error) {
-      Logger.error("Error checking DJ:", error);
-      res.json({ success: true, isDj: false });
     }
-  });
 
-  // GET /api/status — bot status
-  app.get("/api/status", (_req, res) => {
+    jsonResponse(res, { isDj });
+  }));
+
+  app.get("/api/status", createApiHandler(async (_req, res) => {
     const client = getClient();
     const lavalink = getLavalink();
     const connectedNodes = lavalink?.nodeManager
       ? Array.from(lavalink.nodeManager.nodes.values()).filter((n: any) => n.connected).length
       : 0;
 
-const dbReady = mongoose.connection?.readyState === 1;
+    const dbReady = mongoose.connection?.readyState === 1;
 
-    res.json({
+    jsonResponse(res, {
       api: { status: "ok", label: "Online", ok: true },
       websocket: { status: "ok", label: "Connected", ok: true },
       database: { status: dbReady ? "ok" : "error", label: dbReady ? "Connected" : "Disconnected", ok: dbReady },
@@ -650,11 +533,102 @@ const dbReady = mongoose.connection?.readyState === 1;
       guilds: client?.guilds?.cache?.size || 0,
       uptime: process.uptime(),
     });
-  });
+  }));
 
-  app.get("/api/metrics/json", (_req, res) => {
-res.json({ success: true, data: getMetrics() });
-  });
+  app.get("/api/metrics/json", createApiHandler(async (_req, res) => {
+    jsonResponse(res, getMetrics());
+  }));
+
+  // ── 1.2 Dashboard API CRUD ─────────────────────────────────────
+
+  app.delete("/api/guild/:guildId/queue", createApiHandler(async (req, res) => {
+    const { guildId } = req.params;
+    const { index } = req.body;
+    const userId = getUserId(req);
+    const engine = PlayerService.getEngine(guildId);
+    requireApiSameVoice(getClient(), engine, guildId, userId);
+    if (typeof index !== "number" || index < 0) throw new ApiError(400, "Invalid index");
+    const ok = await removeFromQueue(guildId, index);
+    if (!ok) throw new ApiError(400, "Cannot remove track at this index");
+    jsonResponse(res, { success: true });
+  }));
+
+  app.put("/api/guild/:guildId/queue", createApiHandler(async (req, res) => {
+    const { guildId } = req.params;
+    const { action, fromIndex, toIndex } = req.body;
+    const userId = getUserId(req);
+    const engine = PlayerService.getEngine(guildId);
+    requireApiSameVoice(getClient(), engine, guildId, userId);
+    if (action === "move") {
+      if (typeof fromIndex !== "number" || typeof toIndex !== "number") throw new ApiError(400, "fromIndex and toIndex required");
+      const ok = await moveTrack(guildId, fromIndex, toIndex);
+      if (!ok) throw new ApiError(400, "Cannot move track");
+      jsonResponse(res, { success: true });
+    } else if (action === "swap") {
+      if (typeof fromIndex !== "number" || typeof toIndex !== "number") throw new ApiError(400, "fromIndex and toIndex required");
+      const ok = await swapTracks(guildId, fromIndex, toIndex);
+      if (!ok) throw new ApiError(400, "Cannot swap tracks");
+      jsonResponse(res, { success: true });
+    } else if (action === "clear") {
+      await clearQueue(guildId);
+      jsonResponse(res, { success: true });
+    } else {
+      throw new ApiError(400, `Unknown action: ${action}. Use move, swap, or clear`);
+    }
+  }));
+
+  app.get("/api/guild/:guildId/settings", createApiHandler(async (req, res) => {
+    const { guildId } = req.params;
+    const [prefix, volume, autoplay, loop, shuffle, is247] = await Promise.all([
+      getPrefix(guildId),
+      PlayerService.getEngine(guildId)?.player?.volume ?? 100,
+      getAutoplay(guildId),
+      getLoop(guildId),
+      getShuffle(guildId),
+      get247(guildId),
+    ]);
+    jsonResponse(res, { prefix, volume, autoplay, loop, shuffle, "247": is247 });
+  }));
+
+  app.put("/api/guild/:guildId/settings", createApiHandler(async (req, res) => {
+    const { guildId } = req.params;
+    const body = req.body;
+    const userId = getUserId(req);
+    const engine = PlayerService.getEngine(guildId);
+    if (engine?.player) requireApiSameVoice(getClient(), engine, guildId, userId);
+    const ops: Promise<any>[] = [];
+    if (body.prefix !== undefined) ops.push(setPrefix(guildId, String(body.prefix)));
+    if (body.volume !== undefined) {
+      const v = Math.max(0, Math.min(200, Number(body.volume)));
+      ops.push(updateVolume(guildId, v));
+      ops.push(Promise.resolve(PlayerService.setVolume(guildId, v, "dashboard", "Dashboard")));
+    }
+    if (body.autoplay !== undefined) ops.push(setAutoplay(guildId, Boolean(body.autoplay)));
+    if (body.loop !== undefined) ops.push(setLoop(guildId, String(body.loop)));
+    if (body.shuffle !== undefined) ops.push(setShuffle(guildId, Boolean(body.shuffle)));
+    if (body["247"] !== undefined) ops.push(set247(guildId, Boolean(body["247"])));
+    await Promise.all(ops);
+    jsonResponse(res, { success: true });
+  }));
+
+  app.post("/api/guild/:guildId/search", createApiHandler(async (req, res) => {
+    const { guildId } = req.params;
+    const { query } = req.body;
+    if (!query || typeof query !== "string") throw new ApiError(400, "query required");
+    const results = await PlayerService.search(guildId, query, { id: "system" });
+    jsonResponse(res, {
+      tracks: (results.tracks || []).slice(0, 10).map((t: any) => ({
+        title: t.info?.title,
+        artist: t.info?.author,
+        duration: t.info?.duration || 0,
+        uri: t.info?.uri,
+        thumbnail: t.info?.artworkUrl || (t.info?.identifier?.length === 11 ? `https://img.youtube.com/vi/${t.info.identifier}/maxresdefault.jpg` : null),
+        source: t.info?.sourceName || "unknown",
+      })),
+    });
+  }));
+
+  Sentry.setupExpressErrorHandler(app);
 
   const port = Config.apiPort;
   app.listen(port, Config.apiHost, () => {

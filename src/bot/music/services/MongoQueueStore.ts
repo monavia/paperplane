@@ -1,13 +1,14 @@
-import type { QueueStoreManager, StoredQueue } from "lavalink-client";
+import type { QueueStoreManager, StoredQueue } from "lavalink-client" with { "resolution-mode": "require" };
 import PlayerState from "../../database/models/PlayerState";
+import Logger from "../../core/utils/Logger";
 
 class MongoQueueStore implements QueueStoreManager {
   async get(guildId: string): Promise<string | StoredQueue | undefined> {
     try {
       const doc = await PlayerState.findOne({ guildId }).lean();
-      if (!doc?.queue?.length) return undefined;
-      const nowPlaying = doc.nowPlaying || null;
-      return { current: nowPlaying, tracks: doc.queue } as StoredQueue;
+      if (!doc) return undefined;
+      if (!doc.queue?.length && !doc.nowPlaying) return undefined;
+      return { current: doc.nowPlaying || null, tracks: doc.queue || [] } as StoredQueue;
     } catch { return undefined; }
   }
 
@@ -25,7 +26,7 @@ class MongoQueueStore implements QueueStoreManager {
         },
         { upsert: true },
       );
-    } catch {}
+    } catch { Logger.safe("MongoQueueStore")(); }
   }
 
   async delete(guildId: string): Promise<boolean | void> {
@@ -34,7 +35,7 @@ class MongoQueueStore implements QueueStoreManager {
         { guildId },
         { $set: { queue: [], nowPlaying: null, updatedAt: new Date() } },
       );
-    } catch {}
+    } catch { Logger.safe("MongoQueueStore")(); }
   }
 
   async parse(value: string | StoredQueue): Promise<Partial<StoredQueue>> {

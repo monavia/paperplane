@@ -21,7 +21,7 @@ function startWatchdog(manager: any, clientRef: any): void {
     // Process all guilds concurrently (no blocking)
     const checks: Promise<void>[] = [];
     for (const [guildId, player] of players) {
-      checks.push(checkPlayer(guildId, player, clientRef).catch(() => {}));
+      checks.push(checkPlayer(guildId, player, clientRef).catch(Logger.safe("bot/music/engine/PlayerWatchdog.ts")));
     }
     await Promise.allSettled(checks);
   }, CHECK_INTERVAL_MS);
@@ -36,7 +36,7 @@ async function checkPlayer(guildId: string, player: any, clientRef: any): Promis
   const guild = clientRef?.guilds?.cache?.get(guildId);
   if (!guild) {
     Logger.info(`[Watchdog] Guild ${guildId} not found, destroying player`);
-    await destroyEngine(guildId).catch(() => {});
+    await destroyEngine(guildId).catch(Logger.safe("bot/music/engine/PlayerWatchdog.ts"));
     stuckCounts.delete(guildId);
     reconnectAttempts.delete(guildId);
     return;
@@ -46,7 +46,7 @@ async function checkPlayer(guildId: string, player: any, clientRef: any): Promis
     const vc = guild.channels.cache.get(player.voiceChannelId);
     if (!vc || !vc.isVoiceBased()) {
       Logger.info(`[Watchdog] Voice channel ${player.voiceChannelId} gone for guild ${guildId}, destroying player`);
-      await destroyEngine(guildId).catch(() => {});
+      await destroyEngine(guildId).catch(Logger.safe("bot/music/engine/PlayerWatchdog.ts"));
       stuckCounts.delete(guildId);
       reconnectAttempts.delete(guildId);
       return;
@@ -69,7 +69,7 @@ async function checkPlayer(guildId: string, player: any, clientRef: any): Promis
       Logger.error(`[Watchdog] Player ${guildId} failed to reconnect after ${MAX_RECONNECT_ATTEMPTS} attempts — destroying player`);
       reconnectAttempts.delete(guildId);
       stuckCounts.delete(guildId);
-      await destroyEngine(guildId).catch(() => {});
+      await destroyEngine(guildId).catch(Logger.safe("bot/music/engine/PlayerWatchdog.ts"));
       return;
     }
 
@@ -97,9 +97,9 @@ async function checkPlayer(guildId: string, player: any, clientRef: any): Promis
           await connectWithRetry(player, guildId);
           await new Promise(r => setTimeout(r, 500));
           if (current?.encoded) await player.play({ track: current, clientTrack: current, position: player.position || 0 });
-          else { await player.stopPlaying().catch(() => {}); }
+          else { await player.stopPlaying().catch(Logger.safe("bot/music/engine/PlayerWatchdog.ts")); }
         } catch {
-          await player.stopPlaying().catch(() => {});
+          await player.stopPlaying().catch(Logger.safe("bot/music/engine/PlayerWatchdog.ts"));
         }
         return;
       }
@@ -118,11 +118,11 @@ async function checkPlayer(guildId: string, player: any, clientRef: any): Promis
 
       if (count >= MAX_STUCK && node?.id) {
         Logger.warn(`[Watchdog] Player ${guildId} stuck ${count}x — triggering failover from ${node.id}`);
-        await failoverFromNode(node.id).catch(() => {});
+        await failoverFromNode(node.id).catch(Logger.safe("bot/music/engine/PlayerWatchdog.ts"));
         stuckCounts.delete(guildId);
       } else {
         Logger.warn(`[Watchdog] Player ${guildId} stuck on "${title}" (${count}/${MAX_STUCK}) — stopping`);
-        await player.stopPlaying().catch(() => {});
+        await player.stopPlaying().catch(Logger.safe("bot/music/engine/PlayerWatchdog.ts"));
       }
     } else if (lastChange > 0) {
       stuckCounts.delete(guildId);

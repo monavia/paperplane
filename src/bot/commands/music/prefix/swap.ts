@@ -2,15 +2,14 @@ import botConfig from "@/bot/config/bot";
 import { EmbedBuilder } from "discord.js";
 import * as MusicService from "@/bot/music/services/MusicService";
 import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
-import { checkSameVoice } from "@/bot/core/utils/VoiceCheck";
+import { requireSameVoice } from "@/bot/core/utils/VoiceCheck";
 import Colors from "@/bot/core/constants/Colors";
 
 export default {
   name: "swap",
   async execute(message: import("discord.js").Message, args: string[]) {
     if (!message.member) return;
-    const vc = checkSameVoice(message);
-    if (!vc.ok) return (message.channel as any).send({ embeds: [ErrorEmbed.build(vc.message)] });
+    if (!await requireSameVoice(message)) return;
 
     const a = parseInt(args[0], 10);
     const b = parseInt(args[1], 10);

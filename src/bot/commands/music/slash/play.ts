@@ -1,12 +1,13 @@
 import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
 import * as NowPlayingEmbed from "@/bot/ui/embeds/NowPlayingEmbed";
 import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
-import { pickBestTrack } from "@/bot/music/services/SearchService";
+import { pickBestTrack, searchWithRetry } from "@/bot/music/services/SearchService";
 import { cachedSearch } from "@/bot/music/services/SearchCache";
 import { parseUrl as parseSpotifyUrl, scrape as scrapeSpotify } from "@/bot/music/engine/SpotifyScraper";
 import { markTrackStartSuppressed } from "@/bot/music/engine/musicEvents";
 import { withQueueLock } from "@/bot/core/state/QueueLock";
 import Colors from "@/bot/core/constants/Colors";
+import Logger from "@/bot/core/utils/Logger";
 import * as MusicService from "@/bot/music/services/MusicService";
 import botConfig from "@/bot/config/bot";
 import state from "../../../core/state/StateManager";
@@ -18,9 +19,10 @@ import { getEngine } from "../../../music/services/PlayerService";
 async function resolveSpotifyTrack(player: any, spotifyItem: any, user: any): Promise<any> {
   const q = spotifyItem.query || `${spotifyItem.artists?.join(" ") || ""} ${spotifyItem.name}`.trim();
   if (!q) return null;
-  let result = await player.search({ query: `ytsearch:${q}` }, user);
-  if (!result?.tracks?.length) result = await player.search({ query: `ytmsearch:${q}` }, user);
-  if (!result?.tracks?.length) result = await player.search({ query: `scsearch:${q}` }, user);
+  let result: any;
+  try { result = await searchWithRetry(player, { query: `ytsearch:${q}` }, user); } catch {}
+  if (!result?.tracks?.length) { try { result = await searchWithRetry(player, { query: `ytmsearch:${q}` }, user); } catch {} }
+  if (!result?.tracks?.length) { try { result = await searchWithRetry(player, { query: `scsearch:${q}` }, user); } catch {} }
   if (result?.tracks?.length) {
     const track = pickBestTrack(result.tracks);
     if (!track.info) track.info = {};
@@ -225,6 +227,11 @@ export default {
       });
     } catch (err: any) {
       if (String(err?.message || "").includes("spotify")) return;
+      const msg = err?.message || "";
+      if (/aborted|timeout|timed\s?out/i.test(msg)) {
+        Logger.error(`[Play] Search timeout: ${msg} query="${query.slice(0, 60)}"`);
+        return interaction.editReply({ embeds: [ErrorEmbed.build("Search timed out. Try again or use a different query.")] });
+      }
       await interaction.editReply({
         embeds: [ErrorEmbed.build(err.message)],
       });

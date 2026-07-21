@@ -1,20 +1,43 @@
+import * as EventBus from "../events/EventBus";
 import { isCover } from "../services/TitleResolver";
+import Logger from "../../core/utils/Logger";
 
 class RecommendationEngine {
   private playedTracks: Map<string, Set<string>> = new Map();
 
+  async _searchWithRetry(player: any, query: any, retries = 2): Promise<any> {
+    for (let i = 0; i <= retries; i++) {
+      try {
+        return await player.search(query, { id: "system" });
+      } catch (err: any) {
+        if (i < retries) {
+          Logger.warn(`[RecEngine] search retry ${i+1}/${retries}: ${err?.message?.slice(0,60)}`);
+          await new Promise(r => setTimeout(r, 1000));
+        } else throw err;
+      }
+    }
+  }
+
   _buildQuery(info: any): string {
-    const author = (info.author || "").replace(/^Various\s*$/i, "").trim();
-    if (author && author !== "Unknown Artist" && author !== "Unknown") return `${author} - ${info.title}`.trim();
-    return (info.title || "").trim();
+    let author = (info.author || "").replace(/^Various\s*$/i, "").trim();
+    let title = (info.title || "").trim();
+    // Fix truncated titles: "feat." tanpa tutup kurung
+    if (/\(feat\.?\s*$/i.test(title)) title = title.replace(/\(\s*feat\.?\s*$/i, "");
+    if (/\(ft\.?\s*$/i.test(title)) title = title.replace(/\(\s*ft\.?\s*$/i, "");
+    if (author && author !== "Unknown Artist" && author !== "Unknown") return `${author} - ${title}`.trim();
+    return title;
   }
 
   async _getYouTubeMix(player: any, track: any): Promise<any[]> {
     const videoId = track?.info?.identifier;
-    if (!videoId || !/^[a-zA-Z0-9_-]{11}$/.test(videoId)) return [];
-    if (track?.info?.sourceName && track.info.sourceName !== "youtube") return [];
-    const result = await player.search({ query: `https://www.youtube.com/watch?v=${videoId}&list=RD${videoId}` }).catch(() => null);
-    if (result?.loadType !== "playlist" || !result?.tracks?.length) return [];
+    if (!videoId || !/^[a-zA-Z0-9_-]{11}$/.test(videoId)) { Logger.info(`[RecEngine] Mix skip: no valid videoId`); return []; }
+    if (track?.info?.sourceName && track.info.sourceName !== "youtube") { Logger.info(`[RecEngine] Mix skip: source=${track.info.sourceName}`); return []; }
+    const result = await this._searchWithRetry(player, { query: `https://www.youtube.com/watch?v=${videoId}&list=RD${videoId}` }).catch(() => null);
+    if (!result) { Logger.info(`[RecEngine] Mix failed for ${videoId}`); return []; }
+    if (result?.loadType !== "playlist" || !result?.tracks?.length) {
+      Logger.info(`[RecEngine] Mix returned loadType=${result?.loadType} tracks=${result?.tracks?.length}`);
+      return [];
+    }
     return result.tracks;
   }
 
@@ -52,30 +75,29 @@ class RecommendationEngine {
 
       // 2. Fallback: search by source URI (preserves exact track when available)
       if (!candidates.length && track.info?.uri && track.info.sourceName === "youtube") {
-        const result = await player.search({ query: track.info.uri });
+        const result = await this._searchWithRetry(player, { query: track.info.uri }).catch(() => null);
         if (result?.tracks?.length) candidates = result.tracks;
       }
 
-      // 3. Fallback: ytmsearch pake judul spesifik
+      // 3. Fallback: multi-source search pake judul
       if (!candidates.length) {
         const query = this._buildQuery(track.info);
         if (!query) return [];
-        const result = await player.search({ query: `ytmsearch:${query} official audio` });
-        if (!result?.tracks?.length) {
-          const r2 = await player.search({ query: `ytsearch:${query}` });
-          if (!r2?.tracks?.length) {
-            const r3 = await player.search({ query: `scsearch:${query}` });
-            candidates = r3?.tracks || [];
-          } else candidates = r2.tracks;
-        } else candidates = result.tracks;
-        if (!candidates.length) {
-          const query2 = this._buildQuery(track.info);
-          const fallback = await player.search({ query: `ytmsearch:${query2}` }).catch(() => null);
-          if (fallback?.tracks?.length) candidates = fallback.tracks;
+        const searches = [
+          `ytmsearch:${query}`,
+          `ytsearch:${query}`,
+          `scsearch:${query}`,
+        ];
+        for (const sq of searches) {
+          const r = await this._searchWithRetry(player, { query: sq }).catch(() => null);
+          if (r?.tracks?.length) { candidates = r.tracks; break; }
         }
       }
 
-      if (!candidates.length) return [];
+      if (!candidates.length) {
+        Logger.info(`[RecEngine] No candidates from any source for "${this._buildQuery(track.info)}"`);
+        return [];
+      }
       const origDuration = track?.info?.duration || 0;
       const filtered = candidates.filter((t: any) => {
         const titleL = (t?.info?.title || "").toLowerCase();
@@ -92,5 +114,7 @@ class RecommendationEngine {
     } catch { return []; }
   }
 }
+
+EventBus.on('recommendation:clearPlayed', (p: any) => { if (p?.guildId) new RecommendationEngine().clearPlayed(p.guildId); });
 
 export default RecommendationEngine;

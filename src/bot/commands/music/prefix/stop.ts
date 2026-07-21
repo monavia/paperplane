@@ -2,13 +2,12 @@ import { EmbedBuilder } from "discord.js";
 import * as MusicService from "@/bot/music/services/MusicService";
 import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
 import Colors from "@/bot/core/constants/Colors";
-import { checkSameVoice } from "@/bot/core/utils/VoiceCheck";
+import { requireSameVoice } from "@/bot/core/utils/VoiceCheck";
 
 export default {
   name: "stop",
   async execute(message: any, _args: string[]) {
-    const vc = checkSameVoice(message);
-    if (!vc.ok) return message.channel.send({ embeds: [ErrorEmbed.build(vc.message)] });
+    if (!await requireSameVoice(message)) return;
     const engine = MusicService.getEngine(message.guildId!);
     const player = engine.player;
     if (!player) {

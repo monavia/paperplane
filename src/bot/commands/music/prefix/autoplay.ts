@@ -1,7 +1,7 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
 import Colors from "@/bot/core/constants/Colors";
 import * as MusicService from "@/bot/music/services/MusicService";
-import { checkSameVoice } from "@/bot/core/utils/VoiceCheck";
+import { requireSameVoice } from "@/bot/core/utils/VoiceCheck";
 import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
 import { setAutoplay } from "@/bot/database/repositories/GuildRepository";
 import state from "@/bot/core/state/StateManager";
@@ -27,8 +27,7 @@ export default {
   name: "autoplay",
   aliases: ["ap"],
   async execute(message: import("discord.js").Message, args: string[]) {
-    const vc = checkSameVoice(message);
-    if (!vc.ok) return (message.channel as any).send({ embeds: [ErrorEmbed.build(vc.message)] });
+    if (!await requireSameVoice(message)) return;
     const down = MusicService.requireLavalink();
     if (down) return (message.channel as any).send(down);
 

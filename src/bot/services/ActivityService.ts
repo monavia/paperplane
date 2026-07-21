@@ -1,7 +1,7 @@
 import ActivityRepository from '../database/repositories/ActivityRepository';
 import Logger from '../core/utils/Logger';
 
-export interface ActivityLog {
+export interface UserActivityLog {
   guildId: string;
   userId: string;
   userName: string;
@@ -17,7 +17,7 @@ const MAX_BUFFER_SIZE = 500;
 const MAX_BACKOFF_MS = 300000; // 5 min max
 
 class ActivityService {
-  private buffer: ActivityLog[] = [];
+  private buffer: UserActivityLog[] = [];
   private flushTimer: NodeJS.Timeout | null = null;
   private consecutiveFailures = 0;
 
@@ -31,7 +31,7 @@ class ActivityService {
     this.flushTimer = setTimeout(() => this.flush(), delay);
   }
 
-  async log(data: ActivityLog) {
+  async log(data: UserActivityLog) {
     if (SKIP_ACTIONS.has(data.action)) return;
     this.buffer.push(data);
     if (this.buffer.length >= MAX_BUFFER_SIZE) await this.flush();

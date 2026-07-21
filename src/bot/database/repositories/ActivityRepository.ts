@@ -1,10 +1,10 @@
 import Logger from "../../core/utils/Logger";
-import Activity from "../models/Activity";
+import UserActivity from "../models/UserActivity";
 import { isUsingPrisma } from "../connection";
 
 let _prisma: any = null;
 async function getPrisma() {
-  if (!_prisma) _prisma = (await import("../prisma")).default;
+  if (!_prisma) _prisma = (await import("../prisma.js")).default;
   return _prisma;
 }
 
@@ -14,7 +14,7 @@ class ActivityRepository {
       const p = await getPrisma();
       try { await p.activity.createMany({ data: docs }); } catch { Logger.warn("[ActivityRepo] insertMany failed"); }
     } else {
-      await Activity.insertMany(docs, { ordered: false }).catch(() => ({}));
+      await UserActivity.insertMany(docs, { ordered: false }).catch(() => ({}));
     }
   }
 
@@ -23,7 +23,7 @@ class ActivityRepository {
       const p = await getPrisma();
       return p.activity.findMany({ where: { guildId }, orderBy: { timestamp: "desc" }, take: limit });
     }
-    return Activity.find({ guildId }).sort({ timestamp: -1 }).limit(limit);
+    return UserActivity.find({ guildId }).sort({ timestamp: -1 }).limit(limit);
   }
 
   async clearOldActivities(days = 30) {
@@ -32,7 +32,7 @@ class ActivityRepository {
       const p = await getPrisma();
       return p.activity.deleteMany({ where: { timestamp: { lt: date } } });
     }
-    return Activity.deleteMany({ timestamp: { $lt: date } });
+    return UserActivity.deleteMany({ timestamp: { $lt: date } });
   }
 }
 

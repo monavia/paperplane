@@ -4,7 +4,7 @@ import { setLastFilter, getLastFilter } from "@/bot/database/repositories/GuildR
 import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
 import * as SuccessEmbed from "@/bot/ui/embeds/SuccessEmbed";
 import Colors from "@/bot/core/constants/Colors";
-import { checkSameVoice } from "@/bot/core/utils/VoiceCheck";
+import { requireSameVoice } from "@/bot/core/utils/VoiceCheck";
 import state from "@/bot/core/state/StateManager";
 import MusicModes from "@/bot/core/constants/MusicModes";
 
@@ -46,8 +46,7 @@ export default {
     .setDescription("Apply audio filters to playback"),
 
   async execute(interaction: any) {
-    const vc = checkSameVoice(interaction);
-    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], flags: 64 });
+    if (!await requireSameVoice(interaction)) return;
     const down = MusicService.requireLavalink();
     if (down) return interaction.reply({ ...down, flags: 64 });
 
@@ -61,8 +60,8 @@ export default {
       .setColor(Colors.INFO);
 
     const rows = buildButtons(currentFilter);
-    await interaction.reply({ embeds: [embed], components: rows });
-    const msg = await interaction.fetchReply();
+    await interaction.deferReply();
+    const msg = await interaction.editReply({ embeds: [embed], components: rows });
     const collector = msg.createMessageComponentCollector({
       filter: (i: any) => i.user.id === interaction.user.id,
       time: 30000,

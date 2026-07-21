@@ -20,6 +20,7 @@ class StateManager {
   filter: FilterStore;
   equalizer: EqualizerStore;
   position: PositionStore;
+  restored: Set<string>;
 
   constructor() {
     this.queues = new QueueStore();
@@ -32,6 +33,7 @@ class StateManager {
     this.filter = new FilterStore();
     this.equalizer = new EqualizerStore();
     this.position = new PositionStore();
+    this.restored = new Set<string>();
   }
 }
 

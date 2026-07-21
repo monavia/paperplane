@@ -1,7 +1,7 @@
 import { SlashCommandBuilder } from "discord.js";
 import * as MusicService from "@/bot/music/services/MusicService";
 import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
-import { checkSameVoice } from "@/bot/core/utils/VoiceCheck";
+import { requireSameVoice } from "@/bot/core/utils/VoiceCheck";
 import * as SuccessEmbed from "@/bot/ui/embeds/SuccessEmbed";
 
 export default {
@@ -11,8 +11,7 @@ export default {
     .addIntegerOption((o) => o.setName("index").setDescription("Track position").setRequired(true)),
 
   async execute(interaction: any) {
-    const vc = checkSameVoice(interaction);
-    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], flags: 64 });
+    if (!await requireSameVoice(interaction)) return;
 
     const index = interaction.options.getInteger("index", true);
     const guildId = interaction.guildId!;
@@ -27,6 +26,7 @@ export default {
     const success = await MusicService.jumpTo(guildId, index);
     if (!success) return interaction.reply({ embeds: [ErrorEmbed.build("Failed to jump to track.")], flags: 64 });
 
-    interaction.reply({ embeds: [SuccessEmbed.build(`Jumped to **${track?.info?.title || "?"}**`)] });
+    await interaction.deferReply();
+    await interaction.editReply({ embeds: [SuccessEmbed.build(`Jumped to **${track?.info?.title || "?"}**`)] });
   },
 };

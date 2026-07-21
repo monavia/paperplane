@@ -6,7 +6,7 @@ const TTL_MS = Number(process.env.AI_MEMORY_TTL_MS) || 30 * 60 * 1000;
 
 let _prisma: any = null;
 async function getPrisma() {
-  if (!_prisma) _prisma = (await import("../../database/prisma")).default;
+  if (!_prisma) _prisma = (await import("../../database/prisma.js")).default;
   return _prisma;
 }
 function usePg() { return isUsingPrisma(); }

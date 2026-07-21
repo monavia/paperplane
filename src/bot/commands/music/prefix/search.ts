@@ -3,7 +3,7 @@ import { getPlayer } from "@/bot/music/engine/PlayerManager";
 import * as MusicService from "@/bot/music/services/MusicService";
 import * as SearchEmbed from "@/bot/ui/embeds/SearchEmbed";
 import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
-import { checkSameVoice } from "@/bot/core/utils/VoiceCheck";
+import { requireSameVoice } from "@/bot/core/utils/VoiceCheck";
 import * as LoadingEmbed from "@/bot/ui/embeds/LoadingEmbed";
 import Logger from "@/bot/core/utils/Logger";
 import { get } from "../../../music/engine/lavalink";
@@ -14,8 +14,7 @@ export default {
   aliases: ["find"],
   async execute(message: import("discord.js").Message, args: string[]) {
     if (!message.member) return;
-    const vc = checkSameVoice(message);
-    if (!vc.ok) return (message.channel as any).send({ embeds: [ErrorEmbed.build(vc.message)] });
+    if (!await requireSameVoice(message)) return;
     const voice = message.member.voice.channel!;
 
     const query = args.join(" ");

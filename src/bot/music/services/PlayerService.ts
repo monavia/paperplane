@@ -19,6 +19,12 @@ interface Engine {
   getCurrentTrack: () => any;
 }
 
+// Wire QueueStore sync → player.queue (for MongoQueueStore persistence)
+state.queues.setPlayerGetter((guildId: string) => {
+  const mgr = get();
+  return mgr?.players?.get(guildId) || null;
+});
+
 const engines = new Map<string, Engine>();
 
 // Periodic cleanup: remove engines with no player and no queue (idle)
@@ -59,6 +65,8 @@ export function getEngine(guildId: string): Engine {
         });
         await connectWithRetry(player, guildId);
         e!.player = player;
+        // Sync any pre-join RAM queue data to player.queue (queueStore persists it)
+        state.queues.syncToPlayer(guildId);
         Logger.info(`[VoiceJoin] guild=${guildId} vc=${voiceChannelId} vcRegion=${vcRegion || "?"} node=${player.node?.id || "?"} nodeRegion=${player.node?.options?.regions?.[0] || "?"}`);
         return player;
       },
@@ -76,10 +84,10 @@ export function getEngine(guildId: string): Engine {
 export async function destroyEngine(guildId: string): Promise<void> {
   
   stopPositionSync(guildId);
-  await deleteState(guildId).catch(() => {});
+  await deleteState(guildId).catch(Logger.safe("bot/music/services/PlayerService.ts"));
   const e = engines.get(guildId);
   if (e?.player) {
-    try { await e.player.destroy(); } catch {}
+    try { await e.player.destroy(); } catch { Logger.safe("PlayerService")(); }
   }
   engines.delete(guildId);
   deleteTextChannelId(guildId);
@@ -91,6 +99,7 @@ export async function destroyEngine(guildId: string): Promise<void> {
   state.loop.delete(guildId);
   if (!state.twentyFourSeven.isEnabled(guildId)) {
     state.autoplay.delete(guildId);
+    setAutoplay(guildId, false).catch(Logger.safe("bot/music/services/PlayerService.ts"));
     state.shuffle.delete(guildId);
     state.filter.delete(guildId);
     state.equalizer.delete(guildId);
@@ -112,11 +121,11 @@ export async function skip(guildId: string, userId: string, userName: string): P
     await saveState(guildId);
   } else if (!state.autoplay.get(guildId)) {
     if (!state.twentyFourSeven.isEnabled(guildId)) {
-      await deleteState(guildId).catch(() => {});
+      await deleteState(guildId).catch(Logger.safe("bot/music/services/PlayerService.ts"));
       stopPositionSync(guildId);
       if (player) {
-        try { player.disconnect(); } catch {}
-        try { player.destroy(); } catch {}
+        try { player.disconnect(); } catch { Logger.safe("PlayerService")(); }
+        try { player.destroy(); } catch { Logger.safe("PlayerService")(); }
       }
     }
     state.loop.delete(guildId);
@@ -129,32 +138,32 @@ export async function stop(guildId: string, userId: string, userName: string): P
   const player = engine.player;
   await engine.playback.stop();
 
-  await deleteState(guildId).catch(() => {});
+  await deleteState(guildId).catch(Logger.safe("bot/music/services/PlayerService.ts"));
   
   stopPositionSync(guildId);
   
   if (!state.twentyFourSeven.isEnabled(guildId)) {
     state.autoplay.set(guildId, false);
-    setAutoplay(guildId, false).catch(() => {});
+    setAutoplay(guildId, false).catch(Logger.safe("bot/music/services/PlayerService.ts"));
   }
 
   const nodeDead = player && !player.node?.connected;
   if (player) {
     if (nodeDead && state.twentyFourSeven.isEnabled(guildId)) {
       // 247 ON + dead node: destroy broken player, rejoin to stay in VC
-      try { player.disconnect(); } catch {}
-      try { player.destroy(); } catch {}
+      try { player.disconnect(); } catch { Logger.safe("PlayerService")(); }
+      try { player.destroy(); } catch { Logger.safe("PlayerService")(); }
       const vcData = state.voiceChannels.get(guildId);
       if (vcData) {
         try {
           await engine.join(vcData.voiceChannelId, vcData.textChannelId);
           const savedFilter = state.filter.get(guildId);
           if (savedFilter && savedFilter !== "none") {
-            setFilter(guildId, savedFilter, "system", "System").catch(() => {});
+            setFilter(guildId, savedFilter, "system", "System").catch(Logger.safe("bot/music/services/PlayerService.ts"));
           }
           const savedBands = state.equalizer.get(guildId);
           if (savedBands) {
-            setEqualizer(guildId, savedBands, "system", "System").catch(() => {});
+            setEqualizer(guildId, savedBands, "system", "System").catch(Logger.safe("bot/music/services/PlayerService.ts"));
           }
         } catch (err: any) {
           Logger.warn(`[247-Stop] Rejoin failed for ${guildId}: ${err?.message}`);
@@ -162,8 +171,8 @@ export async function stop(guildId: string, userId: string, userName: string): P
       }
     } else if (!state.twentyFourSeven.isEnabled(guildId)) {
       // Normal stop, 247 OFF
-      try { player.disconnect(); } catch {}
-      try { player.destroy(); } catch {}
+      try { player.disconnect(); } catch { Logger.safe("PlayerService")(); }
+      try { player.destroy(); } catch { Logger.safe("PlayerService")(); }
     }
     // 247 ON + healthy: no-op
   }
@@ -177,7 +186,7 @@ export function seek(guildId: string, position: number, userId: string, userName
     if (!player) return false;
     player.seek(position);
     
-    ActivityService.log({ guildId, userId, userName, action: "seek", detail: `Seeked to ${position}ms` }).catch(() => {});
+    ActivityService.log({ guildId, userId, userName, action: "seek", detail: `Seeked to ${position}ms` }).catch(Logger.safe("bot/music/services/PlayerService.ts"));
     return true;
   } catch { return false; }
 }

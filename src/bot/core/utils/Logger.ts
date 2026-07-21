@@ -19,6 +19,12 @@ function color(s: string, c: string): string {
   return s;
 }
 
+function shortStack(): string {
+  const e = new Error();
+  const stack = e.stack?.split("\n")?.slice(3, 5)?.join(" ")?.[0] || "";
+  return stack;
+}
+
 const Logger = {
   info: (msg: string, ...args: any[]) =>
     console.log(`[${ts()}] ${color("[INFO]", "blue")} ${msg}`, ...args),
@@ -28,6 +34,11 @@ const Logger = {
     console.error(`[${ts()}] ${color("[ERROR]", "red")} ${msg}`, ...args),
   ready: (msg: string) =>
     console.log(`[${ts()}] ${color("[OK]", "green")} ${msg}`),
+
+  /** Silent error handler — logs warning instead of swallowing */
+  safe: (tag: string) => (err?: any) => {
+    Logger.warn(`[SilentError] ${tag}${err != null ? `: ${err?.message || err}` : ""}`);
+  },
 };
 
 export = Logger;

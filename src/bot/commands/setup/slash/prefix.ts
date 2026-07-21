@@ -20,13 +20,15 @@ export default {
         return interaction.reply({ embeds: [ErrorEmbed.build("You need `Manage Server` permission.")], flags: 64 });
       }
       await setPrefix(interaction.guildId, newPrefix);
-      return interaction.reply({ embeds: [SuccessEmbed.build(`Prefix set to \`${newPrefix}\``)] });
+      await interaction.deferReply();
+      return interaction.editReply({ embeds: [SuccessEmbed.build(`Prefix set to \`${newPrefix}\``)] });
     }
 
     const current = await getPrefix(interaction.guildId);
     const embed = new EmbedBuilder()
       .setDescription(`Current prefix: \`${current}\``)
       .setColor(Colors.INFO);
-    await interaction.reply({ embeds: [embed], flags: 64 });
+    await interaction.deferReply({ flags: 64 });
+    await interaction.editReply({ embeds: [embed] });
   },
 };

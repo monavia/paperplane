@@ -1,5 +1,7 @@
+import * as Sentry from "@sentry/node";
+
 import * as lavalink from "./lavalink";
-import { destroyEngine } from "../services/MusicService";
+import { destroyEngine } from "../services/PlayerService";
 import state from "../../core/state/StateManager";
 import { withQueueLock } from "../../core/state/QueueLock";
 import Logger from "../../core/utils/Logger";
@@ -9,16 +11,13 @@ import { getSourceEmoji } from "../../ui/embeds/NowPlayingEmbed";
 import { getTextChannelId } from "../services/TextChannelStore";
 import { clearVoiceJoinTime } from "./PlayerManager";
 import lyricsMessages from "../../core/state/LyricsMessageStore";
-import * as HistoryService from "../services/HistoryService";
+
 import { getPrefix } from "../../database/repositories/GuildRepository";
 import botConfig from "../../config/bot";
-import { saveState, startPositionSync, stopPositionSync, deleteState, isRestoredGuild, clearRestoredGuild } from "../services/StateService";
+import * as EventBus from "../events/EventBus";
 import { cleanTitle, saveSpotifyMeta, applySpotifyMeta } from "../services/TitleResolver";
 import AutoplayEngine from "./AutoplayEngine";
-import RecommendationEngine from "./RecommendationEngine";
-import { deletePlayerData } from "../services/PersistentPlayerStore";
-import { incTracksPlayed, incTracksFailed } from "../../telemetry/MetricsCollector";
-import metrics from "../../telemetry/MetricsCollector";
+
 
 
 const disconnectTimers = new Map<string, any>();
@@ -31,6 +30,9 @@ const retryTracks = new Map<string, Set<string>>();
 // there would remove the flag before queueEnd checks it.
 const manualAdvances = new Map<string, number>();
 const MANUAL_ADVANCE_WINDOW_MS = 5000;
+const STUCK_TRACK_TIMEOUT_MS = 30000;
+const JITTER_BUFFER_MS = 500;
+const stuckTimers = new Map<string, any>();
 const idleDisconnects = new Set<string>();
 let startupPhase = true;
 setTimeout(() => { startupPhase = false; }, 15000);
@@ -109,7 +111,7 @@ async function advanceQueue(player: any): Promise<any> {
       try {
         await player.play({ track: next, clientTrack: next });
         
-        await saveState(guildId);
+        EventBus.emit('state:save', { guildId });
         const remaining = state.queues.get(guildId) || [];
         Logger.info(`[advanceQueue] guild=${guildId} now playing: ${next.info?.title || "?"} (queue=${remaining.length} left)`);
 
@@ -127,6 +129,43 @@ async function advanceQueue(player: any): Promise<any> {
   });
 }
 
+export function startStuckTimer(guildId: string): void {
+  clearStuckTimer(guildId);
+  stuckTimers.set(guildId, setTimeout(async () => {
+    const player = lavalink.get()?.players?.get(guildId);
+    if (!player?.playing) return;
+    Logger.warn(`[StuckTrack] guild=${guildId} auto-skipping after 30s`);
+    clearStuckTimer(guildId);
+    const q = state.queues.get(guildId);
+    const next = q?.length ? q.shift() : null;
+    if (next) {
+      state.queues.set(guildId, q!);
+      state.nowPlaying.set(guildId, next);
+      await player.play({ track: next, clientTrack: next }).catch(Logger.safe("bot/music/engine/musicEvents.ts"));
+    } else {
+      state.nowPlaying.delete(guildId);
+      await player.stopPlaying().catch(Logger.safe("bot/music/engine/musicEvents.ts"));
+    }
+  }, STUCK_TRACK_TIMEOUT_MS));
+}
+
+export function clearStuckTimer(guildId: string): void {
+  const t = stuckTimers.get(guildId);
+  if (t) { clearTimeout(t); stuckTimers.delete(guildId); }
+}
+
+/** Network jitter buffer: delay trackError 500ms, cancel if player already moved on */
+async function jitterBuffer(guildId: string, track: any): Promise<boolean> {
+  const posBefore = state.position.get(guildId) || 0;
+  await new Promise(r => setTimeout(r, JITTER_BUFFER_MS));
+  const current = state.nowPlaying.get(guildId);
+  if (!current || current.info?.uri !== track?.info?.uri || current.info?.title !== track?.info?.title) {
+    Logger.info(`[JitterBuffer] guild=${guildId} player already moved on — cancel error handling`);
+    return true; // cancelled
+  }
+  return false;
+}
+
 function register(client: any): void {
   if (registered) return;
   registered = true;
@@ -135,20 +174,20 @@ function register(client: any): void {
   if (!l) return;
 
   l.on("trackStart", (player: any, track: any) => {
-    metrics.tracksPlayed.inc({ guild: player.guildId, source: track?.info?.source || 'unknown' });
+    EventBus.emit('metrics:trackPlayed', { guildId: player.guildId, source: track?.info?.source || 'unknown' });
     const prevLyrics = lyricsMessages.get(player.guildId);
     if (prevLyrics && clientRef) {
       const ch = clientRef.channels.cache.get(prevLyrics.channelId);
       if (ch) {
-        (ch as any).messages.fetch(prevLyrics.messageId).then((m: any) => m.delete().catch(() => {})).catch(() => {});
+        (ch as any).messages.fetch(prevLyrics.messageId).then((m: any) => m.delete().catch(Logger.safe("bot/music/engine/musicEvents.ts"))).catch(Logger.safe("bot/music/engine/musicEvents.ts"));
       }
     }
     lyricsMessages.delete(player.guildId);
     state.nowPlaying.set(player.guildId, track);
-    lavalink.cacheTrack(player.guildId, track);
+    EventBus.emit('lavalink:cacheTrack', { guildId: player.guildId, track });
 
     
-    startPositionSync(player.guildId);
+    EventBus.emit('state:startPositionSync', { guildId: player.guildId });
 
     if (player.voiceChannelId) {
       const textChannelId = getTextChannelId(player.guildId);
@@ -159,7 +198,7 @@ function register(client: any): void {
 
     const req = track.info?.requester || track.requester;
     const userId = typeof req === "object" ? (req.id || req.userId) : (req || "unknown");
-    HistoryService.addEntry(player.guildId, userId, track).catch(() => {});
+    EventBus.emit('history:addEntry', { guildId: player.guildId, userId, track });
 
     const timer = disconnectTimers.get(player.guildId);
     if (timer) {
@@ -168,11 +207,10 @@ function register(client: any): void {
     }
 
     
-    const restored = isRestoredGuild(player.guildId);
+    const restored = state.restored.has(player.guildId);
     if (restored) {
       restoredGuilds.add(player.guildId);
-      
-      clearRestoredGuild(player.guildId);
+      EventBus.emit('state:clearRestored', { guildId: player.guildId });
     }
     const isManualAdvance = manualAdvances.has(player.guildId);
     const suppress = suppressTrackStart.has(player.guildId);
@@ -185,7 +223,7 @@ function register(client: any): void {
     const shouldSendEmbed = !isFirstRestored && !isManualAdvance && !suppress && !isFailover;
     const textChannelId2 = getTextChannelId(player.guildId);
     Logger.info(`[DBUG-trackStart] guild=${player.guildId} track=${track?.info?.title?.slice(0, 40) || "?"} restored=${restored} isFirstRest=${isFirstRestored} manual=${isManualAdvance} suppr=${suppress} fail=${isFailover} send=${shouldSendEmbed} ch=${textChannelId2 || "none"} region=${player.node?.options?.regions?.[0] || "?"}`);
-    incTracksPlayed();
+    EventBus.emit('metrics:trackPlayed', { guildId: player.guildId, source: track?.info?.source || 'unknown' });
     if (textChannelId2 && shouldSendEmbed) {
       const channel = client.channels.cache.get(textChannelId2);
       if (channel) {
@@ -203,6 +241,8 @@ function register(client: any): void {
         Logger.warn(`[trackStart] Channel ${textChannelId2} not found in cache`);
       }
     }
+    // Start stuck track watchdog
+    startStuckTimer(player.guildId);
     // Pre-fetch next track — resolve in background, cache encoded
     Promise.resolve().then(async () => {
       try {
@@ -224,9 +264,10 @@ function register(client: any): void {
   });
 
   l.on("trackEnd", (player: any, _track: any, reason: any) => {
+    clearStuckTimer(player.guildId);
     const reasonStr = typeof reason === "object" ? reason?.reason : reason;
     const queueLen = state.queues.get(player.guildId)?.length || 0;
-    Logger.info(`[trackEnd] guild=${player.guildId}/${getGuildName(player.guildId)} reason=${reasonStr} queue=${queueLen} playing=${player.playing} node=${player.node?.name || "?"} restored=${isRestoredGuild(player.guildId)}`);
+    Logger.info(`[trackEnd] guild=${player.guildId}/${getGuildName(player.guildId)} reason=${reasonStr} queue=${queueLen} playing=${player.playing} node=${player.node?.name || "?"} restored=${state.restored.has(player.guildId)}`);
   });
 
 const queueEndGuard = new Set<string>();
@@ -257,7 +298,7 @@ const queueEndGuard = new Set<string>();
         try {
           await player.play({ track, clientTrack: track });
           
-          await saveState(player.guildId);
+          EventBus.emit('state:save', { guildId: player.guildId });
           Logger.info(`[queueEnd] guild=${player.guildId} track-loop: replaying "${track.info?.title || "?"}"`);
           return;
         } catch (err: any) {
@@ -278,7 +319,7 @@ const queueEndGuard = new Set<string>();
             state.nowPlaying.set(player.guildId, autoTrack);
             await player.play({ track: autoTrack, clientTrack: autoTrack }).catch((err: any) => Logger.warn(`[autoplay] Play failed: ${err.message}`));
             
-            await saveState(player.guildId).catch(() => {});
+            EventBus.emit('state:save', { guildId: player.guildId });
             return;
           }
           Logger.warn(`[autoplay] No recommendations for guild=${player.guildId} track="${track?.info?.title?.slice(0,40) || "?"}" source=${track?.info?.sourceName || "?"} id=${track?.info?.identifier || "?"}`);
@@ -289,12 +330,12 @@ const queueEndGuard = new Set<string>();
       errorTimestamps.delete(player.guildId);
       retryTracks.delete(player.guildId);
       
-      new RecommendationEngine().clearPlayed(player.guildId);
+      EventBus.emit('recommendation:clearPlayed', { guildId: player.guildId });
       const prevLyrics = lyricsMessages.get(player.guildId);
       if (prevLyrics && clientRef) {
         const ch = clientRef.channels.cache.get(prevLyrics.channelId);
         if (ch) {
-          (ch as any).messages.fetch(prevLyrics.messageId).then((m: any) => m.delete().catch(() => {})).catch(() => {});
+          (ch as any).messages.fetch(prevLyrics.messageId).then((m: any) => m.delete().catch(Logger.safe("bot/music/engine/musicEvents.ts"))).catch(Logger.safe("bot/music/engine/musicEvents.ts"));
         }
       }
       lyricsMessages.delete(player.guildId);
@@ -303,7 +344,7 @@ const queueEndGuard = new Set<string>();
         return;
       }
 
-      deleteState(player.guildId).catch(() => {});
+      EventBus.emit('state:delete', { guildId: player.guildId });
 
       const voiceChannel = clientRef?.channels?.cache?.get(player.voiceChannelId);
       const members = voiceChannel?.members?.filter((m: any) => !m.user?.bot) || new Map();
@@ -314,7 +355,7 @@ const queueEndGuard = new Set<string>();
       Logger.info(`[queueEnd] guild=${player.guildId}/${guildName} humans=${humanCount} total=${voiceChannel?.members?.size || 1} timeout=${timeoutLabel}`);
 
       
-      stopPositionSync(player.guildId);
+      EventBus.emit('state:stopPositionSync', { guildId: player.guildId });
 
       const timerId = setTimeout(() => {
         // Check if the player is still the active one (not destroyed/recreated)
@@ -332,14 +373,14 @@ const queueEndGuard = new Set<string>();
             const embed = new EmbedBuilder()
               .setDescription(`Leaving voice channel due to inactivity.`)
               .setColor(Colors.ERROR);
-            (channel as any).send({ embeds: [embed] }).catch(() => {});
+            (channel as any).send({ embeds: [embed] }).catch(Logger.safe("bot/music/engine/musicEvents.ts"));
           }
         }
         markIdleDisconnect(player.guildId);
         clearVoiceJoinTime(player.guildId);
-        lavalink.clearTrackCache(player.guildId);
+        EventBus.emit('lavalink:clearTrackCache', { guildId: player.guildId });
         
-        deleteState(player.guildId).catch(() => {});
+        EventBus.emit('state:delete', { guildId: player.guildId });
         player.disconnect();
         player.destroy();
         state.queues.clear(player.guildId);
@@ -350,18 +391,25 @@ const queueEndGuard = new Set<string>();
       } else {
       }
     } catch (err: any) {
+      Sentry.captureException(err, { tags: { guildId: player.guildId, type: "queueEnd" } });
       Logger.error(`[queueEnd] guild=${player.guildId} handler crashed: ${err?.message}`);
     }
   });
 
   l.on("trackError", async (player: any, track: any, payload: any) => {
+    clearStuckTimer(player.guildId);
+    // Network jitter buffer — wait 500ms, cancel if player already recovered
+    if (await jitterBuffer(player.guildId, track)) return;
     try {
-      incTracksFailed();
+      Sentry.captureException(new Error(payload?.error || payload?.exception?.message || "trackError"), {
+        tags: { guildId: player.guildId, type: "trackError" },
+        extra: { track: track?.info?.title, queue: state.queues.get(player.guildId)?.length },
+      });
+      EventBus.emit('metrics:trackFailed', { guildId: player.guildId, error: payload });
       const errMsg = payload?.error || payload?.exception?.message || "Unknown";
       const trackId = track?.info?.uri || track?.info?.title || "unknown";
       const queueLen = state.queues.get(player.guildId)?.length || 0;
-      Logger.error(`[trackError] guild=${player.guildId}/${getGuildName(player.guildId)} err="${errMsg}" track="${track?.info?.title || "?"}" queue=${queueLen} node=${player.node?.name || "?"} restored=${isRestoredGuild(player.guildId)}`);
-      metrics.tracksFailed.inc({ guild: player.guildId, error_type: errMsg.substring(0, 50) });
+      Logger.error(`[trackError] guild=${player.guildId}/${getGuildName(player.guildId)} err="${errMsg}" track="${track?.info?.title || "?"}" queue=${queueLen} node=${player.node?.name || "?"} restored=${state.restored.has(player.guildId)}`);
 
       const now = Date.now();
       const guildErrors = errorTimestamps.get(player.guildId) || [];
@@ -369,10 +417,25 @@ const queueEndGuard = new Set<string>();
       recent.push(now);
       errorTimestamps.set(player.guildId, recent);
       if (recent.length >= 5) {
-        Logger.error(`[trackError] guild=${player.guildId} 5+ errors in 15s — stopping playback (queue=${queueLen} abandoned if not resumed)`);
+        Logger.error(`[trackError] guild=${player.guildId} 5+ errors in 15s — leaving voice (error loop detected)`);
         errorTimestamps.delete(player.guildId);
         retryTracks.delete(player.guildId);
-        player.stopPlaying().catch(() => {});
+        state.nowPlaying.delete(player.guildId);
+        const vcId = player.voiceChannelId;
+        if (vcId) {
+          const embed = new EmbedBuilder()
+            .setDescription("Too many errors — leaving voice channel. Please try again.")
+            .setColor(Colors.ERROR);
+          const tcId = getTextChannelId(player.guildId);
+          if (tcId) {
+            const ch = clientRef?.channels?.cache?.get(tcId);
+            if (ch) (ch as any).send({ embeds: [embed] }).catch(Logger.safe("bot/music/engine/musicEvents.ts"));
+          }
+        }
+        markIdleDisconnect(player.guildId);
+        clearVoiceJoinTime(player.guildId);
+        player.destroy();
+        state.queues.clear(player.guildId);
         return;
       }
 
@@ -427,12 +490,18 @@ const queueEndGuard = new Set<string>();
           try {
             await player.play({ track, clientTrack: track });
           } catch {
-            player.stopPlaying().catch(() => {});
+            player.stopPlaying().catch(Logger.safe("bot/music/engine/musicEvents.ts"));
           }
           return;
         }
 
         retried.delete(trackId);
+        // Queue replay: push failed track to end of queue for later retry
+        if (track?.info?.title) {
+          const q = state.queues.get(player.guildId) || [];
+          q.push(track);
+          state.queues.set(player.guildId, q);
+        }
         const textChannelId = getTextChannelId(player.guildId);
         if (textChannelId) {
           const channel = clientRef?.channels?.cache?.get(textChannelId);
@@ -443,24 +512,29 @@ const queueEndGuard = new Set<string>();
             const embed = new EmbedBuilder()
               .setDescription(`Error: [${author} - ${title}](${url}) — ${errMsg}\nSkipping to next track...`)
               .setColor(Colors.ERROR);
-            (channel as any).send({ embeds: [embed] }).catch(() => {});
+            (channel as any).send({ embeds: [embed] }).catch(Logger.safe("bot/music/engine/musicEvents.ts"));
           }
         }
 
         if (player.node?.connected) {
-          player.stopPlaying().catch(() => {});
+          player.stopPlaying().catch(Logger.safe("bot/music/engine/musicEvents.ts"));
         }
       });
     } catch (err: any) {
+      Sentry.captureException(err, { tags: { guildId: player.guildId, type: "trackError" } });
       Logger.error(`[trackError] guild=${player.guildId} handler crashed: ${err?.message}`);
     }
   });
 
   l.on("trackStuck", (player: any, track: any, payload: any) => {
     try {
-      Logger.warn(`[trackStuck] guild=${player.guildId}/${getGuildName(player.guildId)} threshold=${payload?.thresholdMs || 0}ms restored=${isRestoredGuild(player.guildId)} track="${track?.info?.title || "?"}"`);
+      Sentry.captureException(new Error("trackStuck"), {
+        tags: { guildId: player.guildId, type: "trackStuck" },
+        extra: { track: track?.info?.title, thresholdMs: payload?.thresholdMs },
+      });
+      Logger.warn(`[trackStuck] guild=${player.guildId}/${getGuildName(player.guildId)} threshold=${payload?.thresholdMs || 0}ms restored=${state.restored.has(player.guildId)} track="${track?.info?.title || "?"}"`);
       if (player.node?.connected) {
-        player.stopPlaying().catch(() => {});
+        player.stopPlaying().catch(Logger.safe("bot/music/engine/musicEvents.ts"));
       }
     } catch (err: any) {
       Logger.error(`[trackStuck] guild=${player.guildId} handler crashed: ${err?.message}`);
@@ -473,13 +547,13 @@ const queueEndGuard = new Set<string>();
       const is247 = state.twentyFourSeven.isEnabled(guildId);
 
       
-      stopPositionSync(guildId);
+      EventBus.emit('state:stopPositionSync', { guildId });
 
       const prevLyrics = lyricsMessages.get(guildId);
       if (prevLyrics && clientRef) {
         const ch = clientRef.channels.cache.get(prevLyrics.channelId);
         if (ch) {
-          (ch as any).messages.fetch(prevLyrics.messageId).then((m: any) => m.delete().catch(() => {})).catch(() => {});
+          (ch as any).messages.fetch(prevLyrics.messageId).then((m: any) => m.delete().catch(Logger.safe("bot/music/engine/musicEvents.ts"))).catch(Logger.safe("bot/music/engine/musicEvents.ts"));
         }
       }
       lyricsMessages.delete(guildId);
@@ -488,18 +562,17 @@ const queueEndGuard = new Set<string>();
 
       if (!is247) {
         state.voiceChannels.delete(guildId);
-        await destroyEngine(guildId).catch(() => {});
+        await destroyEngine(guildId).catch(Logger.safe("bot/music/engine/musicEvents.ts"));
         
-        deletePlayerData(guildId);
+        EventBus.emit('persistent:deletePlayerData', { guildId });
       }
 
       state.position.delete(guildId);
       state.nowPlaying.delete(guildId);
       state.queues.clear(guildId);
       state.loop.delete(guildId);
-      lavalink.clearTrackCache(guildId);
-      
-      new RecommendationEngine().clearPlayed(guildId);
+      EventBus.emit('lavalink:clearTrackCache', { guildId });
+      EventBus.emit('recommendation:clearPlayed', { guildId });
       const timer = disconnectTimers.get(guildId);
       if (timer) {
         clearTimeout(timer);
@@ -526,7 +599,7 @@ const queueEndGuard = new Set<string>();
           const embed = new EmbedBuilder()
             .setDescription(`🔴 **24/7 Mode Active**\n\nBot was disconnected from voice channel.\n24/7 mode is still active, bot will reconnect automatically.\n\nTo disable 24/7 mode:\n• Type: \`${prefix}247\`\n• Or: \`/247\``)
             .setColor(Colors.ERROR);
-          lastTextChannel.send({ embeds: [embed] }).catch(() => {});
+          lastTextChannel.send({ embeds: [embed] }).catch(Logger.safe("bot/music/engine/musicEvents.ts"));
         }
 
         try {
@@ -543,6 +616,7 @@ const queueEndGuard = new Set<string>();
         } catch { Logger.warn(`[playerDisconnect] Reconnect failed for ${guildId}`); }
       }
     } catch (err: any) {
+      Sentry.captureException(err, { tags: { guildId: player.guildId, type: "playerDisconnect" } });
       Logger.error(`[playerDisconnect] guild=${player.guildId} handler crashed: ${err?.message}`);
     }
   });

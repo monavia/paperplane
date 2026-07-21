@@ -1,10 +1,11 @@
 import HistoryEntry from "../../database/models/HistoryEntry";
+import * as EventBus from "../events/EventBus";
 import Logger from "../../core/utils/Logger";
 import { isUsingPrisma } from "../../database/connection";
 
 let _prisma: any = null;
 async function getPrisma() {
-  if (!_prisma) _prisma = (await import("../../database/prisma")).default;
+  if (!_prisma) _prisma = (await import("../../database/prisma.js")).default;
   return _prisma;
 }
 function usePg() { return isUsingPrisma(); }
@@ -59,5 +60,9 @@ export async function cleanupOldEntries(): Promise<void> {
     } else {
       await HistoryEntry.deleteMany({ timestamp: { $lt: cutoff } }).catch(() => {});
     }
-  } catch {}
+  } catch { Logger.safe("HistoryService")(); }
 }
+
+EventBus.on('history:addEntry', (p: any) => {
+  if (p?.guildId) addEntry(p.guildId, p.userId, p.track).catch(() => {});
+});

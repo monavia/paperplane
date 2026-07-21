@@ -3,6 +3,7 @@ import Config from "../config/bot";
 import { runAIAsk, runAIInterpret } from "../ai/services/AITaskQueue";
 import { checkPrompt } from "../ai/services/PromptFilter";
 import Logger from "../core/utils/Logger";
+import { incCommandsExecuted, observeCommandLatency } from "../telemetry/MetricsCollector";
 import Colors from "../core/constants/Colors";
 import * as ErrorEmbed from "../ui/embeds/ErrorEmbed";
 import { getPrefix, setPrefix } from "../database/repositories/GuildRepository";
@@ -17,6 +18,7 @@ import { markTrackStartSuppressed } from "../music/engine/musicEvents";
 import { saveState } from "../music/services/StateService";
 import * as NowPlayingEmbed from "../ui/embeds/NowPlayingEmbed";
 import { build as buildQueueEmbed } from "../ui/embeds/QueueEmbed";
+import CooldownManager from "../core/utils/CooldownManager";
 
 export function start(client: any): void {
   client.on("messageCreate", async (message: any) => {
@@ -43,17 +45,29 @@ export function start(client: any): void {
           c.aliases?.includes?.(commandName)
         );
         if (found) {
+          const cdMs = musicCommands.includes(found.name) ? 5000 : 3000;
+          if (!CooldownManager.check(message.author.id, found.name, cdMs)) {
+            const remain = CooldownManager.getRemaining(message.author.id, found.name, cdMs);
+            return message.channel.send({ embeds: [ErrorEmbed.build(`Please wait ${Math.ceil(remain / 1000)}s before using this command again.`)] });
+          }
+          CooldownManager.set(message.author.id, found.name);
           if (!isLavalinkReady() && musicCommands.includes(found.name)) {
             return message.channel.send({ embeds: [ErrorEmbed.build("Music service is currently unavailable. Please try again in a few minutes.")] });
           }
-          try { return await found.execute(message, args); } catch (e: any) { Logger.error(`Prefix command alias "${commandName}" error:`, e); return message.channel.send("Command error.").catch(() => {}); }
+          const startA = Date.now(); try { const r = await found.execute(message, args); incCommandsExecuted({ command: found.name, status: "success" }); observeCommandLatency(found.name, Date.now() - startA); return r; } catch (e: any) { incCommandsExecuted({ command: found.name, status: "failure" }); Logger.error(`Prefix command alias "${commandName}" error:`, e); return message.channel.send("Command error.").catch(Logger.safe("bot/events/messageCreate.ts")); }
         }
-        return; // unknown prefix command
+        return;
       }
+      const cdMs = musicCommands.includes(cmd.name) ? 5000 : 3000;
+      if (!CooldownManager.check(message.author.id, cmd.name, cdMs)) {
+        const remain = CooldownManager.getRemaining(message.author.id, cmd.name, cdMs);
+        return message.channel.send({ embeds: [ErrorEmbed.build(`Please wait ${Math.ceil(remain / 1000)}s before using this command again.`)] });
+      }
+      CooldownManager.set(message.author.id, cmd.name);
       if (!isLavalinkReady() && musicCommands.includes(cmd.name)) {
         return message.channel.send({ embeds: [ErrorEmbed.build("Music service is currently unavailable. Please try again in a few minutes.")] });
       }
-      try { return await cmd.execute(message, args); } catch (e: any) { Logger.error(`Prefix command "${commandName}" error:`, e); return message.channel.send("Command error.").catch(() => {}); }
+      const startB = Date.now(); try { const r = await cmd.execute(message, args); incCommandsExecuted({ command: cmd.name, status: "success" }); observeCommandLatency(cmd.name, Date.now() - startB); return r; } catch (e: any) { incCommandsExecuted({ command: cmd.name, status: "failure" }); Logger.error(`Prefix command "${commandName}" error:`, e); return message.channel.send("Command error.").catch(Logger.safe("bot/events/messageCreate.ts")); }
     }
 
     // AI trigger: bot mention or trigger word
@@ -72,8 +86,15 @@ export function start(client: any): void {
       return message.channel.send(filter.reason || "I can't help with that.");
     }
 
+    // Cooldown for AI — 10s per user
+    if (!CooldownManager.check(message.author.id, "ai", 10000)) {
+      const remain = CooldownManager.getRemaining(message.author.id, "ai", 10000);
+      return message.channel.send({ embeds: [ErrorEmbed.build(`Please wait ${Math.ceil(remain / 1000)}s before using AI again.`)] });
+    }
+    CooldownManager.set(message.author.id, "ai");
+
     // Show typing indicator
-    await message.channel.sendTyping().catch(() => {});
+    await message.channel.sendTyping().catch(Logger.safe("bot/events/messageCreate.ts"));
 
     try {
       const interpreted = await runAIInterpret(prompt);

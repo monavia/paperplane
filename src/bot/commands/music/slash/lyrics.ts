@@ -5,7 +5,7 @@ import Colors from "@/bot/core/constants/Colors";
 import Logger from "@/bot/core/utils/Logger";
 import { fetchLyrics } from "@/bot/music/services/LyricsService";
 import lyricsMessages from "@/bot/core/state/LyricsMessageStore";
-import { checkSameVoice } from "@/bot/core/utils/VoiceCheck";
+import { requireSameVoice } from "@/bot/core/utils/VoiceCheck";
 
 export default {
   data: new SlashCommandBuilder()
@@ -13,8 +13,7 @@ export default {
     .setDescription("Show lyrics for the current track"),
 
   async execute(interaction: import("discord.js").ChatInputCommandInteraction) {
-    const vc = checkSameVoice(interaction);
-    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], flags: 64 });
+    if (!await requireSameVoice(interaction)) return;
     const player = getPlayer(interaction.guildId!);
     const track = player?.queue?.current;
     if (!track) return interaction.reply({ embeds: [ErrorEmbed.build("Nothing is playing.")], flags: 64 });

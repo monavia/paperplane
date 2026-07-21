@@ -1,15 +1,14 @@
 import botConfig from "@/bot/config/bot";
 import * as MusicService from "@/bot/music/services/MusicService";
 import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
-import { checkSameVoice } from "@/bot/core/utils/VoiceCheck";
+import { requireSameVoice } from "@/bot/core/utils/VoiceCheck";
 import * as SuccessEmbed from "@/bot/ui/embeds/SuccessEmbed";
 
 export default {
   name: "remove",
   async execute(message: import("discord.js").Message, args: string[]) {
     if (!message.member) return;
-    const vc = checkSameVoice(message);
-    if (!vc.ok) return (message.channel as any).send({ embeds: [ErrorEmbed.build(vc.message)] });
+    if (!await requireSameVoice(message)) return;
 
     const input = args.join(" ");
     if (!input) return (message.channel as any).send({ embeds: [ErrorEmbed.build(`Usage: ${botConfig.prefix}remove <query|index|range>`)] });

@@ -2,14 +2,13 @@ import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
 import * as MusicService from "@/bot/music/services/MusicService";
 import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
 import Colors from "@/bot/core/constants/Colors";
-import { checkSameVoice } from "@/bot/core/utils/VoiceCheck";
+import { requireSameVoice } from "@/bot/core/utils/VoiceCheck";
 import state from "@/bot/core/state/StateManager";
 
 export default {
   data: new SlashCommandBuilder().setName("stop").setDescription("Stop playback"),
   async execute(interaction: any) {
-    const vc = checkSameVoice(interaction);
-    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], flags: 64 });
+    if (!await requireSameVoice(interaction)) return;
     const engine = MusicService.getEngine(interaction.guildId!);
     const player = engine.player;
     if (!player) {

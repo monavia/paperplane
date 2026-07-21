@@ -1,6 +1,6 @@
 {
   "name": "paperplane-single",
-  "version": "2.0.0",
+  "version": "2.1.4",
   "description": "Paperplane bot — single node",
   "main": "dist/index.js",
   "scripts": {
@@ -14,26 +14,34 @@
     "pm2:logs": "pm2 logs paperplane",
     "deploy": "npm run build && pm2 restart paperplane",
     "prisma:generate": "npx prisma generate",
-    "prisma:push": "npx prisma db push"
+    "prisma:push": "npx prisma db push",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
+    "@sentry/node": "^10.66.0",
+    "@types/swagger-ui-express": "^4.1.8",
     "cors": "^2.8.5",
     "discord.js": "^14.27.0",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "lavalink-client": "^2.10.2",
     "mongoose": "^9.7.4",
-    "reflect-metadata": "^0.2.2"
+    "reflect-metadata": "^0.2.2",
+    "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
     "@types/node": "^26.1.1",
     "@types/pg": "^8.20.0",
+    "@types/supertest": "^7.2.1",
     "prisma": "^7.8.0",
+    "supertest": "^7.2.2",
     "tsx": "^4.23.1",
-    "typescript": "^5.7.0"
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
   }
 }

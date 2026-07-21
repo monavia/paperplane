@@ -5,7 +5,7 @@ const MAX_MEMORIES = 50;
 
 let _prisma: any = null;
 async function getPrisma() {
-  if (!_prisma) _prisma = (await import("../prisma")).default;
+  if (!_prisma) _prisma = (await import("../prisma.js")).default;
   return _prisma;
 }
 

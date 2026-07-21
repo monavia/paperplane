@@ -7,27 +7,27 @@ import { withQueueLock } from "../../core/state/QueueLock";
 import * as lavalink from "../engine/lavalink";
 import { isUsingPrisma } from "../../database/connection";
 import { getAutoplay, getLoop, getShuffle, get247, getLastFilter, getLastEqualizer } from "../../database/repositories/GuildRepository";
-import { setFilter, setEqualizer } from "../../music/services/MusicService";
+import { setFilter, setEqualizer } from "./PlayerService";
+import * as EventBus from "../events/EventBus";
 import { EmbedBuilder } from "discord.js";
 
-const restoredGuilds = new Set<string>();
 let restoreRetryTimer: NodeJS.Timeout | null = null;
 let uncachedRetries = 0;
 
 export function isRestoredGuild(guildId: string): boolean {
-  return restoredGuilds.has(guildId);
+  return state.restored.has(guildId);
 }
 export function addRestoredGuild(guildId: string): void {
-  restoredGuilds.add(guildId);
+  state.restored.add(guildId);
 }
 export function clearRestoredGuild(guildId: string): void {
-  restoredGuilds.delete(guildId);
+  state.restored.delete(guildId);
 }
 
 // Hybrid helpers
 let _prisma: any = null;
 async function getPrisma() {
-  if (!_prisma) _prisma = (await import("../../database/prisma")).default;
+  if (!_prisma) _prisma = (await import("../../database/prisma.js")).default;
   return _prisma;
 }
 
@@ -48,9 +48,9 @@ async function upsertPlayerState(guildId: string, data: any) {
 async function deletePlayerState(guildId: string) {
   if (usePg()) {
     const p = await getPrisma();
-    await p.playerState.delete({ where: { guildId } }).catch(() => {});
+    await p.playerState.delete({ where: { guildId } }).catch(Logger.safe("bot/music/services/StateService.ts"));
   } else {
-    await PlayerState.deleteOne({ guildId }).catch(() => {});
+    await PlayerState.deleteOne({ guildId }).catch(Logger.safe("bot/music/services/StateService.ts"));
   }
 }
 
@@ -59,7 +59,7 @@ async function deleteOldPlayerStates(cutoff: Date) {
     const p = await getPrisma();
     await p.playerState.deleteMany({ where: { updatedAt: { lt: cutoff } } });
   } else {
-    await PlayerState.deleteMany({ updatedAt: { $lt: cutoff } }).catch(() => {});
+    await PlayerState.deleteMany({ updatedAt: { $lt: cutoff } }).catch(Logger.safe("bot/music/services/StateService.ts"));
   }
 }
 
@@ -74,9 +74,9 @@ async function findRecentPlayerStates(cutoff: Date) {
 async function updatePlayerState(guildId: string, data: any) {
   if (usePg()) {
     const p = await getPrisma();
-    await p.playerState.updateMany({ where: { guildId }, data }).catch(() => {});
+    await p.playerState.updateMany({ where: { guildId }, data }).catch(Logger.safe("bot/music/services/StateService.ts"));
   } else {
-    await PlayerState.updateOne({ guildId }, { $set: data }).catch(() => {});
+    await PlayerState.updateOne({ guildId }, { $set: data }).catch(Logger.safe("bot/music/services/StateService.ts"));
   }
 }
 
@@ -126,8 +126,6 @@ async function saveState(guildId: string) {
       await upsertPlayerState(guildId, {
         voiceChannelId,
         textChannelId,
-        queue: queue.map((t: any) => JSON.parse(JSON.stringify(t))),
-        nowPlaying: nowPlaying ? JSON.parse(JSON.stringify(nowPlaying)) : null,
         position: pos,
         nodeId: player.node?.id || null,
         updatedAt: new Date(),
@@ -169,7 +167,7 @@ function isLavalinkReady(): boolean {
 }
 
 async function restoreGuildState(client: any, saved: any): Promise<boolean> {
-  if (restoredGuilds.has(saved.guildId)) return true;
+  if (state.restored.has(saved.guildId)) return true;
 
   const guild = client.guilds.cache.get(saved.guildId);
   if (!guild) return false;
@@ -180,7 +178,9 @@ async function restoreGuildState(client: any, saved: any): Promise<boolean> {
   if (saved.textChannelId) setTextChannelId(saved.guildId, saved.textChannelId);
 
   const engine = getEngine(saved.guildId);
-  state.autoplay.set(saved.guildId, await getAutoplay(saved.guildId));
+  // Autoplay: reset ke false abis restart biar gak ON sendiri dari DB
+  // User bisa enable manual via -ap command
+  state.autoplay.set(saved.guildId, false);
   state.loop.set(saved.guildId, await getLoop(saved.guildId) as "off" | "track" | "playlist");
   state.shuffle.set(saved.guildId, await getShuffle(saved.guildId));
   state.twentyFourSeven.set(saved.guildId, await get247(saved.guildId), "");
@@ -217,7 +217,7 @@ async function restoreGuildState(client: any, saved: any): Promise<boolean> {
     } catch {
       Logger.warn(`[StateRestore] changeNode failed — recreating player on ${target.id}`);
       try {
-        await player.destroy().catch(() => {});
+        await player.destroy().catch(Logger.safe("bot/music/services/StateService.ts"));
         player = manager!.createPlayer({
           guildId: saved.guildId,
           voiceChannelId: saved.voiceChannelId,
@@ -250,7 +250,7 @@ async function restoreGuildState(client: any, saved: any): Promise<boolean> {
     }
     Logger.info(`Resume active for ${saved.guildId}, restored ${engine.queue.size()} queued tracks`);
     state.nowPlaying.set(saved.guildId, player.queue.current || saved.nowPlaying);
-    restoredGuilds.add(saved.guildId);
+    state.restored.add(saved.guildId);
     // Check if humans in VC, leave after 1m if autoplay ON and nobody
     if (state.autoplay.get(saved.guildId)) {
       const vc = guild.channels.cache.get(saved.voiceChannelId);
@@ -264,7 +264,7 @@ async function restoreGuildState(client: any, saved: any): Promise<boolean> {
               if (tcId) {
                 const ch = client.channels.cache.get(tcId);
                 if (ch) {
-                  ch.send({ embeds: [new EmbedBuilder().setDescription("No one is in the voice channel. Leaving...").setColor(0xFF0000)] }).catch(() => {});
+                  ch.send({ embeds: [new EmbedBuilder().setDescription("No one is in the voice channel. Leaving...").setColor(0xFF0000)] }).catch(Logger.safe("bot/music/services/StateService.ts"));
                 }
               }
               destroyEngine(saved.guildId);
@@ -275,22 +275,37 @@ async function restoreGuildState(client: any, saved: any): Promise<boolean> {
     return true;
   }
 
-  const tracks = [];
-  if (saved.nowPlaying) tracks.push(saved.nowPlaying);
-  if (saved.queue?.length) tracks.push(...saved.queue);
-
-  for (const track of tracks) engine.queue.add(track);
+  // Queue already restored to player.queue by MongoQueueStore via engine.join
+  state.queues.syncFromPlayer(saved.guildId);
 
   let first: any = null;
   try {
     await withQueueLock(saved.guildId, async () => {
-      first = engine.queue.next();
+      first = state.nowPlaying.get(saved.guildId) || player.queue.current || engine.queue.next();
       if (!first) return;
-      state.nowPlaying.set(saved.guildId, first);
+
+      // Pre-emptive search: stale encoded from previous Lavalink session causes trackError.
+      // Resolve fresh track from metadata so the first play never fails.
+      const trackTitle = first.info?.title || "";
+      const trackAuthor = first.info?.author || "";
+      if (trackTitle || trackAuthor) {
+        const q = `${trackAuthor} ${trackTitle}`.trim();
+        const search = await player.search({ query: `ytmsearch:${q}` }, { id: "system" }).catch(() => null);
+        if (search?.tracks?.length) {
+          const fresh = search.tracks[0];
+          // Preserve original URI for display (e.g. Spotify URL)
+          if (first.info?.uri && !/^spotify:/i.test(first.info.uri) && !/open\.spotify\.com/i.test(first.info.uri)) {
+            fresh.info.uri = first.info.uri;
+          }
+          first = fresh;
+          state.nowPlaying.set(saved.guildId, first);
+        }
+      }
+
       const pos = (saved.position || 0) > 0 && first?.info?.duration ? Math.min(saved.position, first.info.duration - 1000) : 0;
       const region = player.node?.options?.regions?.[0] || saved.nodeId || "?";
       Logger.info(`[StateRestore] guild=${saved.guildId} title="${(first?.info?.title || "").slice(0,40)}" restorePos=${saved.position} cappedPos=${pos} duration=${first?.info?.duration || 0} encoded=${!!first?.encoded} region=${region}`);
-      restoredGuilds.add(saved.guildId);
+      state.restored.add(saved.guildId);
       try {
         await player.play({ track: first, clientTrack: first, position: pos });
         Logger.info(`[StateRestore] Play OK guild=${saved.guildId} pos=${pos} region=${region}`);
@@ -303,14 +318,14 @@ async function restoreGuildState(client: any, saved: any): Promise<boolean> {
       // Apply saved filter/equalizer
       const savedFilter = state.filter.get(saved.guildId);
       if (savedFilter && savedFilter !== "none") {
-        setFilter(saved.guildId, savedFilter, "system", "System").catch(() => {});
+        setFilter(saved.guildId, savedFilter, "system", "System").catch(Logger.safe("bot/music/services/StateService.ts"));
       }
       const savedBands = state.equalizer.get(saved.guildId);
       if (savedBands) {
         const presetName = typeof savedBands === "string" ? savedBands : null;
         const bands = presetName ? null : savedBands;
         if (bands) {
-          setEqualizer(saved.guildId, bands, "system", "System").catch(() => {});
+          setEqualizer(saved.guildId, bands, "system", "System").catch(Logger.safe("bot/music/services/StateService.ts"));
         }
       }
       // Autoplay restore: check if humans in VC, leave after 1m if nobody
@@ -422,5 +437,12 @@ async function restoreAllStates(client: any, retryCount = 0) {
     Logger.error("Failed to restore player states:", err.message);
   }
 }
+
+EventBus.on('state:save', (p: any) => { if (p?.guildId) saveState(p.guildId).catch(Logger.safe("bot/music/services/StateService.ts")); });
+EventBus.on('state:startPositionSync', (p: any) => { if (p?.guildId) startPositionSync(p.guildId); });
+EventBus.on('state:stopPositionSync', (p: any) => { if (p?.guildId) stopPositionSync(p.guildId); });
+EventBus.on('state:delete', (p: any) => { if (p?.guildId) deleteState(p.guildId).catch(Logger.safe("bot/music/services/StateService.ts")); });
+EventBus.on('state:clearRestored', (p: any) => { if (p?.guildId) clearRestoredGuild(p.guildId); });
+EventBus.on('state:addRestored', (p: any) => { if (p?.guildId) addRestoredGuild(p.guildId); });
 
 export { saveState, saveAllStates, deleteState, restoreAllStates, restoreGuildState };

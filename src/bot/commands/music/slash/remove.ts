@@ -1,7 +1,7 @@
 import { SlashCommandBuilder } from "discord.js";
 import * as MusicService from "@/bot/music/services/MusicService";
 import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
-import { checkSameVoice } from "@/bot/core/utils/VoiceCheck";
+import { requireSameVoice } from "@/bot/core/utils/VoiceCheck";
 import * as SuccessEmbed from "@/bot/ui/embeds/SuccessEmbed";
 
 export default {
@@ -11,8 +11,7 @@ export default {
     .addStringOption((o) => o.setName("query").setDescription("Track name or position (e.g. 3 or 2-5)").setRequired(true)),
 
   async execute(interaction: any) {
-    const vc = checkSameVoice(interaction);
-    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], flags: 64 });
+    if (!await requireSameVoice(interaction)) return;
 
     const input = interaction.options.getString("query", true);
     const guildId = interaction.guildId!;
@@ -27,7 +26,8 @@ export default {
         return interaction.reply({ embeds: [ErrorEmbed.build(`Invalid range. Valid: 0-${queue.length - 1}`)], flags: 64 });
       }
       const count = MusicService.removeRange(guildId, from, to);
-      return interaction.reply({ embeds: [SuccessEmbed.build(`Removed ${count} track(s) from position ${from} to ${to}`)] });
+      await interaction.deferReply();
+      return interaction.editReply({ embeds: [SuccessEmbed.build(`Removed ${count} track(s) from position ${from} to ${to}`)] });
     }
 
     const singleIdx = parseInt(input, 10);
@@ -41,11 +41,13 @@ export default {
       const title = queue[singleIdx]?.info?.title || "?";
       const removed = MusicService.removeFromQueue(guildId, singleIdx);
       if (!removed) return interaction.reply({ embeds: [ErrorEmbed.build("Failed to remove track.")], flags: 64 });
-      return interaction.reply({ embeds: [SuccessEmbed.build(`Removed **${title}** from the queue.`)] });
+      await interaction.deferReply();
+      return interaction.editReply({ embeds: [SuccessEmbed.build(`Removed **${title}** from the queue.`)] });
     }
 
     const count = MusicService.removeByQuery(guildId, input);
     if (!count) return interaction.reply({ embeds: [ErrorEmbed.build(`No tracks found matching "${input}".`)] });
-    interaction.reply({ embeds: [SuccessEmbed.build(`Removed ${count} track(s) matching "${input}".`)] });
+    await interaction.deferReply();
+    await interaction.editReply({ embeds: [SuccessEmbed.build(`Removed ${count} track(s) matching "${input}".`)] });
   },
 };

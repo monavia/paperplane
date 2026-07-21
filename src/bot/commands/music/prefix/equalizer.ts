@@ -4,7 +4,7 @@ import { setLastEqualizer, getLastEqualizer } from "@/bot/database/repositories/
 import * as SuccessEmbed from "@/bot/ui/embeds/SuccessEmbed";
 import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
 import Colors from "@/bot/core/constants/Colors";
-import { checkSameVoice } from "@/bot/core/utils/VoiceCheck";
+import { requireSameVoice } from "@/bot/core/utils/VoiceCheck";
 import state from "@/bot/core/state/StateManager";
 
 const EQ_PRESETS: Record<string, { band: number; gain: number }[]> = {
@@ -40,8 +40,7 @@ export default {
   aliases: ["eq"],
   async execute(message: any, args: string[]) {
     if (!message.member) return;
-    const vc = checkSameVoice(message);
-    if (!vc.ok) return (message.channel as any).send({ embeds: [ErrorEmbed.build(vc.message)] });
+    if (!await requireSameVoice(message)) return;
     const down = MusicService.requireLavalink();
     if (down) return (message.channel as any).send(down);
 

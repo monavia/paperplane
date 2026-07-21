@@ -17,7 +17,7 @@ export async function connect(): Promise<void> {
   if (pgUrl && (pgUrl.startsWith("postgresql://") || pgUrl.startsWith("postgres://"))) {
     _usingPrisma = true;
     try {
-      const prisma = (await import("./prisma")).default;
+      const prisma: any = await import("./prisma.js");
       await prisma.$connect();
       Logger.ready("Database connected (Prisma/PostgreSQL)");
     } catch (err: any) {
@@ -34,7 +34,7 @@ export async function connect(): Promise<void> {
 export async function disconnect(): Promise<void> {
   if (_usingPrisma) {
     try {
-      const prisma = (await import("./prisma")).default;
+      const prisma: any = await import("./prisma.js");
       await prisma.$disconnect();
     } catch {}
     return;

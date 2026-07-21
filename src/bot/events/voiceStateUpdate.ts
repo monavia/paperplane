@@ -42,14 +42,14 @@ export function start(client: any): void {
       cancelAloneTimer(guildId);
       Logger.info(`[VoiceState] Bot left voice in ${guildId}`);
 
-      await setLastFilter(guildId, "none").catch(() => {});
+      await setLastFilter(guildId, "none").catch(Logger.safe("bot/events/voiceStateUpdate.ts"));
 
       if (isIdleDisconnect(guildId)) {
         clearIdleDisconnect(guildId);
         return;
       }
 
-      await deleteState(guildId).catch(() => {});
+      await deleteState(guildId).catch(Logger.safe("bot/events/voiceStateUpdate.ts"));
       if (!state.twentyFourSeven.isEnabled(guildId)) {
         state.autoplay.delete(guildId);
         state.shuffle.delete(guildId);
@@ -67,7 +67,7 @@ const engine = getEngine(guildId);
           const embed = new EmbedBuilder()
             .setDescription("Disconnected from voice channel.")
             .setColor(Colors.INFO);
-          channel.send({ embeds: [embed] }).catch(() => {});
+          channel.send({ embeds: [embed] }).catch(Logger.safe("bot/events/voiceStateUpdate.ts"));
         }
       }
       return;

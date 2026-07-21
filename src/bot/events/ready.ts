@@ -38,8 +38,8 @@ export function start(client: any): void {
     }
 
     // Periodic history cleanup
-    cleanupOldEntries().catch(() => {});
-    const historyCleanupTimer = setInterval(() => cleanupOldEntries().catch(() => {}), 86400000);
+    cleanupOldEntries().catch(Logger.safe("bot/events/ready.ts"));
+    const historyCleanupTimer = setInterval(() => cleanupOldEntries().catch(Logger.safe("bot/events/ready.ts")), 86400000);
     historyCleanupTimer.unref();
   });
 }

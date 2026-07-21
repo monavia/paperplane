@@ -2,7 +2,7 @@ import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, But
 import * as MusicService from "@/bot/music/services/MusicService";
 import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
 import Colors from "@/bot/core/constants/Colors";
-import { checkSameVoice } from "@/bot/core/utils/VoiceCheck";
+import { requireSameVoice } from "@/bot/core/utils/VoiceCheck";
 
 const TIMEOUT = 15000;
 
@@ -12,8 +12,7 @@ export default {
     .setDescription("Clear all tracks from the queue"),
 
   async execute(interaction: import("discord.js").ChatInputCommandInteraction) {
-    const vc = checkSameVoice(interaction);
-    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], flags: 64 });
+    if (!await requireSameVoice(interaction)) return;
 
     const guildId = interaction.guildId!;
     if (!MusicService.getEngine(guildId)?.player) return interaction.reply({ embeds: [ErrorEmbed.build("Bot is not connected to a voice channel.")], flags: 64 });
@@ -37,8 +36,8 @@ export default {
         .setStyle(ButtonStyle.Danger),
     );
 
-    const response = await interaction.reply({ embeds: [embed], components: [row], withResponse: true });
-    const msg = response.resource?.message ?? await interaction.fetchReply();
+    await interaction.deferReply();
+    const msg = await interaction.editReply({ embeds: [embed], components: [row] });
 
     const collector = msg.createMessageComponentCollector({
       filter: (i: any) => i.user.id === interaction.user.id,

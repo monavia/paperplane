@@ -1,3 +1,4 @@
+import * as ErrorEmbed from "../../ui/embeds/ErrorEmbed";
 import * as MusicService from "../../music/services/MusicService";
 
 type VoiceResult = { ok: true } | { ok: false; message: string };
@@ -29,4 +30,25 @@ export function checkSameVoice(source: any): VoiceResult {
     return { ok: false, message: "You must be in the same voice channel as the bot." };
   }
   return { ok: true };
+}
+
+function replyError(source: any, message: string) {
+  if (source.reply) return source.reply({ embeds: [ErrorEmbed.build(message)], flags: 64 });
+  return (source.channel as any).send({ embeds: [ErrorEmbed.build(message)] });
+}
+
+export async function requireSameVoice(source: any): Promise<boolean> {
+  const vc = checkSameVoice(source);
+  if (!vc.ok) {
+    await replyError(source, vc.message);
+    return false;
+  }
+  return true;
+}
+
+export function withVoiceCheck(handler: (source: any) => Promise<any>) {
+  return async (source: any) => {
+    if (!await requireSameVoice(source)) return;
+    return handler(source);
+  };
 }

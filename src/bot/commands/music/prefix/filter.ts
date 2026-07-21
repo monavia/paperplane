@@ -4,7 +4,7 @@ import { setLastFilter, getLastFilter } from "@/bot/database/repositories/GuildR
 import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
 import * as SuccessEmbed from "@/bot/ui/embeds/SuccessEmbed";
 import Colors from "@/bot/core/constants/Colors";
-import { checkSameVoice } from "@/bot/core/utils/VoiceCheck";
+import { requireSameVoice } from "@/bot/core/utils/VoiceCheck";
 import state from "@/bot/core/state/StateManager";
 import MusicModes from "@/bot/core/constants/MusicModes";
 
@@ -45,8 +45,7 @@ export default {
   aliases: ["filters"],
   async execute(message: any, args: string[]) {
     if (!message.member) return;
-    const vc = checkSameVoice(message);
-    if (!vc.ok) return (message.channel as any).send({ embeds: [ErrorEmbed.build(vc.message)] });
+    if (!await requireSameVoice(message)) return;
     const down = MusicService.requireLavalink();
     if (down) return (message.channel as any).send(down);
 

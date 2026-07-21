@@ -1,6 +1,6 @@
 import mongoose, { Schema, Document } from "mongoose";
 
-interface IActivity extends Document {
+interface IUserActivity extends Document {
   guildId: string;
   userId: string;
   action: string;
@@ -8,7 +8,7 @@ interface IActivity extends Document {
   timestamp: Date;
 }
 
-const ActivitySchema = new Schema<IActivity>({
+const UserActivitySchema = new Schema<IUserActivity>({
   guildId: { type: String, required: true },
   userId: { type: String, required: true },
   action: { type: String, required: true },
@@ -16,6 +16,6 @@ const ActivitySchema = new Schema<IActivity>({
   timestamp: { type: Date, default: Date.now },
 });
 
-ActivitySchema.index({ guildId: 1, timestamp: -1 });
+UserActivitySchema.index({ guildId: 1, timestamp: -1 });
 
-export default mongoose.model<IActivity>("Activity", ActivitySchema);
+export default mongoose.model<IUserActivity>("UserActivity", UserActivitySchema);

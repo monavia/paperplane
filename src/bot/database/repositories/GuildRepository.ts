@@ -8,7 +8,7 @@ const CACHE_TTL = 60000;
 
 let _prisma: any = null;
 async function getPrisma() {
-  if (!_prisma) _prisma = (await import("../prisma")).default;
+  if (!_prisma) _prisma = (await import("../prisma.js")).default;
   return _prisma;
 }
 

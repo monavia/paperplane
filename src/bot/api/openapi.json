@@ -1,0 +1,77 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Paperplane Bot API",
+    "version": "2.1.4",
+    "description": "REST API for Paperplane Discord music bot. All mutation endpoints require voice channel match via `X-Discord-User-Id` header."
+  },
+  "servers": [{ "url": "http://localhost:3001", "description": "Local dev" }],
+  "paths": {
+    "/api/health": {
+      "get": { "summary": "Bot health", "tags": ["Status"], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/status": {
+      "get": { "summary": "Full status (api/websocket/db/lavalink)", "tags": ["Status"], "responses": { "200": { "description": "Status object" } } }
+    },
+    "/api/metrics": {
+      "get": { "summary": "Prometheus text format metrics", "tags": ["Metrics"], "responses": { "200": { "description": "text/plain" } } }
+    },
+    "/api/metrics/json": {
+      "get": { "summary": "Metrics as JSON", "tags": ["Metrics"], "responses": { "200": { "description": "Full metrics object" } } }
+    },
+    "/api/guilds": {
+      "get": { "summary": "List joined guilds with Paperplane", "tags": ["Guild"], "responses": { "200": { "description": "Guild list" } } }
+    },
+    "/api/guild/{guildId}/health": {
+      "get": { "summary": "Per-guild health check", "tags": ["Guild"], "parameters": [{ "name": "guildId", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "Health" } } }
+    },
+    "/api/guild/{guildId}/stats": {
+      "get": { "summary": "Guild stats (activeUsers, queueLength, uptime)", "tags": ["Guild"], "parameters": [{ "name": "guildId", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "Stats" } } }
+    },
+    "/api/guild/{guildId}/queue": {
+      "get": { "summary": "Read queue (current + upcoming)", "tags": ["Queue"], "parameters": [{ "name": "guildId", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "Queue object" } } },
+      "delete": { "summary": "Remove track by index", "tags": ["Queue"], "parameters": [{ "name": "guildId", "in": "path", "required": true, "schema": { "type": "string" } }], "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "index": { "type": "integer" } }, "required": ["index"] } } } }, "responses": { "200": { "description": "Success" } }, "headers": { "X-Discord-User-Id": { "schema": { "type": "string" }, "description": "Required for voice check" } } },
+      "put": { "summary": "Reorder queue (move/swap/clear)", "tags": ["Queue"], "parameters": [{ "name": "guildId", "in": "path", "required": true, "schema": { "type": "string" } }], "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "action": { "type": "string", "enum": ["move", "swap", "clear"] }, "fromIndex": { "type": "integer" }, "toIndex": { "type": "integer" } } } } } }, "responses": { "200": { "description": "Success" } } }
+    },
+    "/api/guild/{guildId}/player": {
+      "post": { "summary": "Control playback (pause/resume/stop/skip/seek/volume)", "tags": ["Player"], "parameters": [{ "name": "guildId", "in": "path", "required": true, "schema": { "type": "string" } }], "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "action": { "type": "string", "enum": ["pause", "resume", "stop", "skip", "seek", "volume"] }, "value": { "type": "number" } }, "required": ["action"] } } } }, "responses": { "200": { "description": "Success" } } }
+    },
+    "/api/guild/{guildId}/nowplaying": {
+      "get": { "summary": "Currently playing track", "tags": ["Player"], "parameters": [{ "name": "guildId", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "Track or null" } } }
+    },
+    "/api/guild/{guildId}/lyrics": {
+      "get": { "summary": "Current track lyrics", "tags": ["Player"], "parameters": [{ "name": "guildId", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "Lyrics object" } } }
+    },
+    "/api/guild/{guildId}/search": {
+      "post": { "summary": "Search tracks by query", "tags": ["Player"], "parameters": [{ "name": "guildId", "in": "path", "required": true, "schema": { "type": "string" } }], "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "query": { "type": "string" } }, "required": ["query"] } } } }, "responses": { "200": { "description": "Top 10 tracks" } } }
+    },
+    "/api/guild/{guildId}/settings": {
+      "get": { "summary": "Read guild settings", "tags": ["Settings"], "parameters": [{ "name": "guildId", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "Settings object" } } },
+      "put": { "summary": "Update guild settings (prefix/volume/autoplay/loop/shuffle/247)", "tags": ["Settings"], "parameters": [{ "name": "guildId", "in": "path", "required": true, "schema": { "type": "string" } }], "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "prefix": { "type": "string" }, "volume": { "type": "integer", "minimum": 0, "maximum": 200 }, "autoplay": { "type": "boolean" }, "loop": { "type": "string", "enum": ["off", "track", "playlist"] }, "shuffle": { "type": "boolean" }, "247": { "type": "boolean" } } } } } }, "responses": { "200": { "description": "Success" } } }
+    },
+    "/api/guild/{guildId}/filter": {
+      "get": { "summary": "Read current filter", "tags": ["Audio"], "parameters": [{ "name": "guildId", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "Filter state" } } },
+      "post": { "summary": "Set/reset filter", "tags": ["Audio"], "parameters": [{ "name": "guildId", "in": "path", "required": true, "schema": { "type": "string" } }], "requestBody": { "content": { "application/json": { "schema": { "type": "object" } } } }, "responses": { "200": { "description": "Success" } } }
+    },
+    "/api/guild/{guildId}/equalizer": {
+      "get": { "summary": "Read current equalizer", "tags": ["Audio"], "parameters": [{ "name": "guildId", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "EQ state" } } },
+      "post": { "summary": "Set equalizer bands/preset", "tags": ["Audio"], "parameters": [{ "name": "guildId", "in": "path", "required": true, "schema": { "type": "string" } }], "requestBody": { "content": { "application/json": { "schema": { "type": "object" } } } }, "responses": { "200": { "description": "Success" } } }
+    },
+    "/api/guild/{guildId}/insights": {
+      "get": { "summary": "Music analytics (plays, users, genres)", "tags": ["Analytics"], "parameters": [{ "name": "guildId", "in": "path", "required": true, "schema": { "type": "string" } }, { "name": "days", "in": "query", "schema": { "type": "integer", "default": 7 } }], "responses": { "200": { "description": "Insights object" } } }
+    },
+    "/api/guild/{guildId}/dj-check/{userId}": {
+      "get": { "summary": "Check if user has DJ role", "tags": ["Guild"], "parameters": [{ "name": "guildId", "in": "path", "required": true, "schema": { "type": "string" } }, { "name": "userId", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "isDj boolean" } } }
+    },
+    "/api/activities/{guildId}": {
+      "get": { "summary": "Recent activities", "tags": ["Analytics"], "parameters": [{ "name": "guildId", "in": "path", "required": true, "schema": { "type": "string" } }, { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50 } }], "responses": { "200": { "description": "Activity list" } } }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "DiscordUserId": { "type": "apiKey", "in": "header", "name": "X-Discord-User-Id", "description": "Discord user ID for voice channel verification" },
+      "BearerToken": { "type": "http", "scheme": "bearer", "description": "BOT_API_TOKEN for remote access" }
+    }
+  },
+  "security": [{ "DiscordUserId": [] }]
+}

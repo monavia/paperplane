@@ -2,7 +2,7 @@ import { SlashCommandBuilder } from "discord.js";
 import * as MusicService from "@/bot/music/services/MusicService";
 import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
 import * as SuccessEmbed from "@/bot/ui/embeds/SuccessEmbed";
-import { checkSameVoice } from "@/bot/core/utils/VoiceCheck";
+import { requireSameVoice } from "@/bot/core/utils/VoiceCheck";
 
 function parseTime(input: string): number | null {
   const match = input.match(/^(?:(\d+):)?(\d+)$/);
@@ -22,8 +22,7 @@ export default {
     ),
 
   async execute(interaction: import("discord.js").ChatInputCommandInteraction) {
-    const vc = checkSameVoice(interaction);
-    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], flags: 64 });
+    if (!await requireSameVoice(interaction)) return;
 
     const player = MusicService.getEngine(interaction.guildId!).player;
     if (!player?.playing) return interaction.reply({ embeds: [ErrorEmbed.build("No track is currently playing.")], flags: 64 });
@@ -37,6 +36,7 @@ export default {
 
     player.seek(ms);
     const display = input.match(/^(\d+:)?\d+$/) ? input : `${Math.floor(ms / 60000)}:${Math.floor((ms % 60000) / 1000).toString().padStart(2, "0")}`;
-    await interaction.reply({ embeds: [SuccessEmbed.build(`Seeked to \`${display}\``)] });
+    await interaction.deferReply();
+    await interaction.editReply({ embeds: [SuccessEmbed.build(`Seeked to \`${display}\``)] });
   },
 };

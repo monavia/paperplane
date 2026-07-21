@@ -5,14 +5,13 @@ import Colors from "@/bot/core/constants/Colors";
 import Logger from "@/bot/core/utils/Logger";
 import { fetchLyrics } from "@/bot/music/services/LyricsService";
 import lyricsMessages from "@/bot/core/state/LyricsMessageStore";
-import { checkSameVoice } from "@/bot/core/utils/VoiceCheck";
+import { requireSameVoice } from "@/bot/core/utils/VoiceCheck";
 
 export default {
   name: "lyrics",
   aliases: ["ly"],
   async execute(message: import("discord.js").Message, args: string[]) {
-    const vc = checkSameVoice(message);
-    if (!vc.ok) return (message.channel as any).send({ embeds: [ErrorEmbed.build(vc.message)] });
+    if (!await requireSameVoice(message)) return;
     const player = getPlayer(message.guildId!);
     const track = player?.queue?.current;
     if (!track) return (message.channel as any).send({ embeds: [ErrorEmbed.build("Nothing is playing.")] });

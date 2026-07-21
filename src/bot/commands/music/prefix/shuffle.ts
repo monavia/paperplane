@@ -4,7 +4,7 @@ import Colors from "@/bot/core/constants/Colors";
 import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
 import ActivityService from "@/bot/services/ActivityService";
 import * as MusicService from "@/bot/music/services/MusicService";
-import { checkSameVoice } from "@/bot/core/utils/VoiceCheck";
+import { requireSameVoice } from "@/bot/core/utils/VoiceCheck";
 import { setShuffle } from "@/bot/database/repositories/GuildRepository";
 
 const TIMEOUT = 30000;
@@ -27,8 +27,7 @@ function buildButtons(isShuffleOn: boolean) {
 export default {
   name: "shuffle",
   async execute(message: import("discord.js").Message, args: string[]) {
-    const vc = checkSameVoice(message);
-    if (!vc.ok) return (message.channel as any).send({ embeds: [ErrorEmbed.build(vc.message)] });
+    if (!await requireSameVoice(message)) return;
 
     const guildId = message.guildId!;
     if (!MusicService.getEngine(guildId)?.player) return (message.channel as any).send({ embeds: [ErrorEmbed.build("Bot is not connected to a voice channel.")] });

@@ -2,7 +2,7 @@ import botConfig from "@/bot/config/bot";
 import { EmbedBuilder } from "discord.js";
 import * as NowPlayingEmbed from "@/bot/ui/embeds/NowPlayingEmbed";
 import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
-import { pickBestTrack } from "@/bot/music/services/SearchService";
+import { pickBestTrack, searchWithRetry } from "@/bot/music/services/SearchService";
 import { cachedSearch } from "@/bot/music/services/SearchCache";
 import { parseUrl as parseSpotifyUrl, scrape as scrapeSpotify } from "@/bot/music/engine/SpotifyScraper";
 import { markTrackStartSuppressed } from "@/bot/music/engine/musicEvents";
@@ -19,11 +19,10 @@ import { getEngine } from "../../../music/services/PlayerService";
 async function resolveSpotifyTrack(player: any, spotifyItem: any, user: any): Promise<any> {
   const q = spotifyItem.query || `${spotifyItem.artists?.join(" ") || ""} ${spotifyItem.name}`.trim();
   if (!q) return null;
-  const yt = await player.search({ query: `ytsearch:${q}` }, user);
-  let tracks: any = yt?.tracks;
-  let ytm: any, sc: any;
-  if (!tracks?.length) { ytm = await player.search({ query: `ytmsearch:${q}` }, user); tracks = ytm?.tracks; }
-  if (!tracks?.length) { sc = await player.search({ query: `scsearch:${q}` }, user); tracks = sc?.tracks; }
+  let tracks: any;
+  try { const yt = await searchWithRetry(player, { query: `ytsearch:${q}` }, user); tracks = yt?.tracks; } catch {}
+  if (!tracks?.length) { try { const ytm = await searchWithRetry(player, { query: `ytmsearch:${q}` }, user); tracks = ytm?.tracks; } catch {} }
+  if (!tracks?.length) { try { const sc = await searchWithRetry(player, { query: `scsearch:${q}` }, user); tracks = sc?.tracks; } catch {} }
   if (tracks?.length) {
     const track = pickBestTrack(tracks);
     if (!track.info) track.info = {};
@@ -217,6 +216,11 @@ export default {
        await message.channel.send({ embeds: [NowPlayingEmbed.build(track, null)] });
     } catch (err: any) {
       if (String(err?.message || "").includes("spotify")) { Logger.info(`[Spotify] Suppressed: ${err.message}`); return; }
+      const msg = err?.message || "";
+      if (/aborted|timeout|timed\s?out/i.test(msg)) {
+        Logger.error(`[Play] Search timeout: ${msg} query="${query.slice(0, 60)}"`);
+        return message.channel.send({ embeds: [ErrorEmbed.build("Search timed out. Try again or use a different query.")] });
+      }
       message.channel.send({ embeds: [ErrorEmbed.build(err.message)] });
     }
   },

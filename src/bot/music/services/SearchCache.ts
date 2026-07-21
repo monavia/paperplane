@@ -1,4 +1,5 @@
 import Logger from "../../core/utils/Logger";
+import { searchWithRetry } from "./SearchService";
 
 interface CacheEntry<T> {
   value: T;
@@ -81,7 +82,7 @@ export async function cachedSearch(player: any, query: string, user: any): Promi
     return cached;
   }
 
-  const result = await player.search({ query }, user);
+  const result = await searchWithRetry(player, { query }, user);
   if (result?.tracks?.length) {
     _instance.set(query, result);
     Logger.info(`[SearchCache] Miss (stored): ${query.slice(0, 60)}`);

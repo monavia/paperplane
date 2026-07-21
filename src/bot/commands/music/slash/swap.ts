@@ -1,7 +1,7 @@
 import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
 import * as MusicService from "@/bot/music/services/MusicService";
 import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
-import { checkSameVoice } from "@/bot/core/utils/VoiceCheck";
+import { requireSameVoice } from "@/bot/core/utils/VoiceCheck";
 import Colors from "@/bot/core/constants/Colors";
 
 export default {
@@ -12,8 +12,7 @@ export default {
     .addIntegerOption((opt: any) => opt.setName("b").setDescription("Second track index").setRequired(true)),
 
   async execute(interaction: import("discord.js").ChatInputCommandInteraction) {
-    const vc = checkSameVoice(interaction);
-    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], flags: 64 });
+    if (!await requireSameVoice(interaction)) return;
 
     const a = interaction.options.getInteger("a", true);
     const b = interaction.options.getInteger("b", true);
@@ -35,6 +34,7 @@ export default {
       .setDescription(`Swapped **${trackA?.info?.title || "?"}** ↔ **${trackB?.info?.title || "?"}**`)
       .setColor(Colors.SUCCESS);
 
-    await interaction.reply({ embeds: [embed] });
+    await interaction.deferReply();
+    await interaction.editReply({ embeds: [embed] });
   },
 };

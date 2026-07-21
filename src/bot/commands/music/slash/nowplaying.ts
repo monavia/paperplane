@@ -22,6 +22,7 @@ export default {
 
     if (thumb) embed.setImage(thumb);
 
-    await interaction.reply({ embeds: [embed] });
+    await interaction.deferReply();
+    await interaction.editReply({ embeds: [embed] });
   },
 };

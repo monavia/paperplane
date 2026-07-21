@@ -2,7 +2,7 @@ import botConfig from "@/bot/config/bot";
 import * as MusicService from "@/bot/music/services/MusicService";
 import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
 import * as SuccessEmbed from "@/bot/ui/embeds/SuccessEmbed";
-import { checkSameVoice } from "@/bot/core/utils/VoiceCheck";
+import { requireSameVoice } from "@/bot/core/utils/VoiceCheck";
 
 function parseTime(input: string): number | null {
   const match = input.match(/^(?:(\d+):)?(\d+)$/);
@@ -16,8 +16,7 @@ function parseTime(input: string): number | null {
 export default {
   name: "seek",
   async execute(message: import("discord.js").Message, args: string[]) {
-    const vc = checkSameVoice(message);
-    if (!vc.ok) return (message.channel as any).send({ embeds: [ErrorEmbed.build(vc.message)] });
+    if (!await requireSameVoice(message)) return;
 
     const player = MusicService.getEngine(message.guildId!).player;
     if (!player?.playing) return (message.channel as any).send({ embeds: [ErrorEmbed.build("No track is currently playing.")] });

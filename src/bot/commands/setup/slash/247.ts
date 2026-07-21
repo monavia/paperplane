@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
 import Colors from "@/bot/core/constants/Colors";
-import { checkSameVoice } from "@/bot/core/utils/VoiceCheck";
+import { requireSameVoice } from "@/bot/core/utils/VoiceCheck";
 import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
 import { set247 } from "@/bot/database/repositories/GuildRepository";
 import state from "@/bot/core/state/StateManager";
@@ -28,8 +28,7 @@ export default {
     .setDescription("Toggle 24/7 mode (stay in voice channel)"),
 
   async execute(interaction: import("discord.js").ChatInputCommandInteraction) {
-    const vc = checkSameVoice(interaction);
-    if (!vc.ok) return interaction.reply({ embeds: [ErrorEmbed.build(vc.message)], flags: 64 });
+    if (!await requireSameVoice(interaction)) return;
 
     const guildId = interaction.guildId!;
     const is247On = state.twentyFourSeven.isEnabled(guildId);
@@ -39,9 +38,8 @@ export default {
       .setColor(is247On ? Colors.SUCCESS : Colors.ERROR);
 
     const row = buildButtons(is247On);
-    const response = await interaction.reply({ embeds: [embed], components: [row], withResponse: true });
-
-    const msg = await interaction.fetchReply();
+    await interaction.deferReply();
+    const msg = await interaction.editReply({ embeds: [embed], components: [row] });
     const collector = msg.createMessageComponentCollector({
       filter: (i: any) => i.user.id === interaction.user.id,
       time: TIMEOUT,
