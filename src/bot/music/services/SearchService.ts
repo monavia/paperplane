@@ -1,5 +1,6 @@
 import Logger from "../../core/utils/Logger";
 import { cleanTitle, isCover } from "./TitleResolver";
+import { recordError, recordHtmlError } from "../engine/NodePenaltyService";
 
 const BAD_KEYWORDS = [
   "remix", "cover", "live", "karaoke", "nightcore", "slowed", "sped up",
@@ -60,8 +61,12 @@ export async function searchWithRetry(player: any, query: any, user: any, _retri
     const result = await player.search(query, user);
     return result;
   } catch (err: any) {
+    const nodeName = player.node?.id || "?";
+    const errMsg = err?.message || String(err);
     const qStr = typeof query === "object" ? (query.query || query.q || JSON.stringify(query)) : String(query);
-    Logger.warn(`[SearchTimeout] retriesLeft=${_retries} err="${err.message?.slice(0,60) || err}" query="${qStr.slice(0,60)}" node=${player.node?.id || "?"}`);
+    Logger.warn(`[SearchTimeout] retriesLeft=${_retries} err="${errMsg.slice(0,60)}" query="${qStr.slice(0,60)}" node=${nodeName}`);
+    recordError(nodeName, errMsg);
+    if (/html|proxy|cloudflare|503|502|gateway/i.test(errMsg)) recordHtmlError(nodeName);
     if (_retries > 0) return searchWithRetry(player, query, user, _retries - 1);
     throw err;
   }

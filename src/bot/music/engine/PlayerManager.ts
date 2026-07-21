@@ -12,7 +12,7 @@ export function createPlayer(guildId: string, voiceChannelId: string | null, tex
   if (!mgr) return null;
   const existing = mgr.players.get(guildId);
   if (existing) return existing;
-  const nodeId = getLeastLoadedNode();
+  const nodeId = getLeastLoadedNode(vcRegion);
   const player = mgr.createPlayer({
     guildId,
     voiceChannelId: voiceChannelId || "",

@@ -11,7 +11,7 @@ import { getTextChannelId } from "../services/TextChannelStore";
 import PlayerState from "../../database/models/PlayerState";
 import { getEngine } from "../services/PlayerService";
 import { setFilter, setEqualizer } from "../services/PlayerService";
-import { getBestNode, recordDisconnect, recordError } from "./NodePenaltyService";
+import { getBestNode, recordDisconnect, recordError, recordHtmlError, startDrain } from "./NodePenaltyService";
 import * as FailoverManager from "./FailoverManager";
 import { clearStuckTimer, startStuckTimer } from "./musicEvents";
 import { setGuildCount, setVoiceConnections, setActivePlayers, setActiveGuilds, setLavalinkNodePlayers, setLavalinkNodeLatency, setLavalinkNodesOnline, setLavalinkNodePenalty } from "../../telemetry/MetricsCollector";
@@ -168,10 +168,11 @@ export async function init(client: any): Promise<boolean> {
 
   l.on("nodeError", async (node: any, err: any) => {
     try {
-      Logger.warn(`[NodeLink] Node ${node.options?.id || "?"} (${node.options?.regions?.[0] || "?"}) error: ${err?.message || err}`);
-      
-
-      recordError(node.options?.id || node.id, err?.message || String(err));
+      const nodeName = node.options?.id || node.id;
+      const errMsg = err?.message || String(err);
+      Logger.warn(`[NodeLink] Node ${nodeName} (${node.options?.regions?.[0] || "?"}) error: ${errMsg}`);
+      recordError(nodeName, errMsg);
+      if (/html|proxy|cloudflare|503|502|gateway/i.test(errMsg)) recordHtmlError(nodeName);
       if (lavalink?.nodeManager) await failoverFromNode(node.id);
     } catch (e: any) { Logger.error(`[NodeLink] nodeError handler error: ${e.message}`); }
   });
@@ -428,18 +429,30 @@ export async function init(client: any): Promise<boolean> {
       }
     }
 
+    // Detect partial failure: connected websocket but broken REST (HTML/proxy responses)
+    for (const node of nodes) {
+      if (node.connected && node.options?.id) {
+        const nodeName = node.options.id;
+        if (getPenalty(nodeName) > 500) {
+          Logger.warn(`[NodeLink] Health: node ${nodeName} penalty ${getPenalty(nodeName)} >500 — draining`);
+          startDrain(nodeName);
+        }
+      }
+    }
+
     for (const node of nodes) {
       if (!node.connected && node.connect) {
-        // Backup failover (events might not fire)
-        await failoverFromNode(node.id);
-
         const last = lastReconnectAttempt.get(node.id) || 0;
         if (now - last < 15000) continue;
         lastReconnectAttempt.set(node.id, now);
         Logger.info(`[NodeLink] Health check: reconnecting ${node.id} (${(node.options as any)?.regions?.[0] || "?"})...`);
         const connectTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000));
-        try { await Promise.race([node.connect(), connectTimeout]); if (node.connected) { cancelNodesDownTimer(); Logger.info(`[NodeLink] Health check: node ${node.id} (${(node.options as any)?.regions?.[0] || "?"}) reconnected`); } } catch (err: any) {
-          Logger.warn(`[NodeLink] Health reconnect failed for ${node.id}: ${err?.message || "timeout"}`);
+        try {
+          await Promise.race([node.connect(), connectTimeout]);
+          if (node.connected) { cancelNodesDownTimer(); Logger.info(`[NodeLink] Health check: node ${node.id} (${(node.options as any)?.regions?.[0] || "?"}) reconnected`); }
+        } catch (err: any) {
+          Logger.warn(`[NodeLink] Health reconnect failed for ${node.id}: ${err?.message || "timeout"} — failover players`);
+          await failoverFromNode(node.id);
         }
       }
     }
