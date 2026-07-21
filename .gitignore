@@ -378,3 +378,8 @@ FodyWeavers.xsd
 /.serena
 /AUDIT.md
 /ROADMAP.md
+/.claude
+/.claude-flow
+/.swarm
+*.json
+/CLAUDE.md
