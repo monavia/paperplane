@@ -18,12 +18,15 @@ class AIDJ {
       "PLAY: <song name>\n" +
       "PLAYLIST: <song1> by <artist1>, <song2> by <artist2>, ...\n" +
       "CORRECT: <corrected keyword>\n" +
-      "SKIP\nSTOP\nPAUSE\nRESUME\nQUEUE\n" +
+      "SKIP\nSTOP\nPAUSE\nRESUME\nQUEUE\nAUTOPLAY\nSHUFFLE\nLOOP\n247\nCLEAR\nRECOMMEND\nNOWPLAYING\nVOLUME\nINFO\nPING\nHELP\n" +
       "If just chatting, reply as a helpful assistant.\n" +
       "CRITICAL: For PLAY/PLAYLIST, use the exact song name as-is.\n" +
       'Examples:\n' +
       'User: mainkan lagu nina\nYou: PLAY: lagu nina\n' +
-      'User: stop\nYou: STOP';
+      'User: stop\nYou: STOP\n' +
+      'User: acak lagu\nYou: SHUFFLE\n' +
+      'User: ulang terus\nYou: LOOP\n' +
+      'User: info bot\nYou: INFO';
 
     AIEngine.clearMemory("aidj");
     const reply = await AIEngine.ask("aidj", input, systemPrompt);
@@ -46,6 +49,17 @@ class AIDJ {
     if (/^PAUSE/i.test(firstLine)) return { type: "pause" };
     if (/^RESUME/i.test(firstLine)) return { type: "resume" };
     if (/^QUEUE/i.test(firstLine)) return { type: "queue" };
+    if (/^AUTOPLAY/i.test(firstLine)) return { type: "autoplay" };
+    if (/^SHUFFLE/i.test(firstLine)) return { type: "shuffle" };
+    if (/^LOOP/i.test(firstLine)) return { type: "loop" };
+    if (/^247/i.test(firstLine)) return { type: "247" };
+    if (/^CLEAR/i.test(firstLine)) return { type: "clear" };
+    if (/^RECOMMEND/i.test(firstLine)) return { type: "recommend" };
+    if (/^NOWPLAYING/i.test(firstLine)) return { type: "nowplaying" };
+    if (/^VOLUME/i.test(firstLine)) return { type: "volume" };
+    if (/^INFO/i.test(firstLine)) return { type: "info" };
+    if (/^PING/i.test(firstLine)) return { type: "ping" };
+    if (/^HELP/i.test(firstLine)) return { type: "help" };
 
     return { type: "chat", reply };
   }

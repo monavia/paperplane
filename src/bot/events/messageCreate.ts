@@ -139,6 +139,21 @@ export function start(client: any): void {
           return message.channel.send({ embeds: [new EmbedBuilder().setDescription(queries.length > 1 ? `Queued ${queries.length} tracks.` : `Playing **${queries[0]}**`).setColor(Colors.SUCCESS)] });
         }
 
+        if (interpreted.type === "info") {
+          const qCount = state.queues.get(guildId)?.length || 0;
+          const np = state.nowPlaying.get(guildId);
+          return message.channel.send({
+            embeds: [new EmbedBuilder()
+              .setTitle("Paperplane Bot")
+              .setDescription(`Queue: **${qCount}** tracks\nNow playing: ${np ? `**${np.info?.title}**` : "Nothing"}\nLavalink: ${MusicService.isLavalinkReady() ? "✅ Connected" : "❌ Disconnected"}`)
+              .setColor(Colors.INFO)]
+          });
+        }
+        if (interpreted.type === "ping") {
+          const wsPing = message.client?.ws?.ping ?? 0;
+          return message.channel.send({ embeds: [new EmbedBuilder().setDescription(`🏓 Pong! WS Ping: **${wsPing}ms**`).setColor(Colors.INFO)] });
+        }
+
         if (!voice) return message.channel.send({ embeds: [ErrorEmbed.build("You must be in a voice channel.")] });
 
         switch (interpreted.type) {
@@ -167,6 +182,81 @@ export function start(client: any): void {
             if (!resumed) return message.channel.send({ embeds: [ErrorEmbed.build("Failed to resume.")] });
             return message.channel.send({ embeds: [new EmbedBuilder().setDescription("Playback resumed.").setColor(Colors.SUCCESS)] });
           }
+          case "autoplay": {
+            const newState = !state.autoplay.get(guildId);
+            state.autoplay.set(guildId, newState);
+            return message.channel.send({ embeds: [new EmbedBuilder().setDescription(`Autoplay **${newState ? "ON" : "OFF"}**`).setColor(newState ? Colors.SUCCESS : Colors.INFO)] });
+          }
+          case "shuffle": {
+            const newState = !state.shuffle.get(guildId);
+            state.shuffle.set(guildId, newState);
+            if (newState) {
+              const tracks = state.queues.get(guildId);
+              if (tracks?.length > 1) {
+                for (let idx = tracks.length - 1; idx > 0; idx--) {
+                  const j = Math.floor(Math.random() * (idx + 1));
+                  [tracks[idx], tracks[j]] = [tracks[j], tracks[idx]];
+                }
+                state.queues.set(guildId, tracks);
+              }
+            }
+            return message.channel.send({ embeds: [new EmbedBuilder().setDescription(`Shuffle **${newState ? "ON" : "OFF"}**`).setColor(newState ? Colors.SUCCESS : Colors.INFO)] });
+          }
+          case "loop": {
+            const modes = ["off", "track", "playlist"] as const;
+            const cur = state.loop.get(guildId);
+            const idx = modes.indexOf(cur);
+            const next = modes[(idx + 1) % modes.length];
+            state.loop.set(guildId, next);
+            return message.channel.send({ embeds: [new EmbedBuilder().setDescription(`Loop: **${next}**`).setColor(Colors.INFO)] });
+          }
+          case "247": {
+            const newState = !state.twentyFourSeven.isEnabled(guildId);
+            state.twentyFourSeven.set(guildId, newState);
+            return message.channel.send({ embeds: [new EmbedBuilder().setDescription(`24/7 mode **${newState ? "ON" : "OFF"}**`).setColor(newState ? Colors.SUCCESS : Colors.INFO)] });
+          }
+          case "clear": {
+            state.queues.clear(guildId);
+            return message.channel.send({ embeds: [new EmbedBuilder().setDescription("Queue cleared.").setColor(Colors.SUCCESS)] });
+          }
+          case "recommend": {
+            state.autoplay.set(guildId, true);
+            return message.channel.send({ embeds: [new EmbedBuilder().setDescription("Autoplay enabled — recommendations will play when queue ends.").setColor(Colors.INFO)] });
+          }
+          case "correct_playlist": {
+            const keyword = interpreted.keyword;
+            if (!keyword) return message.channel.send({ embeds: [ErrorEmbed.build("What should I play instead?")] });
+            const lavalink = get();
+            if (!lavalink) return message.channel.send({ embeds: [ErrorEmbed.build("Music system not ready.")] });
+            let player = lavalink.players.get(guildId);
+            if (!player) {
+              if (!voice) return message.channel.send({ embeds: [ErrorEmbed.build("You must be in a voice channel.")] });
+              player = lavalink.createPlayer({ guildId, voiceChannelId: voice.id, textChannelId: message.channelId, selfDeaf: true, selfMute: false, vcRegion: voice.rtcRegion });
+              await player.connect();
+            }
+            MusicService.getEngine(guildId).player = player;
+            setTextChannelId(guildId, message.channelId);
+            const result = await player.search({ query: `ytmsearch:${keyword}` }, message.author);
+            const track = result?.tracks?.[0];
+            if (!track) return message.channel.send({ embeds: [ErrorEmbed.build("No results found.")] });
+            if (player.playing || player.paused) {
+              await withQueueLock(guildId, async () => {
+                state.nowPlaying.set(guildId, track);
+                markTrackStartSuppressed(guildId);
+                await player.stopPlaying();
+                await player.play({ track, clientTrack: track });
+                await saveState(guildId);
+              });
+            } else {
+              await withQueueLock(guildId, async () => {
+                state.nowPlaying.set(guildId, track);
+                markTrackStartSuppressed(guildId);
+                await player.play({ track, clientTrack: track });
+                await saveState(guildId);
+              });
+            }
+            return message.channel.send({ embeds: [new EmbedBuilder().setDescription(`Changed to **${track.info?.title || keyword}**`).setColor(Colors.SUCCESS)] });
+          }
           case "queue": {
             const tracks = getQueue(guildId);
             if (!tracks?.length) return message.channel.send({ embeds: [new EmbedBuilder().setDescription("Queue is empty.").setColor(Colors.INFO)] });
@@ -188,7 +278,7 @@ export function start(client: any): void {
             return message.channel.send({
               embeds: [new EmbedBuilder()
                 .setTitle("AI Command Help")
-                .setDescription("Say **play**, **skip**, **stop**, **pause**, **resume**, **queue**, **nowplaying**, **volume**, or **help**.")
+                .setDescription("Say **play**, **playlist**, **skip**, **stop**, **pause**, **resume**, **queue**, **nowplaying**, **volume**, **autoplay**, **shuffle**, **loop**, **247**, **clear**, **recommend**, **info**, **ping**, **correct**, or **help**.")
                 .setColor(Colors.INFO)]
             });
           default:
