@@ -59,10 +59,7 @@ export function start(client: any): void {
         state.equalizer.delete(guildId);
       }
 
-const engine = getEngine(guildId);
-      if (!engine.player?.voiceChannelId) return;
-
-      const channelId = getTextChannelId(guildId);
+const channelId = getTextChannelId(guildId);
       if (channelId) {
         const channel = client.channels.cache.get(channelId);
         if (channel) {
@@ -71,6 +68,19 @@ const engine = getEngine(guildId);
             .setColor(Colors.INFO);
           channel.send({ embeds: [embed] }).catch(Logger.safe("bot/events/voiceStateUpdate.ts"));
         }
+      }
+      return;
+    }
+
+    // Bot moved to a different voice channel
+    if (oldState.channelId && newState.channelId && oldState.member?.id === botId && oldState.channelId !== newState.channelId) {
+      const guildId = oldState.guild.id;
+      cancelAloneTimer(guildId);
+      Logger.info(`[VoiceState] Bot moved from ${oldState.channelId} to ${newState.channelId} in ${guildId}`);
+      const humans = newState.channel?.members?.filter((m: any) => !m.user?.bot).size || 0;
+      if (humans === 0 && !state.twentyFourSeven.isEnabled(guildId)) {
+        Logger.info(`[VoiceState] No humans in new voice channel for ${guildId} — will disconnect in 1m`);
+        startAloneTimer(guildId);
       }
       return;
     }
