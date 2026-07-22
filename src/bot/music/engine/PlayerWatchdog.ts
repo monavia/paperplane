@@ -2,6 +2,7 @@ import Logger from "../../core/utils/Logger";
 import { destroyEngine } from "../services/PlayerService";
 import { failoverFromNode, connectWithRetry } from "./lavalink";
 import { markTrackStartSuppressed } from "./musicEvents";
+import state from "../../core/state/StateManager";
 
 const STUCK_TIMEOUT_MS = 15000;
 const CHECK_INTERVAL_MS = 30000;
@@ -93,6 +94,11 @@ async function checkPlayer(guildId: string, player: any, clientRef: any): Promis
     try {
       const remote = await node.fetchPlayer(guildId);
       if (!remote || !remote.track?.encoded) {
+        const q = state.queues.get(guildId);
+        if (q?.length) {
+          Logger.info(`[Watchdog] Player ${guildId} silent — queue has ${q.length} tracks, skipping replay`);
+          return;
+        }
         Logger.warn(`[Watchdog] Player ${guildId} silent voice loss — reconnecting voice`);
         try {
           await connectWithRetry(player, guildId);

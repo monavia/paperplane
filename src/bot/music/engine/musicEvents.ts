@@ -266,11 +266,18 @@ function register(client: any): void {
     const reasonStr = typeof reason === "object" ? reason?.reason : reason;
     const queueLen = state.queues.get(player.guildId)?.length || 0;
     Logger.info(`[trackEnd] guild=${player.guildId}/${getGuildName(player.guildId)} reason=${reasonStr} queue=${queueLen} playing=${player.playing} node=${player.node?.name || "?"} restored=${state.restored.has(player.guildId)}`);
+    if (reasonStr === "finished" && queueLen > 0 && player.node?.connected) {
+      advancingFromTrackEnd.add(player.guildId);
+      advanceQueue(player).catch(err => Logger.error(`[trackEnd] advanceQueue failed for ${player.guildId}: ${err.message}`))
+        .finally(() => advancingFromTrackEnd.delete(player.guildId));
+    }
   });
 
 const queueEndGuard = new Set<string>();
+const advancingFromTrackEnd = new Set<string>();
 
   l.on("queueEnd", async (player: any, track: any, payload: any) => {
+    if (advancingFromTrackEnd.has(player.guildId)) return;
     if (queueEndGuard.has(player.guildId)) return;
     queueEndGuard.add(player.guildId);
     setTimeout(() => queueEndGuard.delete(player.guildId), 5000);

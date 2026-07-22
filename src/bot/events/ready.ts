@@ -31,6 +31,17 @@ export function start(client: any): void {
       if (ready) {
         startWatchdog(getLavalink(), client);
 
+        // Tunggu guild cache terisi sebelum restore state
+        if (client.guilds.cache.size === 0) {
+          await new Promise<void>(resolve => {
+            const start = Date.now();
+            const check = () => {
+              if (client.guilds.cache.size > 0 || Date.now() - start > 10000) resolve();
+              else setTimeout(check, 500);
+            };
+            check();
+          });
+        }
         restoreAllStates(client).catch((e: any) => Logger.error("restoreAllStates failed:", e));
       }
     } catch (err) {
