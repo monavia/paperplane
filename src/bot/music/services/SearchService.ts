@@ -71,3 +71,26 @@ export async function searchWithRetry(player: any, query: any, user: any, _retri
     throw err;
   }
 }
+
+export async function findTrackWithDuration(
+  player: any,
+  query: string,
+  origTrack: any,
+  clientRef?: any
+): Promise<any | null> {
+  const origDur = origTrack.info?.length || origTrack.info?.durationMs || 0;
+  for (const prefix of ["ytmsearch", "ytsearch", "scsearch"]) {
+    try {
+      const res = await player.search({ query: `${prefix}:${query}` }, clientRef);
+      const found = res?.tracks?.find((t: any) => {
+        if (!t.encoded) return false;
+        if (t.info?.sourceName === "deezer") return false;
+        const fDur = t.info?.length || t.info?.durationMs || 0;
+        if (origDur && fDur && Math.abs(fDur - origDur) / origDur > 0.3) return false;
+        return true;
+      });
+      if (found) return found;
+    } catch { continue; }
+  }
+  return null;
+}

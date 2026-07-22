@@ -16,13 +16,14 @@ import { getPrefix } from "../../database/repositories/GuildRepository";
 import botConfig from "../../config/bot";
 import * as EventBus from "../events/EventBus";
 import { cleanTitle, saveSpotifyMeta, applySpotifyMeta } from "../services/TitleResolver";
+import { findTrackWithDuration } from "../services/SearchService";
 import AutoplayEngine from "./AutoplayEngine";
 
 const autoplayInst = new AutoplayEngine();
 
 const disconnectTimers = new Map<string, any>();
 const errorTimestamps = new Map<string, number[]>();
-const retryTracks = new Map<string, Set<string>>();
+const retryTracks = new Map<string, Map<string, number>>();
 
 // Per-guild timestamp: set by manual advance (skip) to prevent queueEnd from
 // double-advancing.  Consumed in queueEnd (if recent) — NOT cleared in trackStart
@@ -85,13 +86,10 @@ async function advanceQueue(player: any): Promise<any> {
           const savedMeta = saveSpotifyMeta(next);
           if (isSpotify) {
             const q = `${next.info.author || ""} ${next.info.title || ""}`.trim();
-            for (const prefix of ["ytmsearch", "ytsearch", "scsearch"]) {
-              const res = await player.search({ query: `${prefix}:${q}` }, clientRef?.user).catch(() => null);
-              if (res?.tracks?.length) {
-                Object.assign(next, res.tracks[0]);
-                applySpotifyMeta(next, savedMeta);
-                break;
-              }
+            const found = await findTrackWithDuration(player, q, next, clientRef?.user);
+            if (found) {
+              Object.assign(next, found);
+              applySpotifyMeta(next, savedMeta);
             }
           } else {
             const res = await player.search({ query: uri }, clientRef?.user).catch(() => null);
@@ -438,17 +436,18 @@ const queueEndGuard = new Set<string>();
         return;
       }
 
-      const retried = retryTracks.get(player.guildId) || new Set<string>();
-      const isFirstAttempt = !retried.has(trackId);
+      const retried = retryTracks.get(player.guildId) || new Map<string, number>();
+      const attemptCount = retried.get(trackId) || 0;
+      const isFirstAttempt = attemptCount < 1;
       const isDeezerError = /deezer/i.test(errMsg);
       const isNetworkError = /econnreset|enotfound|econnrefused|etimedout|timeout|aborted/i.test(errMsg);
       let alt: any = null;
       if (isDeezerError || isNetworkError) {
-        retried.add(trackId);
+        retried.set(trackId, 1);
         retryTracks.set(player.guildId, retried);
         Logger.info(`[trackError] ${isDeezerError ? "Deezer" : "Network"} error — skipping fallback search for "${track?.info?.title?.slice(0,30) || "?"}"`);
       } else if (isFirstAttempt) {
-        retried.add(trackId);
+        retried.set(trackId, 1);
         retryTracks.set(player.guildId, retried);
 
         const savedMeta = saveSpotifyMeta(track);
@@ -457,23 +456,17 @@ const queueEndGuard = new Set<string>();
         const author = orig?.info?.author || "";
         const q = author ? `${author} ${title}` : title;
         if (q) {
-          for (const prefix of ["ytsearch", "ytmsearch", "scsearch"]) {
-            try {
-              const res = await player.search({ query: `${prefix}:${q}` }, clientRef?.user);
-              const found = res?.tracks?.find((t: any) => t.encoded && t.encoded !== track?.encoded && t.info?.sourceName !== "deezer");
-              if (found) {
-                if (!found.info) found.info = {};
-                found.info.source = track?.info?.source || (prefix === "scsearch" ? "soundcloud" : "youtube");
-                found.info.originalUrl = found.info.uri;
-                found.info.requester = track?.info?.requester;
-                applySpotifyMeta(found, savedMeta);
-                const altId = found.info?.uri || found.info?.title || "";
-                if (altId) retried.add(altId);
-                alt = found;
-                Logger.info(`[trackError] Source fallback via ${prefix}: "${q}"`);
-                break;
-              }
-            } catch { Logger.warn(`[trackError] Source search failed: ${prefix}:${q}`); }
+          const found = await findTrackWithDuration(player, q, track, clientRef?.user);
+          if (found) {
+            if (!found.info) found.info = {};
+            found.info.source = track?.info?.source || "youtube";
+            found.info.originalUrl = found.info.uri;
+            found.info.requester = track?.info?.requester;
+            applySpotifyMeta(found, savedMeta);
+            const altId = found.info?.uri || found.info?.title || "";
+            if (altId) retried.set(altId, 1);
+            alt = found;
+            Logger.info(`[trackError] Source fallback with duration match: "${q}"`);
           }
         }
       }
@@ -494,9 +487,13 @@ const queueEndGuard = new Set<string>();
           return;
         }
 
-        retried.delete(trackId);
-        // Queue replay: push failed track to end of queue for later retry
-        if (track?.info?.title) {
+        const currentAttempts = (retried.get(trackId) || 0) + 1;
+        retried.set(trackId, currentAttempts);
+        retryTracks.set(player.guildId, retried);
+        if (currentAttempts >= 3) {
+          Logger.warn(`[trackError] Track "${track?.info?.title}" failed ${currentAttempts}x — dropping permanently`);
+          retried.delete(trackId);
+        } else if (track?.info?.title) {
           const q = state.queues.get(player.guildId) || [];
           q.push(track);
           state.queues.set(player.guildId, q);
