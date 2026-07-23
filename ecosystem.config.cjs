@@ -2,8 +2,7 @@ module.exports = {
   apps: [{
     name: "paperplane",
     script: "src/index.ts",
-    interpreter: "node",
-    node_args: "--import tsx",
+    interpreter: "bun",
     cwd: "./",
     kill_timeout: 30000,
     exec_mode: "fork",
