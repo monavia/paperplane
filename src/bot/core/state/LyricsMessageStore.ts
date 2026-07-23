@@ -15,4 +15,4 @@ class LyricsMessageStore {
 }
 
 const lyricsMessages = new LyricsMessageStore();
-export = lyricsMessages;
+export default lyricsMessages;

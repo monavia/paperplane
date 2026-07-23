@@ -18,4 +18,4 @@ class VoiceChannelStore {
   }
 }
 
-export = VoiceChannelStore;
+export default VoiceChannelStore;

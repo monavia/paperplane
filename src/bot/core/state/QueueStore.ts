@@ -53,4 +53,4 @@ class QueueStore {
   }
 }
 
-export = QueueStore;
+export default QueueStore;

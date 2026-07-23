@@ -38,4 +38,4 @@ class StateManager {
 }
 
 const state = new StateManager();
-export = state;
+export default state;

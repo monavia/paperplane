@@ -18,4 +18,4 @@ class TwentyFourSevenStore {
   }
 }
 
-export = TwentyFourSevenStore;
+export default TwentyFourSevenStore;

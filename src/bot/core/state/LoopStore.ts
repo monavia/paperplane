@@ -14,4 +14,4 @@ class LoopStore {
   }
 }
 
-export = LoopStore;
+export default LoopStore;

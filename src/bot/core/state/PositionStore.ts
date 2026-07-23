@@ -22,4 +22,4 @@ class PositionStore {
   }
 }
 
-export = PositionStore;
+export default PositionStore;

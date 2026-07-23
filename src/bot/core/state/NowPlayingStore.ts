@@ -26,4 +26,4 @@ class NowPlayingStore {
   }
 }
 
-export = NowPlayingStore;
+export default NowPlayingStore;
