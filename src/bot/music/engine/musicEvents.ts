@@ -480,6 +480,7 @@ const advancingFromTrackEnd = new Set<string>();
 
       await withQueueLock(player.guildId, async () => {
         if (alt) {
+          markTrackStartSuppressed(player.guildId);
           await player.play({ track: alt, clientTrack: alt });
           return;
         }
