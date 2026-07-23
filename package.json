@@ -1,6 +1,6 @@
 {
   "name": "paperplane-single",
-  "version": "2.1.4",
+  "version": "2.1.5",
   "description": "Paperplane bot — single node",
   "main": "dist/index.js",
   "scripts": {

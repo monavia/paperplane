@@ -276,7 +276,12 @@ async function restoreGuildState(client: any, saved: any): Promise<boolean> {
   }
 
   // Queue already restored to player.queue by MongoQueueStore via engine.join
+  // BUT: engine.join() calls syncToPlayer() which may have overwritten player.queue with empty RAM state
+  // Fix: restore from saved.state if player queue is still empty
   state.queues.syncFromPlayer(saved.guildId);
+  if (!state.queues.get(saved.guildId)?.length && saved.queue?.length) {
+    state.queues.set(saved.guildId, saved.queue);
+  }
 
   let first: any = null;
   try {
