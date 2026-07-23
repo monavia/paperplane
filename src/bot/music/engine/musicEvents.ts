@@ -625,4 +625,4 @@ const advancingFromTrackEnd = new Set<string>();
   });
 }
 
-export { register, clearDisconnectTimer, markManualAdvance, markTrackStartSuppressed };
+export { register, clearDisconnectTimer, markManualAdvance, markTrackStartSuppressed, advanceQueue };
