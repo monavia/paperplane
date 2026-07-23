@@ -3,9 +3,8 @@ import { saveAllStates } from "../../music/services/StateService";
 
 export function registerShutdownTasks(deps: {
   shutdownManager: any;
-  destroyPlayer: (guildId: string) => Promise<any>;
 }): void {
-  const { shutdownManager, destroyPlayer } = deps;
+  const { shutdownManager } = deps;
 
   shutdownManager.registerTask({
     name: "save-state",
@@ -15,17 +14,6 @@ export function registerShutdownTasks(deps: {
     execute: async () => {
       const saved = await saveAllStates();
       Logger.info(`Saved ${saved} player state(s)`);
-    },
-  });
-
-  shutdownManager.registerTask({
-    name: "destroy-players",
-    priority: "normal",
-    timeout: 5000,
-    description: "Destroy all Lavalink players",
-    execute: async () => {
-      await destroyPlayer("all");
-      Logger.info("All players destroyed");
     },
   });
 }

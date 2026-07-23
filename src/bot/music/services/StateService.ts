@@ -126,6 +126,8 @@ async function saveState(guildId: string) {
       await upsertPlayerState(guildId, {
         voiceChannelId,
         textChannelId,
+        queue: state.queues.get(guildId) || [],
+        nowPlaying: state.nowPlaying.get(guildId) || engine.getCurrentTrack(),
         position: pos,
         nodeId: player.node?.id || null,
         updatedAt: new Date(),
@@ -280,7 +282,10 @@ async function restoreGuildState(client: any, saved: any): Promise<boolean> {
   try {
     await withQueueLock(saved.guildId, async () => {
       first = state.nowPlaying.get(saved.guildId) || player.queue.current || engine.queue.next();
-      if (!first) return;
+      if (!first) {
+        Logger.warn(`[StateRestore] guild=${saved.guildId} no tracks to play — queue empty`);
+        return;
+      }
 
       // Pre-emptive search: stale encoded from previous Lavalink session causes trackError.
       // Resolve fresh track from metadata so the first play never fails.

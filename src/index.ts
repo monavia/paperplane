@@ -22,8 +22,6 @@ import { connect as connectDB } from "./bot/database/connection";
 import { load as loadEvents } from "./bot/core/bootstrap/loadEvents";
 import { loadSlash, loadPrefix, getSlashData } from "./bot/core/bootstrap/loadCommands";
 import { ShutdownManager } from "./bot/core/utils/ShutdownManager";
-import { destroyPlayer } from "./bot/music/engine/PlayerManager";
-import { get as getLavalink } from "./bot/music/engine/lavalink";
 import { registerShutdownTasks } from "./bot/core/bootstrap/registerShutdownTasks";
 import { startApiServer } from "./bot/api/apiServer";
 
@@ -80,20 +78,7 @@ async function main() {
 
     // Register shutdown tasks
     const shutdownManager = new ShutdownManager(30000);
-    registerShutdownTasks({
-      shutdownManager,
-      destroyPlayer: async (id: string) => {
-        if (id === "all") {
-          if (getLavalink()?.players) {
-            for (const [gid] of getLavalink()!.players) {
-              await destroyPlayer(gid);
-            }
-          }
-        } else {
-          await destroyPlayer(id);
-        }
-      },
-    });
+    registerShutdownTasks({ shutdownManager });
 
     process.on("SIGINT", () => shutdownManager.startShutdown());
     process.on("SIGTERM", () => shutdownManager.startShutdown());
