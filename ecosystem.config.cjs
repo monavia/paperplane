@@ -2,8 +2,10 @@ module.exports = {
   apps: [{
     name: "paperplane",
     script: "src/index.ts",
-    interpreter: "./node_modules/.bin/tsx",
+    interpreter: "node",
+    node_args: "--import tsx",
     cwd: "./",
+    kill_timeout: 30000,
     exec_mode: "fork",
     instances: 1,
     autorestart: true,
