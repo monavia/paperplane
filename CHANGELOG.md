@@ -1,5 +1,24 @@
 # Changelog — Paperplane Single Node
 
+## 2026-07-24 — v2.1.7
+
+### SSRF fix via SpotifyScraper (C1)
+- `SpotifyScraper.ts:54` — ganti regex `parseUrl` dengan `new URL()` strict parser. Hostname harus `open.spotify.com`. Reject URL yg cuma mengandung `open.spotify.com` sebagai substring.
+- `SpotifyScraper.ts:186` — `_validateUrl()` baru: protocol `https:` wajib, hostname cuma `open.spotify.com`, DNS resolve + cek setiap IP bukan private/loopback (`10.*`, `172.16-31.*`, `192.168.*`, `127.*`, `169.254.*`, `0.*`).
+- `_fetchPage` panggil `_validateUrl()` sebelum fetch — defense in depth.
+
+### VoiceCheck null safety (H1)
+- `VoiceCheck.ts:28` — `engine.player.voiceChannelId` → `engine.player?.voiceChannelId`. Guard race condition kalo player lenyap antara `!engine?.player` check dan akses `voiceChannelId`.
+
+### Alias cooldown bypass (H9) — udah dari 83b6ddb
+- `messageCreate.ts` alias block udah pake `found.name` (canonical name) sebagai cooldown key sejak refactor 83b6ddb. Gak ada bypass.
+
+### Command load failure log (M7)
+- `loadCommands.ts` — restruktur try/catch: per-file error handling, bukan 1 try/catch bungkus semua. Log path file spesifik + error detail. 1 file gagal gak stop looping.
+
+### Interaction reply silent swallow (L1)
+- `interactionCreate.ts:37-41` — ganti `Logger.safe()` generic dengan inline `Logger.warn()` yg nampilin command name + method (reply/editReply) + error message.
+
 ## 2026-07-24 — v2.1.6
 
 ### Fix: AI play embed pake URL mentah, bukan judul lagu
