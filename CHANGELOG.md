@@ -15,17 +15,6 @@
 
 **Fix:** `StateService.ts restoreGuildState` — setelah `syncFromPlayer()`, jika queue masih kosong & `saved.queue` ada isi, restore langsung dari saved state.
 
-## 2026-07-23
-
-### ROADMAP — full restructure dari audit vs bot besar
-
-- **Fase 0.5** baru: config validation, DB disconnect shutdown, health endpoint, structured logging
-- **Fase 1.5–1.8** baru: permission hierarchy, state consistency audit, command deploy lifecycle, API error classification
-- **Fase 2** rewrite total: 2.1 guild ownership & migration, 2.2 internal RPC, 2.3 discord controller, 2.4 lavalink node pool, 2.5 optimistic locking, 2.6 aggregated metrics, 2.7 canary deploy
-- **Fase 3** restructure: 3.1 AI & personalization, 3.2 playlist system, 3.3 moderation, 3.4 real-time dashboard, 3.5 lavalink orchestration, 3.6 social, 3.7 monetization
-- **Fase 4** finishing: test coverage, docs, benchmark, security audit, backup, i18n, dead code cleanup
-- Koreksi section: semua discrepancy ROADMAP vs real codebase dicatat & diperbaiki
-
 ### Fix: Bot stuck setelah track error — Watchdog silent player
 
 - `PlayerWatchdog.ts`: ganti `skipping replay` → panggil `advanceQueue(player)` langsung saat player silent + queue ada isi. Sebelumnya watchdog cuma log + return tiap 30s tanpa ngapa-ngapain
