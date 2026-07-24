@@ -116,11 +116,13 @@ export function start(client: any): void {
           setTextChannelId(guildId, message.channelId);
 
           const queries = interpreted.type === "playlist" ? interpreted.songs : [interpreted.query];
+          let firstTrack: any = null;
           for (let i = 0; i < queries.length; i++) {
             const q = queries[i];
             const result = await player.search({ query: `ytmsearch:${q}` }, message.author);
             const track = result?.tracks?.[0];
             if (!track) continue;
+            if (i === 0) firstTrack = track;
             if (i === 0 && !player.playing && !player.paused) {
               await withQueueLock(guildId, async () => {
                 state.nowPlaying.set(guildId, track);
@@ -136,7 +138,7 @@ export function start(client: any): void {
               });
             }
           }
-          return message.channel.send({ embeds: [new EmbedBuilder().setDescription(queries.length > 1 ? `Queued ${queries.length} tracks.` : `Playing **${queries[0]}**`).setColor(Colors.SUCCESS)] });
+          return message.channel.send({ embeds: [new EmbedBuilder().setDescription(queries.length > 1 ? `Queued ${queries.length} tracks.` : `Playing **${firstTrack?.info?.title || queries[0]}**`).setColor(Colors.SUCCESS)] });
         }
 
         if (interpreted.type === "info") {
