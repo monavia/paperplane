@@ -7,6 +7,10 @@
 - `messageCreate.ts:139` — ganti `queries[0]` (raw input, bisa URL) → `firstTrack?.info?.title` (judul hasil resolve Lavalink)
 - Fallback ke `queries[0]` kalo resolve gagal
 
+### Fix: AI play embed — pake NowPlayingEmbed biar konsisten dengan command play
+
+- Ganti `EmbedBuilder().setDescription("Playing **title**")` → `NowPlayingEmbed.build(firstTrack, null)` — nampilin emoji source, artist - title, dan clickable URL
+
 ## 2026-07-23 — v2.1.5
 
 ### Fix: Queue hilang setelah restart — resume bot bengong di voice

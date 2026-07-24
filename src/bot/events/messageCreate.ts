@@ -138,7 +138,7 @@ export function start(client: any): void {
               });
             }
           }
-          return message.channel.send({ embeds: [new EmbedBuilder().setDescription(queries.length > 1 ? `Queued ${queries.length} tracks.` : `Playing **${firstTrack?.info?.title || queries[0]}**`).setColor(Colors.SUCCESS)] });
+          return message.channel.send({ embeds: [queries.length > 1 ? new EmbedBuilder().setDescription(`Queued ${queries.length} tracks.`).setColor(Colors.SUCCESS) : NowPlayingEmbed.build(firstTrack, null)] });
         }
 
         if (interpreted.type === "info") {
