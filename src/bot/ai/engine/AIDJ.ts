@@ -1,5 +1,5 @@
-import AIEngine from "../engine/AIEngine";
-import CommandInterpreter from "./CommandInterpreter";
+import AIEngine from "../engine/AIEngine.js";
+import CommandInterpreter from "./CommandInterpreter.js";
 
 class AIDJ {
   private interpreter: CommandInterpreter;

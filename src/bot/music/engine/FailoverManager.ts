@@ -1,11 +1,11 @@
-import Logger from "../../core/utils/Logger";
-import state from "../../core/state/StateManager";
-import { saveSpotifyMeta, applySpotifyMeta } from "../services/TitleResolver";
-import { getTextChannelId } from "../services/TextChannelStore";
-import { getEngine } from "../services/PlayerService";
-import { getBestNode, recordDisconnect, recordError } from "./NodePenaltyService";
-import { setFilter, setEqualizer } from "../services/PlayerService";
-import { searchWithRetry } from "../services/SearchService";
+import Logger from "../../core/utils/Logger.js";
+import state from "../../core/state/StateManager.js";
+import { saveSpotifyMeta, applySpotifyMeta } from "../services/TitleResolver.js";
+import { getTextChannelId } from "../services/TextChannelStore.js";
+import { getEngine } from "../services/PlayerService.js";
+import { getBestNode, recordDisconnect, recordError } from "./NodePenaltyService.js";
+import { setFilter, setEqualizer } from "../services/PlayerService.js";
+import { searchWithRetry } from "../services/SearchService.js";
 import type { LavalinkManager } from "lavalink-client" with { "resolution-mode": "require" };
 
 let lavalink: LavalinkManager | null = null;

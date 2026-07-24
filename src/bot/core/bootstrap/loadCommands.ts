@@ -1,7 +1,7 @@
 import { readdirSync } from "fs";
 import { join } from "path";
 import { Collection } from "discord.js";
-import Logger from "../utils/Logger";
+import Logger from "../utils/Logger.js";
 
 let slashCommands: Collection<string, any> = new Collection();
 let prefixCommands: Collection<string, any> = new Collection();

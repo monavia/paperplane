@@ -1,5 +1,5 @@
-import Logger from "../bot/core/utils/Logger";
-import { incRateLimitBlocked, incRateLimitAllowed } from "../bot/telemetry/MetricsCollector";
+import Logger from "../bot/core/utils/Logger.js";
+import { incRateLimitBlocked, incRateLimitAllowed } from "../bot/telemetry/MetricsCollector.js";
 
 export class ApiError extends Error {
   constructor(

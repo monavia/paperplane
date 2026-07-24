@@ -1,4 +1,4 @@
-import * as EventBus from "../events/EventBus";
+import * as EventBus from "../events/EventBus.js";
 
 const playerStore = new Map<string, { voiceChannelId: string; textChannelId: string }>();
 

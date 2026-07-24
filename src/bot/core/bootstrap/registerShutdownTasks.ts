@@ -1,5 +1,5 @@
-import Logger from "../utils/Logger";
-import { saveAllStates } from "../../music/services/StateService";
+import Logger from "../utils/Logger.js";
+import { saveAllStates } from "../../music/services/StateService.js";
 
 export function registerShutdownTasks(deps: {
   shutdownManager: any;

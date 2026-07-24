@@ -1,5 +1,5 @@
 import { EmbedBuilder } from "discord.js";
-import Colors from "../../core/constants/Colors";
+import Colors from "../../core/constants/Colors.js";
 
 function build(prompt: string, answer: string) {
   const truncated = answer.length > 2000 ? answer.slice(0, 1997) + "..." : answer;

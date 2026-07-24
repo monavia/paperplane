@@ -145,7 +145,7 @@ export function getMetrics() {
   };
 }
 
-import * as EventBus from "../music/events/EventBus";
+import * as EventBus from "../music/events/EventBus.js";
 
 EventBus.on('metrics:trackPlayed', (p: any) => {
   if (p?.guildId) {

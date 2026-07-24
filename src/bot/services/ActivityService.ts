@@ -1,5 +1,5 @@
-import ActivityRepository from '../database/repositories/ActivityRepository';
-import Logger from '../core/utils/Logger';
+import ActivityRepository from '../database/repositories/ActivityRepository.js';
+import Logger from '../core/utils/Logger.js';
 
 export interface UserActivityLog {
   guildId: string;

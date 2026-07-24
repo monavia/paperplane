@@ -1,22 +1,22 @@
-import * as EventBus from "../events/EventBus";
+import * as EventBus from "../events/EventBus.js";
 // @ts-expect-error — lavalink-client exports CJS via "require", TS read as ESM
 import { LavalinkManager, NodeType } from "lavalink-client";
 import { EmbedBuilder } from "discord.js";
-import Logger from "../../core/utils/Logger";
-import state from "../../core/state/StateManager";
-import { saveSpotifyMeta, applySpotifyMeta } from "../services/TitleResolver";
-import { getPlayerData, setPlayerData } from "../services/PersistentPlayerStore";
-import { pickBestTrack } from "../services/SearchService";
-import { getTextChannelId } from "../services/TextChannelStore";
-import PlayerState from "../../database/models/PlayerState";
-import { getEngine } from "../services/PlayerService";
-import { setFilter, setEqualizer } from "../services/PlayerService";
-import { getBestNode, recordDisconnect, recordError, recordHtmlError, startDrain } from "./NodePenaltyService";
-import * as FailoverManager from "./FailoverManager";
-import { clearStuckTimer, startStuckTimer } from "./musicEvents";
-import { setGuildCount, setVoiceConnections, setActivePlayers, setActiveGuilds, setLavalinkNodePlayers, setLavalinkNodeLatency, setLavalinkNodesOnline, setLavalinkNodePenalty } from "../../telemetry/MetricsCollector";
-import { getPenalty } from "./NodePenaltyService";
-import MongoQueueStore from "../services/MongoQueueStore";
+import Logger from "../../core/utils/Logger.js";
+import state from "../../core/state/StateManager.js";
+import { saveSpotifyMeta, applySpotifyMeta } from "../services/TitleResolver.js";
+import { getPlayerData, setPlayerData } from "../services/PersistentPlayerStore.js";
+import { pickBestTrack } from "../services/SearchService.js";
+import { getTextChannelId } from "../services/TextChannelStore.js";
+import PlayerState from "../../database/models/PlayerState.js";
+import { getEngine } from "../services/PlayerService.js";
+import { setFilter, setEqualizer } from "../services/PlayerService.js";
+import { getBestNode, recordDisconnect, recordError, recordHtmlError, startDrain } from "./NodePenaltyService.js";
+import * as FailoverManager from "./FailoverManager.js";
+import { clearStuckTimer, startStuckTimer } from "./musicEvents.js";
+import { setGuildCount, setVoiceConnections, setActivePlayers, setActiveGuilds, setLavalinkNodePlayers, setLavalinkNodeLatency, setLavalinkNodesOnline, setLavalinkNodePenalty } from "../../telemetry/MetricsCollector.js";
+import { getPenalty } from "./NodePenaltyService.js";
+import MongoQueueStore from "../services/MongoQueueStore.js";
 
 let lavalink: LavalinkManager | null = null;
 let clientRef: any = null;

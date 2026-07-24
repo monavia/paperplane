@@ -1,9 +1,9 @@
-import botConfig from "@/bot/config/bot";
+import botConfig from "../../../../bot/config/bot.js";
 import { EmbedBuilder } from "discord.js";
-import * as MusicService from "@/bot/music/services/MusicService";
-import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
-import { requireSameVoice } from "@/bot/core/utils/VoiceCheck";
-import Colors from "@/bot/core/constants/Colors";
+import * as MusicService from "../../../../bot/music/services/MusicService.js";
+import * as ErrorEmbed from "../../../../bot/ui/embeds/ErrorEmbed.js";
+import { requireSameVoice } from "../../../../bot/core/utils/VoiceCheck.js";
+import Colors from "../../../../bot/core/constants/Colors.js";
 
 export default {
   name: "swap",

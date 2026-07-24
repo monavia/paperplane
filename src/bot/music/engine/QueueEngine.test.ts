@@ -1,7 +1,7 @@
 import { describe, test, beforeEach } from "vitest";
 import assert from "node:assert";
-import QueueEngine from "./QueueEngine";
-import state from "../../core/state/StateManager";
+import QueueEngine from "./QueueEngine.js";
+import state from "../../core/state/StateManager.js";
 
 let qe: QueueEngine;
 

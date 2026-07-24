@@ -1,4 +1,4 @@
-import Resolver from "./Resolver";
+import Resolver from "./Resolver.js";
 
 class SpotifyResolver extends Resolver {
   async search(query: any, user: any): Promise<any> {

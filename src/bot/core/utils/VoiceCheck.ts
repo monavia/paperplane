@@ -1,5 +1,5 @@
-import * as ErrorEmbed from "../../ui/embeds/ErrorEmbed";
-import * as MusicService from "../../music/services/MusicService";
+import * as ErrorEmbed from "../../ui/embeds/ErrorEmbed.js";
+import * as MusicService from "../../music/services/MusicService.js";
 
 type VoiceResult = { ok: true } | { ok: false; message: string };
 

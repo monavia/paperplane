@@ -1,8 +1,8 @@
-import Logger from "../../core/utils/Logger";
-import { destroyEngine } from "../services/PlayerService";
-import { failoverFromNode, connectWithRetry } from "./lavalink";
-import { markTrackStartSuppressed, advanceQueue } from "./musicEvents";
-import state from "../../core/state/StateManager";
+import Logger from "../../core/utils/Logger.js";
+import { destroyEngine } from "../services/PlayerService.js";
+import { failoverFromNode, connectWithRetry } from "./lavalink.js";
+import { markTrackStartSuppressed, advanceQueue } from "./musicEvents.js";
+import state from "../../core/state/StateManager.js";
 
 const STUCK_TIMEOUT_MS = 15000;
 const CHECK_INTERVAL_MS = 30000;

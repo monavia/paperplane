@@ -1,4 +1,4 @@
-import RecommendationEngine from "./RecommendationEngine";
+import RecommendationEngine from "./RecommendationEngine.js";
 
 class AutoplayEngine {
   recEngine: RecommendationEngine;

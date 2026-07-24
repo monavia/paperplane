@@ -1,5 +1,5 @@
 import { EmbedBuilder } from "discord.js";
-import Colors from "@/bot/core/constants/Colors";
+import Colors from "../../../../bot/core/constants/Colors.js";
 
 export default {
   name: "ping",

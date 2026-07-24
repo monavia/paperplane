@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
-import Colors from "@/bot/core/constants/Colors";
-import botConfig from "@/bot/config/bot";
+import Colors from "../../../../bot/core/constants/Colors.js";
+import botConfig from "../../../../bot/config/bot.js";
 
 export default {
   data: new SlashCommandBuilder().setName("help").setDescription("Show all available commands"),

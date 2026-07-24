@@ -1,4 +1,4 @@
-import { get, getLeastLoadedNode } from "./lavalink";
+import { get, getLeastLoadedNode } from "./lavalink.js";
 
 const voiceJoinTimes = new Map<string, number>();
 

@@ -1,8 +1,8 @@
 import { SlashCommandBuilder } from "discord.js";
-import * as MusicService from "@/bot/music/services/MusicService";
-import * as SuccessEmbed from "@/bot/ui/embeds/SuccessEmbed";
-import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
-import { requireSameVoice } from "@/bot/core/utils/VoiceCheck";
+import * as MusicService from "../../../../bot/music/services/MusicService.js";
+import * as SuccessEmbed from "../../../../bot/ui/embeds/SuccessEmbed.js";
+import * as ErrorEmbed from "../../../../bot/ui/embeds/ErrorEmbed.js";
+import { requireSameVoice } from "../../../../bot/core/utils/VoiceCheck.js";
 
 export default {
   data: new SlashCommandBuilder()

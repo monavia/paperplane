@@ -1,6 +1,6 @@
 import { describe, test } from "vitest";
 import assert from "node:assert";
-import { withQueueLock } from "./QueueLock";
+import { withQueueLock } from "./QueueLock.js";
 
 describe("QueueLock", () => {
   test("executes function immediately when lock is free", async () => {

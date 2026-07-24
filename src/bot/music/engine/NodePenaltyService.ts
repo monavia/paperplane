@@ -1,5 +1,5 @@
-import Logger from "../../core/utils/Logger";
-import { setLavalinkNodePenalty } from "../../telemetry/MetricsCollector";
+import Logger from "../../core/utils/Logger.js";
+import { setLavalinkNodePenalty } from "../../telemetry/MetricsCollector.js";
 
 interface NodeMetrics {
   failedLoads: number;

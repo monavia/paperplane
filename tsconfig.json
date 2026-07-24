@@ -13,10 +13,7 @@
     "moduleResolution": "node16",
     "sourceMap": true,
     "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "paths": {
-      "@/*": ["./src/*"]
-    }
+    "noUnusedParameters": false
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist"]

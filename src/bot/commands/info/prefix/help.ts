@@ -1,7 +1,7 @@
 import { EmbedBuilder } from "discord.js";
-import Colors from "@/bot/core/constants/Colors";
-import botConfig from "@/bot/config/bot";
-import { getPrefix } from "@/bot/database/repositories/GuildRepository";
+import Colors from "../../../../bot/core/constants/Colors.js";
+import botConfig from "../../../../bot/config/bot.js";
+import { getPrefix } from "../../../../bot/database/repositories/GuildRepository.js";
 
 export default {
   name: "help",

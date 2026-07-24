@@ -1,6 +1,6 @@
-import aiConfig from "../../config/ai";
-import MemoryRepository from "../../database/repositories/MemoryRepository";
-import Logger from "../../core/utils/Logger";
+import aiConfig from "../../config/ai.js";
+import MemoryRepository from "../../database/repositories/MemoryRepository.js";
+import Logger from "../../core/utils/Logger.js";
 
 async function generateSummary(userPrompt: string, aiReply: string): Promise<string | null> {
   try {

@@ -1,5 +1,5 @@
-import AIEngine from "../engine/AIEngine";
-import AIRecommendationEngine from "../engine/RecommendationEngine";
+import AIEngine from "../engine/AIEngine.js";
+import AIRecommendationEngine from "../engine/RecommendationEngine.js";
 
 async function ask(userId: string, prompt: string) {
   return AIEngine.ask(userId, prompt, undefined);

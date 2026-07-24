@@ -1,7 +1,7 @@
 import { EmbedBuilder } from "discord.js";
-import { getQueue } from "@/bot/music/services/QueueService";
-import { build as buildQueueEmbed, buildQueuePayload } from "@/bot/ui/embeds/QueueEmbed";
-import Colors from "@/bot/core/constants/Colors";
+import { getQueue } from "../../../../bot/music/services/QueueService.js";
+import { build as buildQueueEmbed, buildQueuePayload } from "../../../../bot/ui/embeds/QueueEmbed.js";
+import Colors from "../../../../bot/core/constants/Colors.js";
 
 export default {
   name: "queue", aliases: ["q"],

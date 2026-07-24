@@ -1,9 +1,9 @@
 import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
-import Colors from "@/bot/core/constants/Colors";
-import { requireSameVoice } from "@/bot/core/utils/VoiceCheck";
-import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
-import { set247 } from "@/bot/database/repositories/GuildRepository";
-import state from "@/bot/core/state/StateManager";
+import Colors from "../../../../bot/core/constants/Colors.js";
+import { requireSameVoice } from "../../../../bot/core/utils/VoiceCheck.js";
+import * as ErrorEmbed from "../../../../bot/ui/embeds/ErrorEmbed.js";
+import { set247 } from "../../../../bot/database/repositories/GuildRepository.js";
+import state from "../../../../bot/core/state/StateManager.js";
 
 const TIMEOUT = 30000;
 

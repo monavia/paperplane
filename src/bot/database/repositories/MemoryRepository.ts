@@ -1,5 +1,5 @@
-import { Memory } from "../models/Memory";
-import { isUsingPrisma } from "../connection";
+import { Memory } from "../models/Memory.js";
+import { isUsingPrisma } from "../connection.js";
 
 const MAX_MEMORIES = 50;
 

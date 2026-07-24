@@ -1,11 +1,11 @@
 import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
-import * as MusicService from "@/bot/music/services/MusicService";
-import { setLastEqualizer, getLastEqualizer } from "@/bot/database/repositories/GuildRepository";
-import * as SuccessEmbed from "@/bot/ui/embeds/SuccessEmbed";
-import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
-import Colors from "@/bot/core/constants/Colors";
-import { requireSameVoice } from "@/bot/core/utils/VoiceCheck";
-import state from "@/bot/core/state/StateManager";
+import * as MusicService from "../../../../bot/music/services/MusicService.js";
+import { setLastEqualizer, getLastEqualizer } from "../../../../bot/database/repositories/GuildRepository.js";
+import * as SuccessEmbed from "../../../../bot/ui/embeds/SuccessEmbed.js";
+import * as ErrorEmbed from "../../../../bot/ui/embeds/ErrorEmbed.js";
+import Colors from "../../../../bot/core/constants/Colors.js";
+import { requireSameVoice } from "../../../../bot/core/utils/VoiceCheck.js";
+import state from "../../../../bot/core/state/StateManager.js";
 
 const EQ_PRESETS: Record<string, { band: number; gain: number }[]> = {
   flat: Array.from({ length: 15 }, (_, i) => ({ band: i, gain: 0.0 })),

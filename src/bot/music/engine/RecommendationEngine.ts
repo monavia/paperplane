@@ -1,6 +1,6 @@
-import * as EventBus from "../events/EventBus";
-import { isCover } from "../services/TitleResolver";
-import Logger from "../../core/utils/Logger";
+import * as EventBus from "../events/EventBus.js";
+import { isCover } from "../services/TitleResolver.js";
+import Logger from "../../core/utils/Logger.js";
 
 class RecommendationEngine {
   private playedTracks: Map<string, Set<string>> = new Map();

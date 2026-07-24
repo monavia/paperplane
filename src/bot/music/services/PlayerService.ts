@@ -1,14 +1,14 @@
-import Logger from "../../core/utils/Logger";
-import state from "../../core/state/StateManager";
-import QueueEngine from "../engine/QueueEngine";
-import { PlaybackEngine } from "../engine/PlaybackEngine";
-import { deleteTextChannelId } from "./TextChannelStore";
-import { saveState, deleteState, stopPositionSync } from "./StateService";
-import { get, connectWithRetry } from "../engine/lavalink";
-import { deletePlayerData } from "../services/PersistentPlayerStore";
-import { setAutoplay } from "../../database/repositories/GuildRepository";
-import { withQueueLock } from "../../core/state/QueueLock";
-import ActivityService from "../../services/ActivityService";
+import Logger from "../../core/utils/Logger.js";
+import state from "../../core/state/StateManager.js";
+import QueueEngine from "../engine/QueueEngine.js";
+import { PlaybackEngine } from "../engine/PlaybackEngine.js";
+import { deleteTextChannelId } from "./TextChannelStore.js";
+import { saveState, deleteState, stopPositionSync } from "./StateService.js";
+import { get, connectWithRetry } from "../engine/lavalink.js";
+import { deletePlayerData } from "../services/PersistentPlayerStore.js";
+import { setAutoplay } from "../../database/repositories/GuildRepository.js";
+import { withQueueLock } from "../../core/state/QueueLock.js";
+import ActivityService from "../../services/ActivityService.js";
 
 interface Engine {
   guildId: string;

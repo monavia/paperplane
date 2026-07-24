@@ -1,6 +1,6 @@
-import Logger from "../../core/utils/Logger";
-import { cleanTitle, isCover } from "./TitleResolver";
-import { recordError, recordHtmlError } from "../engine/NodePenaltyService";
+import Logger from "../../core/utils/Logger.js";
+import { cleanTitle, isCover } from "./TitleResolver.js";
+import { recordError, recordHtmlError } from "../engine/NodePenaltyService.js";
 
 const BAD_KEYWORDS = [
   "remix", "cover", "live", "karaoke", "nightcore", "slowed", "sped up",

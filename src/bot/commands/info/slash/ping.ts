@@ -1,5 +1,5 @@
 import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
-import Colors from "@/bot/core/constants/Colors";
+import Colors from "../../../../bot/core/constants/Colors.js";
 
 export default {
   data: new SlashCommandBuilder().setName("ping").setDescription("Check bot latency"),

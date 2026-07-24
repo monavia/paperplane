@@ -1,6 +1,6 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
-import Colors from "../../core/constants/Colors";
-import { formatTrack } from "../../core/utils/Formatter";
+import Colors from "../../core/constants/Colors.js";
+import { formatTrack } from "../../core/utils/Formatter.js";
 
 const PER_PAGE = 10;
 

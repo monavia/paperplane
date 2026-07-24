@@ -1,8 +1,8 @@
-import { getEngine } from "./PlayerService";
-import { saveState } from "./StateService";
-import ActivityService from "../../services/ActivityService";
-import state from "../../core/state/StateManager";
-import { withQueueLock } from "../../core/state/QueueLock";
+import { getEngine } from "./PlayerService.js";
+import { saveState } from "./StateService.js";
+import ActivityService from "../../services/ActivityService.js";
+import state from "../../core/state/StateManager.js";
+import { withQueueLock } from "../../core/state/QueueLock.js";
 
 function getNowPlaying(guildId: string) {
   return state.nowPlaying.get(guildId);

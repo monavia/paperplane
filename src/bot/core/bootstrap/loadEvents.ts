@@ -1,6 +1,6 @@
 import { readdirSync } from "fs";
 import { join } from "path";
-import Logger from "../utils/Logger";
+import Logger from "../utils/Logger.js";
 
 export function load(client: any): number {
   const eventsPath = join(__dirname, "../../events");

@@ -1,10 +1,10 @@
-import { getEngine, destroyEngine, play, skip, stop, seek, pause, resume, setVolume, resolveAndQueueTracks, setFilter, setEqualizer, resetFilters, getFilterState, playSoundboard, search } from "./PlayerService";
-export { getEngine, destroyEngine, play, skip, stop, seek, pause, resume, setVolume, resolveAndQueueTracks, setFilter, setEqualizer, resetFilters, getFilterState, playSoundboard, search } from "./PlayerService";
-export { saveState } from "./StateService";
-export { setTextChannelId } from "./TextChannelStore";
-export { getQueue, clearQueue, removeFromQueue, swapTracks, moveTrack, removeByQuery, removeRange, jumpTo } from "./QueueService";
-import * as ErrorEmbed from "../../ui/embeds/ErrorEmbed";
-import { get as getLavalink } from "../engine/lavalink";
+import { getEngine, destroyEngine, play, skip, stop, seek, pause, resume, setVolume, resolveAndQueueTracks, setFilter, setEqualizer, resetFilters, getFilterState, playSoundboard, search } from "./PlayerService.js";
+export { getEngine, destroyEngine, play, skip, stop, seek, pause, resume, setVolume, resolveAndQueueTracks, setFilter, setEqualizer, resetFilters, getFilterState, playSoundboard, search } from "./PlayerService.js";
+export { saveState } from "./StateService.js";
+export { setTextChannelId } from "./TextChannelStore.js";
+export { getQueue, clearQueue, removeFromQueue, swapTracks, moveTrack, removeByQuery, removeRange, jumpTo } from "./QueueService.js";
+import * as ErrorEmbed from "../../ui/embeds/ErrorEmbed.js";
+import { get as getLavalink } from "../engine/lavalink.js";
 
 export function isLavalinkReady(): boolean {
   const manager = getLavalink();

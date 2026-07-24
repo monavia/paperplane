@@ -1,8 +1,8 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
-import * as MusicService from "@/bot/music/services/MusicService";
-import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
-import Colors from "@/bot/core/constants/Colors";
-import { requireSameVoice } from "@/bot/core/utils/VoiceCheck";
+import * as MusicService from "../../../../bot/music/services/MusicService.js";
+import * as ErrorEmbed from "../../../../bot/ui/embeds/ErrorEmbed.js";
+import Colors from "../../../../bot/core/constants/Colors.js";
+import { requireSameVoice } from "../../../../bot/core/utils/VoiceCheck.js";
 
 const TIMEOUT = 15000;
 

@@ -1,8 +1,8 @@
-import Logger from "../core/utils/Logger";
-import { isLavalinkReady } from "../music/services/MusicService";
-import * as ErrorEmbed from "../ui/embeds/ErrorEmbed";
-import CooldownManager from "../core/utils/CooldownManager";
-import { incCommandsExecuted, observeCommandLatency } from "../telemetry/MetricsCollector";
+import Logger from "../core/utils/Logger.js";
+import { isLavalinkReady } from "../music/services/MusicService.js";
+import * as ErrorEmbed from "../ui/embeds/ErrorEmbed.js";
+import CooldownManager from "../core/utils/CooldownManager.js";
+import { incCommandsExecuted, observeCommandLatency } from "../telemetry/MetricsCollector.js";
 
 export function start(client: any): void {
   client.on("interactionCreate", async (interaction: any) => {

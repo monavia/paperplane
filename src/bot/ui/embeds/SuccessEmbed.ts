@@ -1,5 +1,5 @@
 import { EmbedBuilder } from "discord.js";
-import Colors from "../../core/constants/Colors";
+import Colors from "../../core/constants/Colors.js";
 
 export function build(message: string): EmbedBuilder {
   return new EmbedBuilder()

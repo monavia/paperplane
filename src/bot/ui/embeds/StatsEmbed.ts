@@ -1,6 +1,6 @@
 import { EmbedBuilder, version } from "discord.js";
-import Colors from "../../core/constants/Colors";
-import { parseDuration } from "../../core/utils/Duration";
+import Colors from "../../core/constants/Colors.js";
+import { parseDuration } from "../../core/utils/Duration.js";
 
 function formatNumber(n: number): string {
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;

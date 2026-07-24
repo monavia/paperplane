@@ -1,5 +1,5 @@
-import { Conversation } from "../../database/models/Conversation";
-import { isUsingPrisma } from "../../database/connection";
+import { Conversation } from "../../database/models/Conversation.js";
+import { isUsingPrisma } from "../../database/connection.js";
 
 const MAX_SESSIONS = Number(process.env.AI_MEMORY_MAX_SESSIONS) || 5000;
 const TTL_MS = Number(process.env.AI_MEMORY_TTL_MS) || 30 * 60 * 1000;

@@ -1,10 +1,10 @@
 import { ActivityType } from "discord.js";
-import Logger from "../core/utils/Logger";
-import { init as initLavalink, get as getLavalink } from "../music/engine/lavalink";
-import { register } from "../music/engine/musicEvents";
-import { startWatchdog } from "../music/engine/PlayerWatchdog";
-import { restoreAllStates } from "../music/services/StateService";
-import { cleanupOldEntries } from "../music/services/HistoryService";
+import Logger from "../core/utils/Logger.js";
+import { init as initLavalink, get as getLavalink } from "../music/engine/lavalink.js";
+import { register } from "../music/engine/musicEvents.js";
+import { startWatchdog } from "../music/engine/PlayerWatchdog.js";
+import { restoreAllStates } from "../music/services/StateService.js";
+import { cleanupOldEntries } from "../music/services/HistoryService.js";
 
 export function start(client: any): void {
   client.once("clientReady", async () => {

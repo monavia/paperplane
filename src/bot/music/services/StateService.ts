@@ -1,14 +1,14 @@
-import Logger from "../../core/utils/Logger";
-import PlayerState from "../../database/models/PlayerState";
-import { getEngine, destroyEngine } from "./PlayerService";
-import { getTextChannelId, setTextChannelId } from "./TextChannelStore";
-import state from "../../core/state/StateManager";
-import { withQueueLock } from "../../core/state/QueueLock";
-import * as lavalink from "../engine/lavalink";
-import { isUsingPrisma } from "../../database/connection";
-import { getAutoplay, getLoop, getShuffle, get247, getLastFilter, getLastEqualizer } from "../../database/repositories/GuildRepository";
-import { setFilter, setEqualizer } from "./PlayerService";
-import * as EventBus from "../events/EventBus";
+import Logger from "../../core/utils/Logger.js";
+import PlayerState from "../../database/models/PlayerState.js";
+import { getEngine, destroyEngine } from "./PlayerService.js";
+import { getTextChannelId, setTextChannelId } from "./TextChannelStore.js";
+import state from "../../core/state/StateManager.js";
+import { withQueueLock } from "../../core/state/QueueLock.js";
+import * as lavalink from "../engine/lavalink.js";
+import { isUsingPrisma } from "../../database/connection.js";
+import { getAutoplay, getLoop, getShuffle, get247, getLastFilter, getLastEqualizer } from "../../database/repositories/GuildRepository.js";
+import { setFilter, setEqualizer } from "./PlayerService.js";
+import * as EventBus from "../events/EventBus.js";
 import { EmbedBuilder } from "discord.js";
 
 let restoreRetryTimer: NodeJS.Timeout | null = null;

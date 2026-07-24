@@ -1,20 +1,20 @@
 import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
-import * as NowPlayingEmbed from "@/bot/ui/embeds/NowPlayingEmbed";
-import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
-import { pickBestTrack, searchWithRetry } from "@/bot/music/services/SearchService";
-import { cachedSearch } from "@/bot/music/services/SearchCache";
-import { parseUrl as parseSpotifyUrl, scrape as scrapeSpotify } from "@/bot/music/engine/SpotifyScraper";
-import { markTrackStartSuppressed } from "@/bot/music/engine/musicEvents";
-import { withQueueLock } from "@/bot/core/state/QueueLock";
-import Colors from "@/bot/core/constants/Colors";
-import Logger from "@/bot/core/utils/Logger";
-import * as MusicService from "@/bot/music/services/MusicService";
-import botConfig from "@/bot/config/bot";
-import state from "../../../core/state/StateManager";
-import { get } from "../../../music/engine/lavalink";
-import { getPlayer, createPlayer } from "../../../music/engine/PlayerManager";
-import { setTextChannelId } from "../../../music/services/TextChannelStore";
-import { getEngine } from "../../../music/services/PlayerService";
+import * as NowPlayingEmbed from "../../../../bot/ui/embeds/NowPlayingEmbed.js";
+import * as ErrorEmbed from "../../../../bot/ui/embeds/ErrorEmbed.js";
+import { pickBestTrack, searchWithRetry } from "../../../../bot/music/services/SearchService.js";
+import { cachedSearch } from "../../../../bot/music/services/SearchCache.js";
+import { parseUrl as parseSpotifyUrl, scrape as scrapeSpotify } from "../../../../bot/music/engine/SpotifyScraper.js";
+import { markTrackStartSuppressed } from "../../../../bot/music/engine/musicEvents.js";
+import { withQueueLock } from "../../../../bot/core/state/QueueLock.js";
+import Colors from "../../../../bot/core/constants/Colors.js";
+import Logger from "../../../../bot/core/utils/Logger.js";
+import * as MusicService from "../../../../bot/music/services/MusicService.js";
+import botConfig from "../../../../bot/config/bot.js";
+import state from "../../../core/state/StateManager.js";
+import { get } from "../../../music/engine/lavalink.js";
+import { getPlayer, createPlayer } from "../../../music/engine/PlayerManager.js";
+import { setTextChannelId } from "../../../music/services/TextChannelStore.js";
+import { getEngine } from "../../../music/services/PlayerService.js";
 
 async function resolveSpotifyTrack(player: any, spotifyItem: any, user: any): Promise<any> {
   const q = spotifyItem.query || `${spotifyItem.artists?.join(" ") || ""} ${spotifyItem.name}`.trim();

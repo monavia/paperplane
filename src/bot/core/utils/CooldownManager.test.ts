@@ -1,6 +1,6 @@
 import { describe, test, beforeAll } from "vitest";
 import assert from "node:assert";
-import cooldown from "./CooldownManager";
+import cooldown from "./CooldownManager.js";
 
 const advance = (ms: number) => new Promise(r => setTimeout(r, ms));
 

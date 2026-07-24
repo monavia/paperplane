@@ -1,6 +1,6 @@
-import Logger from "../../core/utils/Logger";
-import UserActivity from "../models/UserActivity";
-import { isUsingPrisma } from "../connection";
+import Logger from "../../core/utils/Logger.js";
+import UserActivity from "../models/UserActivity.js";
+import { isUsingPrisma } from "../connection.js";
 
 let _prisma: any = null;
 async function getPrisma() {

@@ -1,4 +1,4 @@
-import "./instrument";
+import "./instrument.js";
 import "reflect-metadata";
 import "dotenv/config";
 
@@ -15,15 +15,15 @@ console.error = (...args: any[]) => {
 };
 
 import { Client, GatewayIntentBits, REST, Routes, Collection } from "discord.js";
-import Config from "./bot/config/bot";
-import AIConfig from "./bot/config/ai";
-import Logger from "./bot/core/utils/Logger";
-import { connect as connectDB } from "./bot/database/connection";
-import { load as loadEvents } from "./bot/core/bootstrap/loadEvents";
-import { loadSlash, loadPrefix, getSlashData } from "./bot/core/bootstrap/loadCommands";
-import { ShutdownManager } from "./bot/core/utils/ShutdownManager";
-import { registerShutdownTasks } from "./bot/core/bootstrap/registerShutdownTasks";
-import { startApiServer } from "./bot/api/apiServer";
+import Config from "./bot/config/bot.js";
+import AIConfig from "./bot/config/ai.js";
+import Logger from "./bot/core/utils/Logger.js";
+import { connect as connectDB } from "./bot/database/connection.js";
+import { load as loadEvents } from "./bot/core/bootstrap/loadEvents.js";
+import { loadSlash, loadPrefix, getSlashData } from "./bot/core/bootstrap/loadCommands.js";
+import { ShutdownManager } from "./bot/core/utils/ShutdownManager.js";
+import { registerShutdownTasks } from "./bot/core/bootstrap/registerShutdownTasks.js";
+import { startApiServer } from "./bot/api/apiServer.js";
 
 const client: Client = new Client({
   intents: [
@@ -110,7 +110,7 @@ async function main() {
     process.on("SIGTERM", () => shutdownManager.startShutdown());
 
     // AI status
-    const { default: AIEngine } = await import("./bot/ai/engine/AIEngine.js") as any;
+    const { default: AIEngine } = (await import("./bot/ai/engine/AIEngine.js") as any).default;
     const aiReady = AIEngine.isReady();
     if (aiReady) Logger.ready("AI assistant ready");
 

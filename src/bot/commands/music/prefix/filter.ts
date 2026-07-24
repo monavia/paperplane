@@ -1,12 +1,12 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
-import * as MusicService from "@/bot/music/services/MusicService";
-import { setLastFilter, getLastFilter } from "@/bot/database/repositories/GuildRepository";
-import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
-import * as SuccessEmbed from "@/bot/ui/embeds/SuccessEmbed";
-import Colors from "@/bot/core/constants/Colors";
-import { requireSameVoice } from "@/bot/core/utils/VoiceCheck";
-import state from "@/bot/core/state/StateManager";
-import MusicModes from "@/bot/core/constants/MusicModes";
+import * as MusicService from "../../../../bot/music/services/MusicService.js";
+import { setLastFilter, getLastFilter } from "../../../../bot/database/repositories/GuildRepository.js";
+import * as ErrorEmbed from "../../../../bot/ui/embeds/ErrorEmbed.js";
+import * as SuccessEmbed from "../../../../bot/ui/embeds/SuccessEmbed.js";
+import Colors from "../../../../bot/core/constants/Colors.js";
+import { requireSameVoice } from "../../../../bot/core/utils/VoiceCheck.js";
+import state from "../../../../bot/core/state/StateManager.js";
+import MusicModes from "../../../../bot/core/constants/MusicModes.js";
 
 const FILTERS = [
   { name: "Bass Boost", value: MusicModes.FILTERS.BASSBOOST },

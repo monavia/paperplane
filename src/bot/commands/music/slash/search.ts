@@ -1,12 +1,12 @@
 import { SlashCommandBuilder } from "discord.js";
-import { getPlayer } from "@/bot/music/engine/PlayerManager";
-import * as MusicService from "@/bot/music/services/MusicService";
-import * as SearchEmbed from "@/bot/ui/embeds/SearchEmbed";
-import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
-import { requireSameVoice } from "@/bot/core/utils/VoiceCheck";
-import Logger from "@/bot/core/utils/Logger";
-import { get } from "../../../music/engine/lavalink";
-import { withQueueLock } from "../../../core/state/QueueLock";
+import { getPlayer } from "../../../../bot/music/engine/PlayerManager.js";
+import * as MusicService from "../../../../bot/music/services/MusicService.js";
+import * as SearchEmbed from "../../../../bot/ui/embeds/SearchEmbed.js";
+import * as ErrorEmbed from "../../../../bot/ui/embeds/ErrorEmbed.js";
+import { requireSameVoice } from "../../../../bot/core/utils/VoiceCheck.js";
+import Logger from "../../../../bot/core/utils/Logger.js";
+import { get } from "../../../music/engine/lavalink.js";
+import { withQueueLock } from "../../../core/state/QueueLock.js";
 
 export default {
   data: new SlashCommandBuilder()

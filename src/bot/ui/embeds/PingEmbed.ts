@@ -1,5 +1,5 @@
 import { EmbedBuilder } from "discord.js";
-import Colors from "../../core/constants/Colors";
+import Colors from "../../core/constants/Colors.js";
 
 function build(botLatency: number, gatewayLatency: number, apiLatency: number | string) {
   const apiValue = typeof apiLatency === "number" ? `${apiLatency}ms` : apiLatency;

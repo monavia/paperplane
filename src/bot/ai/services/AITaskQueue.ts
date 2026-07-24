@@ -1,7 +1,7 @@
-import { TaskQueue } from '../../worker/TaskQueue';
-import AIDJInstance from '../engine/AIDJ';
-import AIEngine from '../engine/AIEngine';
-import Logger from '../../core/utils/Logger';
+import { TaskQueue } from '../../worker/TaskQueue.js';
+import AIDJInstance from '../engine/AIDJ.js';
+import AIEngine from '../engine/AIEngine.js';
+import Logger from '../../core/utils/Logger.js';
 
 const AI_QUEUE_CONCURRENCY = parseInt(process.env.AI_QUEUE_CONCURRENCY || '4');
 const AI_QUEUE_TIMEOUT = parseInt(process.env.AI_QUEUE_TIMEOUT || '30000');

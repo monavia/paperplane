@@ -1,4 +1,4 @@
-import Logger from "../utils/Logger";
+import Logger from "../utils/Logger.js";
 
 const LOCK_TIMEOUT_MS = 30000;
 

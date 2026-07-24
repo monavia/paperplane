@@ -1,6 +1,6 @@
 import { describe, test } from "vitest";
 import assert from "node:assert";
-import CommandInterpreter from "./CommandInterpreter";
+import CommandInterpreter from "./CommandInterpreter.js";
 
 const ci = new CommandInterpreter();
 

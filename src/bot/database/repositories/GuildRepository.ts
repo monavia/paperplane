@@ -1,7 +1,7 @@
-import Logger from "../../core/utils/Logger";
-import Guild from "../models/Guild";
-import botConfig from "../../config/bot";
-import { isUsingPrisma } from "../connection";
+import Logger from "../../core/utils/Logger.js";
+import Guild from "../models/Guild.js";
+import botConfig from "../../config/bot.js";
+import { isUsingPrisma } from "../connection.js";
 
 const prefixCache = new Map<string, { prefix: string; ts: number }>();
 const CACHE_TTL = 60000;

@@ -1,24 +1,24 @@
 import { EmbedBuilder } from "discord.js";
-import Config from "../config/bot";
-import { runAIAsk, runAIInterpret } from "../ai/services/AITaskQueue";
-import { checkPrompt } from "../ai/services/PromptFilter";
-import Logger from "../core/utils/Logger";
-import { incCommandsExecuted, observeCommandLatency } from "../telemetry/MetricsCollector";
-import Colors from "../core/constants/Colors";
-import * as ErrorEmbed from "../ui/embeds/ErrorEmbed";
-import { getPrefix, setPrefix } from "../database/repositories/GuildRepository";
-import * as MusicService from "../music/services/MusicService";
-import { getQueue } from "../music/services/QueueService";
-import { isLavalinkReady } from "../music/services/MusicService";
-import state from "../core/state/StateManager";
-import { get } from "../music/engine/lavalink";
-import { setTextChannelId } from "../music/services/TextChannelStore";
-import { withQueueLock } from "../core/state/QueueLock";
-import { markTrackStartSuppressed } from "../music/engine/musicEvents";
-import { saveState } from "../music/services/StateService";
-import * as NowPlayingEmbed from "../ui/embeds/NowPlayingEmbed";
-import { build as buildQueueEmbed } from "../ui/embeds/QueueEmbed";
-import CooldownManager from "../core/utils/CooldownManager";
+import Config from "../config/bot.js";
+import { runAIAsk, runAIInterpret } from "../ai/services/AITaskQueue.js";
+import { checkPrompt } from "../ai/services/PromptFilter.js";
+import Logger from "../core/utils/Logger.js";
+import { incCommandsExecuted, observeCommandLatency } from "../telemetry/MetricsCollector.js";
+import Colors from "../core/constants/Colors.js";
+import * as ErrorEmbed from "../ui/embeds/ErrorEmbed.js";
+import { getPrefix, setPrefix } from "../database/repositories/GuildRepository.js";
+import * as MusicService from "../music/services/MusicService.js";
+import { getQueue } from "../music/services/QueueService.js";
+import { isLavalinkReady } from "../music/services/MusicService.js";
+import state from "../core/state/StateManager.js";
+import { get } from "../music/engine/lavalink.js";
+import { setTextChannelId } from "../music/services/TextChannelStore.js";
+import { withQueueLock } from "../core/state/QueueLock.js";
+import { markTrackStartSuppressed } from "../music/engine/musicEvents.js";
+import { saveState } from "../music/services/StateService.js";
+import * as NowPlayingEmbed from "../ui/embeds/NowPlayingEmbed.js";
+import { build as buildQueueEmbed } from "../ui/embeds/QueueEmbed.js";
+import CooldownManager from "../core/utils/CooldownManager.js";
 
 export function start(client: any): void {
   client.on("messageCreate", async (message: any) => {

@@ -1,6 +1,6 @@
 import type { QueueStoreManager, StoredQueue } from "lavalink-client" with { "resolution-mode": "require" };
-import PlayerState from "../../database/models/PlayerState";
-import Logger from "../../core/utils/Logger";
+import PlayerState from "../../database/models/PlayerState.js";
+import Logger from "../../core/utils/Logger.js";
 
 class MongoQueueStore implements QueueStoreManager {
   async get(guildId: string): Promise<string | StoredQueue | undefined> {

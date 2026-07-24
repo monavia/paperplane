@@ -1,11 +1,11 @@
-import Logger from "../../core/utils/Logger";
-import { withQueueLock } from "../../core/state/QueueLock";
-import * as SpotifyScraper from "../engine/SpotifyScraper";
-import SpotifyResolver from "../engine/SpotifyResolver";
-import { searchWithRetry } from "./SearchService";
-import ActivityService from "../../services/ActivityService";
-import botConfig from "../../config/bot";
-import { applySpotifyMeta } from "./TitleResolver";
+import Logger from "../../core/utils/Logger.js";
+import { withQueueLock } from "../../core/state/QueueLock.js";
+import * as SpotifyScraper from "../engine/SpotifyScraper.js";
+import SpotifyResolver from "../engine/SpotifyResolver.js";
+import { searchWithRetry } from "./SearchService.js";
+import ActivityService from "../../services/ActivityService.js";
+import botConfig from "../../config/bot.js";
+import { applySpotifyMeta } from "./TitleResolver.js";
 
 function normalize(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, "").trim();

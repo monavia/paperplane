@@ -1,4 +1,4 @@
-import state from "../../core/state/StateManager";
+import state from "../../core/state/StateManager.js";
 
 /**
  * QueueEngine — thin wrapper over state.queues for a single guild.

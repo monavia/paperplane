@@ -1,5 +1,23 @@
 # Changelog — Paperplane Single Node
 
+## 2026-07-24 — v2.2.0
+
+### Runtime Migration: tsx → node
+
+- **Core .js extension** — 70 files: `../foo` → `../foo.js` via bulk regex. Module `node16` + CJS explicit .js suffix.
+- **@/ alias → relative** — 52 command files: `@/bot/foo` → `../../../../bot/foo.js`. `paths` dihapus dari tsconfig.
+- **Side-effect import** — `import "./instrument"` → `"./instrument.js"`.
+- **Build pipeline** — `"build": "tsc"` (standar), `"start": "node dist/index.js"`. Dev tetap `tsx watch` via `npm run dev`.
+- **PM2** — script `dist/index.js`, interpreter `node`, tanpa `tsx` loader.
+- **Verifikasi** — `tsc --noEmit` 0 error, `npm test` 38/38 lulus, `npm run build` 0 error.
+- **AIEngine CJS interop fix** — `src/index.ts:113`: `const { default: AIEngine } = await import(...)` gagal karena CJS `module.exports` ter-wrap 2x oleh ESM `import()`. Fix: `(await import(...)).default` untuk unwrap layer pertama.
+
+## 2026-07-24 — v2.1.8
+
+### Config validation startup (0.5.1)
+- `src/index.ts:40` — `validateEnv()` baru: cek `DISCORD_TOKEN`, `CLIENT_ID`, `MONGO_URI`/`DATABASE_URL` di awal `main()`. Exit dgn daftar missing + contoh .env.
+- Wajib `DISCORD_TOKEN` dan `CLIENT_ID`. `MONGO_URI` atau `DATABASE_URL` minimal 1.
+
 ## 2026-07-24 — v2.1.7
 
 ### SSRF fix via SpotifyScraper (C1)

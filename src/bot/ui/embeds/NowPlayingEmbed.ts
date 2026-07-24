@@ -1,7 +1,7 @@
 import { EmbedBuilder } from "discord.js";
-import Colors from "../../core/constants/Colors";
-import Emojis from "../../core/constants/Emojis";
-import { cleanTitle } from "../../music/services/TitleResolver";
+import Colors from "../../core/constants/Colors.js";
+import Emojis from "../../core/constants/Emojis.js";
+import { cleanTitle } from "../../music/services/TitleResolver.js";
 
 export function getSourceEmoji(source: string, spotifyUrl?: string | null): string {
   if (source === "spotify" || spotifyUrl) return Emojis.SPOTIFY;

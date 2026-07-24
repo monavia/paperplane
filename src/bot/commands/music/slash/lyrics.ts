@@ -1,11 +1,11 @@
 import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
-import { getPlayer } from "@/bot/music/engine/PlayerManager";
-import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
-import Colors from "@/bot/core/constants/Colors";
-import Logger from "@/bot/core/utils/Logger";
-import { fetchLyrics } from "@/bot/music/services/LyricsService";
-import lyricsMessages from "@/bot/core/state/LyricsMessageStore";
-import { requireSameVoice } from "@/bot/core/utils/VoiceCheck";
+import { getPlayer } from "../../../../bot/music/engine/PlayerManager.js";
+import * as ErrorEmbed from "../../../../bot/ui/embeds/ErrorEmbed.js";
+import Colors from "../../../../bot/core/constants/Colors.js";
+import Logger from "../../../../bot/core/utils/Logger.js";
+import { fetchLyrics } from "../../../../bot/music/services/LyricsService.js";
+import lyricsMessages from "../../../../bot/core/state/LyricsMessageStore.js";
+import { requireSameVoice } from "../../../../bot/core/utils/VoiceCheck.js";
 
 export default {
   data: new SlashCommandBuilder()

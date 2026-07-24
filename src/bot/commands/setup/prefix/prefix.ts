@@ -1,8 +1,8 @@
 import { EmbedBuilder } from "discord.js";
-import { setPrefix, getPrefix } from "@/bot/database/repositories/GuildRepository";
-import * as SuccessEmbed from "@/bot/ui/embeds/SuccessEmbed";
-import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
-import Colors from "@/bot/core/constants/Colors";
+import { setPrefix, getPrefix } from "../../../../bot/database/repositories/GuildRepository.js";
+import * as SuccessEmbed from "../../../../bot/ui/embeds/SuccessEmbed.js";
+import * as ErrorEmbed from "../../../../bot/ui/embeds/ErrorEmbed.js";
+import Colors from "../../../../bot/core/constants/Colors.js";
 
 export default {
   name: "prefix",

@@ -1,9 +1,9 @@
 import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
-import Colors from "@/bot/core/constants/Colors";
-import { getPrefix, getAutoplay, getLoop, getShuffle, get247, getLastFilter, getLastEqualizer } from "@/bot/database/repositories/GuildRepository";
-import { getEngine } from "@/bot/music/services/PlayerService";
-import state from "@/bot/core/state/StateManager";
-import { isLavalinkReady } from "@/bot/music/services/MusicService";
+import Colors from "../../../../bot/core/constants/Colors.js";
+import { getPrefix, getAutoplay, getLoop, getShuffle, get247, getLastFilter, getLastEqualizer } from "../../../../bot/database/repositories/GuildRepository.js";
+import { getEngine } from "../../../../bot/music/services/PlayerService.js";
+import state from "../../../../bot/core/state/StateManager.js";
+import { isLavalinkReady } from "../../../../bot/music/services/MusicService.js";
 
 export default {
   data: new SlashCommandBuilder().setName("settings").setDescription("Show current server settings"),

@@ -1,8 +1,8 @@
 import { EmbedBuilder } from "discord.js";
-import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
-import { getQueue } from "@/bot/music/services/QueueService";
-import Colors from "@/bot/core/constants/Colors";
-import { parseDuration } from "@/bot/core/utils/Duration";
+import * as ErrorEmbed from "../../../../bot/ui/embeds/ErrorEmbed.js";
+import { getQueue } from "../../../../bot/music/services/QueueService.js";
+import Colors from "../../../../bot/core/constants/Colors.js";
+import { parseDuration } from "../../../../bot/core/utils/Duration.js";
 
 export default {
   name: "nowplaying", aliases: ["np"],

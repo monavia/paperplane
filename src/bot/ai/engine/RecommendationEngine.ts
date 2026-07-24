@@ -1,4 +1,4 @@
-import AIEngine from "./AIEngine";
+import AIEngine from "./AIEngine.js";
 
 class AIRecommendationEngine {
   async recommendMusic(taste: any, count = 5) {

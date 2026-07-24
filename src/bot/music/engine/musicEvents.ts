@@ -1,23 +1,23 @@
 import * as Sentry from "@sentry/node";
 
-import * as lavalink from "./lavalink";
-import { destroyEngine } from "../services/PlayerService";
-import state from "../../core/state/StateManager";
-import { withQueueLock } from "../../core/state/QueueLock";
-import Logger from "../../core/utils/Logger";
+import * as lavalink from "./lavalink.js";
+import { destroyEngine } from "../services/PlayerService.js";
+import state from "../../core/state/StateManager.js";
+import { withQueueLock } from "../../core/state/QueueLock.js";
+import Logger from "../../core/utils/Logger.js";
 import { EmbedBuilder } from "discord.js";
-import Colors from "../../core/constants/Colors";
-import { getSourceEmoji } from "../../ui/embeds/NowPlayingEmbed";
-import { getTextChannelId } from "../services/TextChannelStore";
-import { clearVoiceJoinTime } from "./PlayerManager";
-import lyricsMessages from "../../core/state/LyricsMessageStore";
+import Colors from "../../core/constants/Colors.js";
+import { getSourceEmoji } from "../../ui/embeds/NowPlayingEmbed.js";
+import { getTextChannelId } from "../services/TextChannelStore.js";
+import { clearVoiceJoinTime } from "./PlayerManager.js";
+import lyricsMessages from "../../core/state/LyricsMessageStore.js";
 
-import { getPrefix } from "../../database/repositories/GuildRepository";
-import botConfig from "../../config/bot";
-import * as EventBus from "../events/EventBus";
-import { cleanTitle, saveSpotifyMeta, applySpotifyMeta } from "../services/TitleResolver";
-import { findTrackWithDuration } from "../services/SearchService";
-import AutoplayEngine from "./AutoplayEngine";
+import { getPrefix } from "../../database/repositories/GuildRepository.js";
+import botConfig from "../../config/bot.js";
+import * as EventBus from "../events/EventBus.js";
+import { cleanTitle, saveSpotifyMeta, applySpotifyMeta } from "../services/TitleResolver.js";
+import { findTrackWithDuration } from "../services/SearchService.js";
+import AutoplayEngine from "./AutoplayEngine.js";
 
 const autoplayInst = new AutoplayEngine();
 

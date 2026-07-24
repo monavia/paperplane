@@ -1,5 +1,5 @@
-import Logger from "../../core/utils/Logger";
-import { searchWithRetry } from "./SearchService";
+import Logger from "../../core/utils/Logger.js";
+import { searchWithRetry } from "./SearchService.js";
 
 interface CacheEntry<T> {
   value: T;

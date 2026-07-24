@@ -1,5 +1,5 @@
 import { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder } from "discord.js";
-import Colors from "../../core/constants/Colors";
+import Colors from "../../core/constants/Colors.js";
 
 function build(tracks: any[], query: string) {
   const lines = tracks.map((t, i) => {

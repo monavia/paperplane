@@ -1,4 +1,4 @@
-import * as lavalink from "./lavalink";
+import * as lavalink from "./lavalink.js";
 
 class Resolver {
   guildId: any;

@@ -1,9 +1,8 @@
 module.exports = {
   apps: [{
     name: "paperplane",
-    script: "src/index.ts",
+    script: "dist/index.js",
     interpreter: "node",
-    node_args: "--import ./node_modules/tsx/dist/loader.mjs",
     cwd: "./",
     kill_timeout: 30000,
     exec_mode: "fork",

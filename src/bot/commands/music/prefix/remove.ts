@@ -1,8 +1,8 @@
-import botConfig from "@/bot/config/bot";
-import * as MusicService from "@/bot/music/services/MusicService";
-import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
-import { requireSameVoice } from "@/bot/core/utils/VoiceCheck";
-import * as SuccessEmbed from "@/bot/ui/embeds/SuccessEmbed";
+import botConfig from "../../../../bot/config/bot.js";
+import * as MusicService from "../../../../bot/music/services/MusicService.js";
+import * as ErrorEmbed from "../../../../bot/ui/embeds/ErrorEmbed.js";
+import { requireSameVoice } from "../../../../bot/core/utils/VoiceCheck.js";
+import * as SuccessEmbed from "../../../../bot/ui/embeds/SuccessEmbed.js";
 
 export default {
   name: "remove",

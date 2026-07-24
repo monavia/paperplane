@@ -1,4 +1,4 @@
-import Logger from "../../core/utils/Logger";
+import Logger from "../../core/utils/Logger.js";
 
 const LRCLIB_URL = "https://lrclib.net/api";
 

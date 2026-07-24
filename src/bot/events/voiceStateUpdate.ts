@@ -1,13 +1,13 @@
 import { EmbedBuilder } from "discord.js";
-import Logger from "../core/utils/Logger";
-import Colors from "../core/constants/Colors";
-import { getTextChannelId } from "../music/services/TextChannelStore";
-import { setLastFilter, setAutoplay, setShuffle } from "../database/repositories/GuildRepository";
-import { isIdleDisconnect, clearIdleDisconnect } from "../music/engine/musicEvents";
-import state from "../core/state/StateManager";
-import { isLavalinkReady } from "../music/services/MusicService";
-import { getEngine, destroyEngine } from "../music/services/PlayerService";
-import { deleteState } from "../music/services/StateService";
+import Logger from "../core/utils/Logger.js";
+import Colors from "../core/constants/Colors.js";
+import { getTextChannelId } from "../music/services/TextChannelStore.js";
+import { setLastFilter, setAutoplay, setShuffle } from "../database/repositories/GuildRepository.js";
+import { isIdleDisconnect, clearIdleDisconnect } from "../music/engine/musicEvents.js";
+import state from "../core/state/StateManager.js";
+import { isLavalinkReady } from "../music/services/MusicService.js";
+import { getEngine, destroyEngine } from "../music/services/PlayerService.js";
+import { deleteState } from "../music/services/StateService.js";
 
 const aloneTimers = new Map<string, any>();
 

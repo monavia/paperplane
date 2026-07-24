@@ -1,7 +1,7 @@
-import { getPlayer, createPlayer } from "./PlayerManager";
-import { markManualAdvance } from "./musicEvents";
-import { withQueueLock } from "../../core/state/QueueLock";
-import state from "../../core/state/StateManager";
+import { getPlayer, createPlayer } from "./PlayerManager.js";
+import { markManualAdvance } from "./musicEvents.js";
+import { withQueueLock } from "../../core/state/QueueLock.js";
+import state from "../../core/state/StateManager.js";
 
 export class PlaybackEngine {
   guildId: string;

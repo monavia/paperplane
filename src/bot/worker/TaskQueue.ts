@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import Logger from '../core/utils/Logger';
+import Logger from '../core/utils/Logger.js';
 
 export interface QueuedTask {
   id: string;

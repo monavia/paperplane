@@ -1,9 +1,9 @@
-import * as MusicService from "@/bot/music/services/MusicService";
-import { formatVolume } from "@/bot/core/utils/Formatter";
-import * as SuccessEmbed from "@/bot/ui/embeds/SuccessEmbed";
-import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
-import { updateVolume } from "@/bot/database/repositories/GuildRepository";
-import { requireSameVoice } from "@/bot/core/utils/VoiceCheck";
+import * as MusicService from "../../../../bot/music/services/MusicService.js";
+import { formatVolume } from "../../../../bot/core/utils/Formatter.js";
+import * as SuccessEmbed from "../../../../bot/ui/embeds/SuccessEmbed.js";
+import * as ErrorEmbed from "../../../../bot/ui/embeds/ErrorEmbed.js";
+import { updateVolume } from "../../../../bot/database/repositories/GuildRepository.js";
+import { requireSameVoice } from "../../../../bot/core/utils/VoiceCheck.js";
 
 export default {
   name: "volume",

@@ -1,4 +1,4 @@
-import Logger from "../../core/utils/Logger";
+import Logger from "../../core/utils/Logger.js";
 import * as dns from "node:dns/promises";
 import * as net from "node:net";
 

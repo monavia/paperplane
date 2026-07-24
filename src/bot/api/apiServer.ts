@@ -1,23 +1,23 @@
 import express from "express";
-import Config from "../config/bot";
-import Logger from "../core/utils/Logger";
-import * as PlayerService from "../music/services/PlayerService";
-import { getQueue } from "../music/services/QueueService";
-import { getClient, get as getLavalink } from "../music/engine/lavalink";
-import { getVoiceJoinDuration } from "../music/engine/PlayerManager";
-import state from "../core/state/StateManager";
+import Config from "../config/bot.js";
+import Logger from "../core/utils/Logger.js";
+import * as PlayerService from "../music/services/PlayerService.js";
+import { getQueue } from "../music/services/QueueService.js";
+import { getClient, get as getLavalink } from "../music/engine/lavalink.js";
+import { getVoiceJoinDuration } from "../music/engine/PlayerManager.js";
+import state from "../core/state/StateManager.js";
 import {
   getLastEqualizer, setLastEqualizer, getLastFilter, setLastFilter,
   getPrefix, setPrefix, updateVolume,
   getAutoplay, setAutoplay, getLoop, setLoop, getShuffle, setShuffle, get247, set247,
-} from "../database/repositories/GuildRepository";
-import { getHistory } from "../music/services/HistoryService";
-import { fetchLyrics } from "../music/services/LyricsService";
-import { removeFromQueue, swapTracks, moveTrack, clearQueue } from "../music/services/QueueService";
+} from "../database/repositories/GuildRepository.js";
+import { getHistory } from "../music/services/HistoryService.js";
+import { fetchLyrics } from "../music/services/LyricsService.js";
+import { removeFromQueue, swapTracks, moveTrack, clearQueue } from "../music/services/QueueService.js";
 import mongoose from "mongoose";
-import { getMetrics } from "../telemetry/MetricsCollector";
+import { getMetrics } from "../telemetry/MetricsCollector.js";
 import * as Sentry from "@sentry/node";
-import { createApiHandler, jsonResponse, ApiError, withAuth, getUserId, requireApiSameVoice, guildRateLimit } from "../../lib/api-base";
+import { createApiHandler, jsonResponse, ApiError, withAuth, getUserId, requireApiSameVoice, guildRateLimit } from "../../lib/api-base.js";
 
 const SNOWFLAKE_RE = /^\d{17,20}$/;
 function validateGuildId(req: any, res: any, next: any) {

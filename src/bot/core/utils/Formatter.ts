@@ -1,4 +1,4 @@
-import { parseDuration } from "./Duration";
+import { parseDuration } from "./Duration.js";
 
 function formatTrack(track: any, index: number) {
   const title = track.info?.title || "Unknown";

@@ -1,9 +1,9 @@
 import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
-import * as MusicService from "@/bot/music/services/MusicService";
-import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
-import Colors from "@/bot/core/constants/Colors";
-import { requireSameVoice } from "@/bot/core/utils/VoiceCheck";
-import state from "@/bot/core/state/StateManager";
+import * as MusicService from "../../../../bot/music/services/MusicService.js";
+import * as ErrorEmbed from "../../../../bot/ui/embeds/ErrorEmbed.js";
+import Colors from "../../../../bot/core/constants/Colors.js";
+import { requireSameVoice } from "../../../../bot/core/utils/VoiceCheck.js";
+import state from "../../../../bot/core/state/StateManager.js";
 
 export default {
   data: new SlashCommandBuilder().setName("stop").setDescription("Stop playback"),

@@ -1,13 +1,13 @@
-import QueueStore from "./QueueStore";
-import NowPlayingStore from "./NowPlayingStore";
-import LoopStore from "./LoopStore";
-import TwentyFourSevenStore from "./TwentyFourSevenStore";
-import VoiceChannelStore from "./VoiceChannelStore";
-import ShuffleStore from "./ShuffleStore";
-import AutoplayStore from "./AutoplayStore";
-import FilterStore from "./FilterStore";
-import EqualizerStore from "./EqualizerStore";
-import PositionStore from "./PositionStore";
+import QueueStore from "./QueueStore.js";
+import NowPlayingStore from "./NowPlayingStore.js";
+import LoopStore from "./LoopStore.js";
+import TwentyFourSevenStore from "./TwentyFourSevenStore.js";
+import VoiceChannelStore from "./VoiceChannelStore.js";
+import ShuffleStore from "./ShuffleStore.js";
+import AutoplayStore from "./AutoplayStore.js";
+import FilterStore from "./FilterStore.js";
+import EqualizerStore from "./EqualizerStore.js";
+import PositionStore from "./PositionStore.js";
 
 class StateManager {
   queues: QueueStore;

@@ -1,8 +1,8 @@
 import { SlashCommandBuilder } from "discord.js";
-import * as MusicService from "@/bot/music/services/MusicService";
-import * as ErrorEmbed from "@/bot/ui/embeds/ErrorEmbed";
-import * as SuccessEmbed from "@/bot/ui/embeds/SuccessEmbed";
-import { requireSameVoice } from "@/bot/core/utils/VoiceCheck";
+import * as MusicService from "../../../../bot/music/services/MusicService.js";
+import * as ErrorEmbed from "../../../../bot/ui/embeds/ErrorEmbed.js";
+import * as SuccessEmbed from "../../../../bot/ui/embeds/SuccessEmbed.js";
+import { requireSameVoice } from "../../../../bot/core/utils/VoiceCheck.js";
 
 function parseTime(input: string): number | null {
   const match = input.match(/^(?:(\d+):)?(\d+)$/);

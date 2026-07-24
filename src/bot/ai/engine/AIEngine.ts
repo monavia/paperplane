@@ -1,8 +1,8 @@
-import aiConfig from "../../config/ai";
-import PromptBuilder from "./PromptBuilder";
-import ConversationMemory from "./ConversationMemory";
-import { searchWeb } from "../services/WebSearchService";
-import Logger from "../../core/utils/Logger";
+import aiConfig from "../../config/ai.js";
+import PromptBuilder from "./PromptBuilder.js";
+import ConversationMemory from "./ConversationMemory.js";
+import { searchWeb } from "../services/WebSearchService.js";
+import Logger from "../../core/utils/Logger.js";
 
 const realtimePatterns = [
   /\b(cuaca|weather|hujan|panas|dingin|angin|suhu|temperature|طقس|طقس)\b/i,

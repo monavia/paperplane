@@ -1,7 +1,7 @@
-import HistoryEntry from "../../database/models/HistoryEntry";
-import * as EventBus from "../events/EventBus";
-import Logger from "../../core/utils/Logger";
-import { isUsingPrisma } from "../../database/connection";
+import HistoryEntry from "../../database/models/HistoryEntry.js";
+import * as EventBus from "../events/EventBus.js";
+import Logger from "../../core/utils/Logger.js";
+import { isUsingPrisma } from "../../database/connection.js";
 
 let _prisma: any = null;
 async function getPrisma() {
