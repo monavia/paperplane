@@ -25,7 +25,7 @@ export function checkSameVoice(source: any): VoiceResult {
   const guildId = getGuildId(source);
   const engine = MusicService.getEngine(guildId);
   if (!engine?.player) return { ok: false, message: "Bot is not connected to a voice channel." };
-  if (!engine.player.voiceChannelId) return { ok: false, message: "Bot is not connected to a voice channel." };
+  if (!engine.player?.voiceChannelId) return { ok: false, message: "Bot is not connected to a voice channel." };
   if (voice.id !== engine.player.voiceChannelId) {
     return { ok: false, message: "You must be in the same voice channel as the bot." };
   }

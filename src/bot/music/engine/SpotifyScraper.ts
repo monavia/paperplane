@@ -1,8 +1,11 @@
 import Logger from "../../core/utils/Logger";
+import * as dns from "node:dns/promises";
+import * as net from "node:net";
 
 const CACHE_TTL = 30 * 60 * 1000;
 const MAX_RETRIES = 2;
 const RETRY_DELAY = 1000;
+const SPOTIFY_HOST = "open.spotify.com";
 
 interface CacheEntry {
   data: any;
@@ -49,7 +52,14 @@ class SpotifyScraper {
   }
 
   parseUrl(url: any): any {
-    const m = url.match(/open\.spotify\.com\/(?:[\w-]+\/)?(playlist|track|album)\/([a-zA-Z0-9]+)/);
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return null;
+    }
+    if (parsed.hostname !== SPOTIFY_HOST) return null;
+    const m = parsed.pathname.match(/^\/(?:[\w-]+\/)?(playlist|track|album)\/([a-zA-Z0-9]+)/);
     if (!m) return null;
     return { type: m[1], id: m[2] };
   }
@@ -173,7 +183,39 @@ class SpotifyScraper {
     return null;
   }
 
+  async _validateUrl(url: string): Promise<void> {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new Error(`Invalid URL: ${url}`);
+    }
+    if (parsed.protocol !== "https:") throw new Error(`URL must be HTTPS: ${url}`);
+    if (parsed.hostname !== SPOTIFY_HOST) throw new Error(`URL host must be ${SPOTIFY_HOST}: ${url}`);
+    if (net.isIP(parsed.hostname)) {
+      if (this._isPrivateIP(parsed.hostname)) throw new Error(`URL resolves to private IP: ${url}`);
+    } else {
+      const addrs = await dns.resolve4(parsed.hostname);
+      for (const addr of addrs) {
+        if (this._isPrivateIP(addr)) throw new Error(`URL resolves to private IP: ${url}`);
+      }
+    }
+  }
+
+  _isPrivateIP(ip: string): boolean {
+    const p = ip.split(".").map(Number);
+    if (p.length !== 4) return true;
+    if (p[0] === 10) return true;
+    if (p[0] === 172 && p[1] >= 16 && p[1] <= 31) return true;
+    if (p[0] === 192 && p[1] === 168) return true;
+    if (p[0] === 127) return true;
+    if (p[0] === 169 && p[1] === 254) return true;
+    if (p[0] === 0) return true;
+    return false;
+  }
+
   async _fetchPage(url: any): Promise<any> {
+    await this._validateUrl(url);
     for (let a = 0; a <= MAX_RETRIES; a++) {
       const c = new AbortController(); const t = setTimeout(() => c.abort(), 20000);
       try {

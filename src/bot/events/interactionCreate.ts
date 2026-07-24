@@ -35,9 +35,13 @@ if (musicCommands.includes(interaction.commandName) && !isLavalinkReady()) {
       Logger.error(`Command ${interaction.commandName} error: ${err.message}`);
       const reply = { content: "An error occurred while executing this command.", ephemeral: true };
       if (interaction.deferred || interaction.replied) {
-        await interaction.editReply(reply).catch(Logger.safe("bot/events/interactionCreate.ts"));
+        await interaction.editReply(reply).catch((e: any) =>
+          Logger.warn(`[interactionCreate] Failed to editReply for /${interaction.commandName}: ${e?.message || e}`)
+        );
       } else {
-        await interaction.reply(reply).catch(Logger.safe("bot/events/interactionCreate.ts"));
+        await interaction.reply(reply).catch((e: any) =>
+          Logger.warn(`[interactionCreate] Failed to reply for /${interaction.commandName}: ${e?.message || e}`)
+        );
       }
     }
   });
