@@ -37,7 +37,33 @@ const client: Client = new Client({
 (client as any).slashCommands = new Collection();
 (client as any).prefixCommands = new Collection();
 
+function validateEnv(): void {
+  const missing: string[] = [];
+
+  if (!process.env.DISCORD_TOKEN) {
+    missing.push("DISCORD_TOKEN");
+  }
+  if (!process.env.CLIENT_ID) {
+    missing.push("CLIENT_ID");
+  }
+  if (!process.env.MONGO_URI && !process.env.DATABASE_URL) {
+    missing.push("MONGO_URI or DATABASE_URL");
+  }
+
+  if (missing.length > 0) {
+    console.error("\nMissing required environment variables:");
+    for (const key of missing) {
+      console.error(`  ✗ ${key}`);
+    }
+    console.error("\nSet them in .env or export before starting.");
+    console.error(`Example .env:\n  DISCORD_TOKEN=your_token\n  CLIENT_ID=your_client_id\n  MONGO_URI=mongodb://localhost:27017/paperplane\n`);
+    process.exit(1);
+  }
+}
+
 async function main() {
+  validateEnv();
+
   try {
     Logger.info("Starting bot...");
 
@@ -101,8 +127,6 @@ async function main() {
     } catch (err: any) {
       Logger.error("API server failed:", err.message);
     }
-
-    Logger.ready("Bot is ready!");
   } catch (err: any) {
     Logger.error("Fatal startup error:", err);
     process.exit(1);
