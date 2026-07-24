@@ -35,6 +35,8 @@ const STUCK_TRACK_TIMEOUT_MS = 30000;
 const JITTER_BUFFER_MS = 500;
 const stuckTimers = new Map<string, any>();
 const idleDisconnects = new Set<string>();
+const deferredQueueGuilds = new Map<string, number>();
+const DEFERRED_QUEUE_MAX = 5;
 let startupPhase = true;
 setTimeout(() => { startupPhase = false; }, 15000);
 const restoredGuilds = new Set<string>();
@@ -172,6 +174,7 @@ function register(client: any): void {
   if (!l) return;
 
   l.on("trackStart", (player: any, track: any) => {
+    deferredQueueGuilds.delete(player.guildId);
     EventBus.emit('metrics:trackPlayed', { guildId: player.guildId, source: track?.info?.source || 'unknown' });
     const prevLyrics = lyricsMessages.get(player.guildId);
     if (prevLyrics && clientRef) {
@@ -314,6 +317,19 @@ const advancingFromTrackEnd = new Set<string>();
       const played = await advanceQueue(player);
       if (played) return;
 
+      // Track masih "now playing" (failover replay, dll) — jangan disconnect
+      if (player.node?.connected && state.nowPlaying.get(player.guildId)) {
+        const attempt = (deferredQueueGuilds.get(player.guildId) || 0) + 1;
+        deferredQueueGuilds.set(player.guildId, attempt);
+        if (attempt <= DEFERRED_QUEUE_MAX) {
+          Logger.info(`[queueEnd] guild=${player.guildId} nowPlaying active — retry ${attempt}/${DEFERRED_QUEUE_MAX} in 30s`);
+          setTimeout(() => advanceQueue(player).catch(Logger.safe("bot/music/engine/musicEvents.ts")), 30000);
+          return;
+        }
+        deferredQueueGuilds.delete(player.guildId);
+        Logger.warn(`[queueEnd] guild=${player.guildId} deferred advance exhausted (${DEFERRED_QUEUE_MAX}x) — allowing disconnect`);
+      }
+
       if (!player.playing && !player.paused) {
       try {
         if (state.autoplay.get(player.guildId)) {
@@ -362,6 +378,7 @@ const advancingFromTrackEnd = new Set<string>();
       EventBus.emit('state:stopPositionSync', { guildId: player.guildId });
 
       const timerId = setTimeout(() => {
+        deferredQueueGuilds.delete(player.guildId);
         // Check if the player is still the active one (not destroyed/recreated)
         const currentPlayer = lavalink.get()?.players?.get(player.guildId);
         if (currentPlayer && currentPlayer !== player) {

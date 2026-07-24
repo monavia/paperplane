@@ -1,5 +1,17 @@
 # Changelog — Paperplane Single Node
 
+## 2026-07-24 — v2.2.1
+
+### Search health routing + failover fix
+
+- **SearchViaHealthyNode** — `SearchService.ts`: new `searchViaHealthyNode()`. Saat `player.search()` gagal di node broken, search via node tersehat via `node.search()` (REST call, zero disruption to active playback).
+- **searchWithRetry fallback** — setelah retries habis + node penalty > 300, coba 1x search via healthy node sebelum throw.
+- **findTrackWithDuration fallback** — hapus `if (nodePenalty > 300)` guard. Selalu coba healthy node. `searchViaHealthyNode` panggil dengan `retries=0`.
+- **NodePenaltyService drain fix** — `n.options?.name || n.name` → `n.options?.id`. lavalink-client NodeLinkNode gak punya `.name` property → drain/unhealthy filter mati total, scoreSorter `getPenalty(undefined)` = 0 untuk semua node. Sekarang filter + penalty scoring akurat.
+- **Auto-failover di health check** — `lavalink.ts`: saat penalty > 1000 dan node masih connected, trigger `failoverFromNode()`. 60s cooldown cegah flapping.
+- **Failover encoded→search priority** — `FailoverManager.ts`: search by URI dulu baru encoded. Encoded track node-specific, selalu error kalau dipindah ke Lavalink instance beda.
+- **QueueEnd defer disconnect** — `musicEvents.ts`: kalo `state.nowPlaying` masih active (failover replay), tunda disconnect 30s (max 5x retry). Cegah bot leave saat background Spotify resolver belum selesai.
+
 ## 2026-07-24 — v2.2.0
 
 ### Runtime Migration: tsx → node

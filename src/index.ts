@@ -110,7 +110,8 @@ async function main() {
     process.on("SIGTERM", () => shutdownManager.startShutdown());
 
     // AI status
-    const { default: AIEngine } = (await import("./bot/ai/engine/AIEngine.js") as any).default;
+    const module = await import("./bot/ai/engine/AIEngine.js") as any;
+    const AIEngine = module.default?.default ?? module.default;
     const aiReady = AIEngine.isReady();
     if (aiReady) Logger.ready("AI assistant ready");
 

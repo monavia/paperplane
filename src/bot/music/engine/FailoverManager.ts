@@ -3,7 +3,7 @@ import state from "../../core/state/StateManager.js";
 import { saveSpotifyMeta, applySpotifyMeta } from "../services/TitleResolver.js";
 import { getTextChannelId } from "../services/TextChannelStore.js";
 import { getEngine } from "../services/PlayerService.js";
-import { getBestNode, recordDisconnect, recordError } from "./NodePenaltyService.js";
+import { getBestNode, getPenalty, isDraining, recordDisconnect, recordError } from "./NodePenaltyService.js";
 import { setFilter, setEqualizer } from "../services/PlayerService.js";
 import { searchWithRetry } from "../services/SearchService.js";
 import type { LavalinkManager } from "lavalink-client" with { "resolution-mode": "require" };
@@ -78,6 +78,8 @@ export async function failoverFromNode(nodeId: string) {
     failoverGuilds.add(guildId);
 
     recordDisconnect(nodeId);
+    const nodeSnapshot = Array.from(lavalink.nodeManager.nodes.values()).filter((n: any) => n.connected).map((n: any) => `${n.id}:p=${getPenalty(n.options?.id)}:players=${n.stats?.players??"?"}:draining=${isDraining(n.options?.id)}:session=${!!n.sessionId}`).join(", ");
+    Logger.info(`[Failover] nodes="${nodeSnapshot}" nodeId=${nodeId} guild=${guildId}`);
     const target = getBestNode(lavalink);
     if (!target || target.id === nodeId) {
       Logger.warn(`[NodeLink] Failover: no healthy nodes for guild ${guildId}`);
@@ -94,14 +96,12 @@ export async function failoverFromNode(nodeId: string) {
       Logger.info(`[NodeLink] Failover: moved player ${guildId} from node=${nodeId} region=${player.node?.options?.regions?.[0] || "?"} → node=${target.id} region=${target.options?.regions?.[0] || "?"}`);
       const curTrack = state.nowPlaying.get(guildId);
       if (curTrack && !player.playing) {
-        const encoded = curTrack?.encoded || getCachedTrack(guildId);
-        if (encoded) {
-          await (player.play as any)({ encoded, position: player.position || 0 }).catch(Logger.safe("bot/music/engine/FailoverManager.ts"));
-        } else if (curTrack.info?.uri) {
+        const savedMeta = saveSpotifyMeta(curTrack);
+        let resolved: any = null;
+
+        if (curTrack.info?.uri) {
           const uri = curTrack.info.uri;
           const isSpotify = /^spotify:(track|album|playlist):/.test(uri) || /open\.spotify\.com/i.test(uri);
-          const savedMeta = saveSpotifyMeta(curTrack);
-          let resolved: any = null;
           if (isSpotify) {
             const q = `${curTrack.info.author || ""} ${curTrack.info.title || ""}`.trim();
             for (const prefix of ["ytmsearch", "ytsearch", "scsearch"]) {
@@ -115,10 +115,16 @@ export async function failoverFromNode(nodeId: string) {
               resolved = preferred || search.tracks.find((t: any) => t.info?.sourceName !== "deezer") || search.tracks[0];
             }
           }
-          if (resolved) {
-            applySpotifyMeta(resolved, savedMeta);
-            await player.play({ track: resolved, clientTrack: resolved, position: player.position || 0 }).catch(Logger.safe("bot/music/engine/FailoverManager.ts"));
+        }
+
+        if (!resolved) {
+          const encoded = curTrack?.encoded || getCachedTrack(guildId);
+          if (encoded) {
+            await (player.play as any)({ encoded, position: player.position || 0 }).catch(Logger.safe("bot/music/engine/FailoverManager.ts"));
           }
+        } else {
+          applySpotifyMeta(resolved, savedMeta);
+          await player.play({ track: resolved, clientTrack: resolved, position: player.position || 0 }).catch(Logger.safe("bot/music/engine/FailoverManager.ts"));
         }
         getEngine(guildId).player = player;
         const savedFilter = state.filter.get(guildId);
@@ -151,14 +157,12 @@ export async function failoverFromNode(nodeId: string) {
             selfMute: false,
           });
           await newPlayer.connect();
-          const encoded = track?.encoded || getCachedTrack(guildId);
-          if (encoded) {
-            await (newPlayer.play as any)({ encoded, position: savedPos }).catch(Logger.safe("bot/music/engine/FailoverManager.ts"));
-          } else if (track?.info?.uri) {
+          const savedMeta = track?.info?.uri ? saveSpotifyMeta(track) : null;
+          let resolved: any = null;
+
+          if (track?.info?.uri) {
             const uri = track.info.uri;
             const isSpotify = /^spotify:(track|album|playlist):/.test(uri) || /open\.spotify\.com/i.test(uri);
-            const savedMeta = saveSpotifyMeta(track);
-            let resolved: any = track;
             if (isSpotify) {
               const q = `${track.info.author || ""} ${track.info.title || ""}`.trim();
               for (const prefix of ["ytmsearch", "ytsearch", "scsearch"]) {
@@ -172,7 +176,15 @@ export async function failoverFromNode(nodeId: string) {
                 resolved = preferred || search.tracks.find((t: any) => t.info?.sourceName !== "deezer") || search.tracks[0];
               }
             }
-            applySpotifyMeta(resolved, savedMeta);
+          }
+
+          if (!resolved) {
+            const encoded = track?.encoded || getCachedTrack(guildId);
+            if (encoded) {
+              await (newPlayer.play as any)({ encoded, position: savedPos }).catch(Logger.safe("bot/music/engine/FailoverManager.ts"));
+            }
+          } else {
+            if (savedMeta) applySpotifyMeta(resolved, savedMeta);
             await newPlayer.play({ track: resolved, clientTrack: resolved, position: savedPos });
           }
           getEngine(guildId).player = newPlayer;

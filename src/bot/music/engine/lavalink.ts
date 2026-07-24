@@ -23,6 +23,8 @@ let clientRef: any = null;
 let healthCheckInterval: NodeJS.Timeout | null = null;
 const lastReconnectAttempt = new Map<string, number>();
 const failoverGuilds = new Set<string>();
+const recentFailoverNodes = new Set<string>();
+const FAILOVER_COOLDOWN_MS = 60000;
 const recoveringGuilds = new Set<string>();
 const recoveringGuildsTimestamps = new Map<string, number>();
 const RECOVERING_GUILDS_TTL_MS = 10 * 60 * 1000; // 10min
@@ -433,9 +435,16 @@ export async function init(client: any): Promise<boolean> {
     for (const node of nodes) {
       if (node.connected && node.options?.id) {
         const nodeName = node.options.id;
-        if (getPenalty(nodeName) > 500) {
-          Logger.warn(`[NodeLink] Health: node ${nodeName} penalty ${getPenalty(nodeName)} >500 — draining`);
+        const p = getPenalty(nodeName);
+        if (p > 500) {
+          Logger.warn(`[NodeLink] Health: node ${nodeName} penalty ${p} >500 — draining`);
           startDrain(nodeName);
+        }
+        if (p > 1000 && !recentFailoverNodes.has(nodeName)) {
+          Logger.warn(`[NodeLink] Health: node ${nodeName} penalty ${p} >1000 — failover players`);
+          recentFailoverNodes.add(nodeName);
+          setTimeout(() => recentFailoverNodes.delete(nodeName), FAILOVER_COOLDOWN_MS);
+          FailoverManager.failoverFromNode(nodeName).catch(Logger.safe("bot/music/engine/lavalink.ts"));
         }
       }
     }

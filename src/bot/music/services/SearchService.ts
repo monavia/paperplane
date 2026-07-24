@@ -1,6 +1,7 @@
 import Logger from "../../core/utils/Logger.js";
 import { cleanTitle, isCover } from "./TitleResolver.js";
-import { recordError, recordHtmlError } from "../engine/NodePenaltyService.js";
+import { getBestNode, getPenalty, recordError, recordHtmlError } from "../engine/NodePenaltyService.js";
+import { get } from "../engine/lavalink.js";
 
 const BAD_KEYWORDS = [
   "remix", "cover", "live", "karaoke", "nightcore", "slowed", "sped up",
@@ -56,6 +57,21 @@ export function pickBestTrack(tracks: any[]): any {
   return best;
 }
 
+async function searchViaHealthyNode(query: any, user: any, retries = 1): Promise<any | null> {
+  const lavalink = get();
+  if (!lavalink?.nodeManager) return null;
+  const best = getBestNode(lavalink);
+  if (!best?.connected) return null;
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await best.search(query, user);
+    } catch {
+      if (i < retries) await new Promise(r => setTimeout(r, 1000));
+    }
+  }
+  return null;
+}
+
 export async function searchWithRetry(player: any, query: any, user: any, _retries = 2): Promise<any> {
   try {
     const result = await player.search(query, user);
@@ -68,6 +84,14 @@ export async function searchWithRetry(player: any, query: any, user: any, _retri
     recordError(nodeName, errMsg);
     if (/html|proxy|cloudflare|503|502|gateway/i.test(errMsg)) recordHtmlError(nodeName);
     if (_retries > 0) return searchWithRetry(player, query, user, _retries - 1);
+    const nodePenalty = getPenalty(nodeName);
+    if (nodePenalty > 300) {
+      const fallback = await searchViaHealthyNode(query, user);
+      if (fallback) {
+        Logger.info(`[SearchRoute] Fallback via healthy node for "${qStr.slice(0,40)}" (player node=${nodeName} penalty=${nodePenalty})`);
+        return fallback;
+      }
+    }
     throw err;
   }
 }
@@ -80,17 +104,21 @@ export async function findTrackWithDuration(
 ): Promise<any | null> {
   const origDur = origTrack.info?.length || origTrack.info?.durationMs || 0;
   for (const prefix of ["ytmsearch", "ytsearch", "scsearch"]) {
+    let res = null;
     try {
-      const res = await player.search({ query: `${prefix}:${query}` }, clientRef);
-      const found = res?.tracks?.find((t: any) => {
-        if (!t.encoded) return false;
-        if (t.info?.sourceName === "deezer") return false;
-        const fDur = t.info?.length || t.info?.durationMs || 0;
-        if (origDur && fDur && Math.abs(fDur - origDur) / origDur > 0.3) return false;
-        return true;
-      });
-      if (found) return found;
-    } catch { continue; }
+      res = await player.search({ query: `${prefix}:${query}` }, clientRef);
+    } catch {
+      res = await searchViaHealthyNode({ query: `${prefix}:${query}` }, clientRef, 0);
+    }
+    if (!res) continue;
+    const found = (res.tracks || []).find((t: any) => {
+      if (!t.encoded) return false;
+      if (t.info?.sourceName === "deezer") return false;
+      const fDur = t.info?.length || t.info?.durationMs || 0;
+      if (origDur && fDur && Math.abs(fDur - origDur) / origDur > 0.3) return false;
+      return true;
+    });
+    if (found) return found;
   }
   return null;
 }

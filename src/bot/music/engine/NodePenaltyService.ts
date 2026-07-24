@@ -85,7 +85,7 @@ function clearUnhealthy(nodeName: string): void {
 function getBestNode(manager: any, preferredRegion?: string): any {
   if (!manager?.nodeManager?.nodes) return null;
   const connected = Array.from(manager.nodeManager.nodes.values())
-    .filter((n: any) => n.connected && !drainingNodes.has(n.options?.name || n.name) && !isUnhealthy(n.options?.name || n.name));
+    .filter((n: any) => n.connected && !drainingNodes.has(n.options?.id) && !isUnhealthy(n.options?.id));
   if (!connected.length) return null;
 
   if (preferredRegion) {
@@ -102,7 +102,7 @@ function getBestNode(manager: any, preferredRegion?: string): any {
 }
 
 function scoreSorter(a: any, b: any): number {
-  return a.stats?.players * 10 + getPenalty(a.options?.name || a.name) - (b.stats?.players * 10 + getPenalty(b.options?.name || b.name));
+  return a.stats?.players * 10 + getPenalty(a.options?.id) - (b.stats?.players * 10 + getPenalty(b.options?.id));
 }
 
 function selectPenalty(connected: any[]): any {
