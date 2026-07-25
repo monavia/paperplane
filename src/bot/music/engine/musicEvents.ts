@@ -17,6 +17,9 @@ import botConfig from "../../config/bot.js";
 import * as EventBus from "../events/EventBus.js";
 import { cleanTitle, saveSpotifyMeta, applySpotifyMeta } from "../services/TitleResolver.js";
 import { findTrackWithDuration } from "../services/SearchService.js";
+import { getAdapter } from "../../cache/CacheAdapter.js";
+import { isDead, markDead, deadFingerprint, deadSpotifyFingerprint } from "../../cache/DeadTrackService.js";
+import { isFailoverGuild as fmIsFailoverGuild, clearFailoverGuild as fmClearFailoverGuild } from "./FailoverManager.js";
 import AutoplayEngine from "./AutoplayEngine.js";
 
 const autoplayInst = new AutoplayEngine();
@@ -81,29 +84,57 @@ async function advanceQueue(player: any): Promise<any> {
       let next = queue.shift();
       state.queues.set(guildId, queue);
 
-      if (!next.encoded && next.info?.uri) {
-        try {
-          const uri = next.info.uri;
-          const isSpotify = /^spotify:(track|album|playlist):/.test(uri) || /open\.spotify\.com/i.test(uri);
-          const savedMeta = saveSpotifyMeta(next);
-          if (isSpotify) {
-            const q = `${next.info.author || ""} ${next.info.title || ""}`.trim();
-            const found = await findTrackWithDuration(player, q, next, clientRef?.user);
-            if (found) {
-              Object.assign(next, found);
-              applySpotifyMeta(next, savedMeta);
-            }
-          } else {
-            const res = await player.search({ query: uri }, clientRef?.user).catch(() => null);
-            if (res?.tracks?.length) {
-              Object.assign(next, res.tracks[0]);
-            }
+      const fp = next.info?.title ? deadFingerprint(next.info.title, next.info.author) : null;
+      if (fp && await isDead(fp)) {
+        Logger.warn(`[advanceQueue] guild=${guildId} skipping dead track: ${next.info?.title || "?"}`);
+        continue;
+      }
+
+      if (next.info?.uri) {
+        const isSpotifyTrack = /^spotify:track:|open\.spotify\.com\/track\//.test(next.info.uri);
+        if (isSpotifyTrack) {
+          const m = next.info.uri.match(/([a-zA-Z0-9]+)$/);
+          if (m && await isDead(deadSpotifyFingerprint(m[1]))) {
+            Logger.warn(`[advanceQueue] guild=${guildId} skipping dead Spotify track: ${m[1]}`);
+            continue;
           }
-        } catch { Logger.warn(`[advanceQueue] Re-resolution failed for ${guildId}`); }
+        }
+      }
+
+      if (!next.encoded && next.info?.uri) {
+        const cacheKey = `prefetch:${next.info.uri}`;
+        const prefetched = await getAdapter().get<any>(cacheKey);
+        if (prefetched?.encoded) {
+          Object.assign(next, prefetched);
+          Logger.info(`[advanceQueue] Prefetch hit for ${guildId}`);
+        } else {
+          try {
+            const uri = next.info.uri;
+            const isSpotify = /^spotify:(track|album|playlist):/.test(uri) || /open\.spotify\.com/i.test(uri);
+            const savedMeta = saveSpotifyMeta(next);
+            if (isSpotify) {
+              const q = `${next.info.author || ""} ${next.info.title || ""}`.trim();
+              const found = await findTrackWithDuration(player, q, next, clientRef?.user);
+              if (found) {
+                Object.assign(next, found);
+                applySpotifyMeta(next, savedMeta);
+              }
+            } else {
+              const res = await player.search({ query: uri }, clientRef?.user).catch(() => null);
+              if (res?.tracks?.length) {
+                Object.assign(next, res.tracks[0]);
+              }
+            }
+          } catch {
+            Logger.warn(`[advanceQueue] Re-resolution failed for ${guildId}`);
+            if (fp) markDead(fp, "re_resolve_failed").catch(() => {});
+          }
+        }
       }
 
       if (!next.encoded) {
         Logger.warn(`[advanceQueue] guild=${guildId} skipping track without encoded data`);
+        if (fp) markDead(fp, "no_encoded_data").catch(() => {});
         continue;
       }
 
@@ -120,13 +151,50 @@ async function advanceQueue(player: any): Promise<any> {
           q.push(next);
           state.queues.set(guildId, q);
         }
+        schedulePreFetch(player, guildId).catch(() => {});
         return next;
       } catch (err: any) {
         Logger.error(`[advanceQueue] guild=${guildId} failed to play "${next.info?.title || "?"}": ${err?.message} — skipping to next`);
+        if (fp) markDead(fp, `play_failed:${err?.message?.slice(0, 60)}`).catch(() => {});
       }
     }
     return null;
   });
+}
+
+async function schedulePreFetch(player: any, guildId: string): Promise<void> {
+  const queue = state.queues.get(guildId) || [];
+  const targets = queue.slice(0, 5).filter((t: any) => !t.encoded && t.info?.uri);
+  if (!targets.length) return;
+  const results = await Promise.allSettled(
+    targets.map(async (t: any) => {
+      const key = `prefetch:${t.info.uri}`;
+      const existing = await getAdapter().get<any>(key);
+      if (existing?.encoded) return;
+      const isSpotify = /^spotify:(track|album|playlist):/.test(t.info.uri) || /open\.spotify\.com/i.test(t.info.uri);
+      if (isSpotify) {
+        const q = `${t.info.author || ""} ${t.info.title || ""}`.trim();
+        if (!q) return;
+        const found = await findTrackWithDuration(player, q, t, clientRef?.user).catch(() => null);
+        if (found?.encoded) {
+          await getAdapter().set(key, found, 1_800_000);
+          const m = t.info.uri.match(/([a-zA-Z0-9]+)$/);
+          if (m) {
+            const cacheData = { encoded: found.encoded, title: found.info?.title || "", author: found.info?.author || "", thumbnail: found.info?.artworkUrl || null };
+            await getAdapter().set(`fallback:spotify:${m[1]}`, cacheData, 86_400_000);
+            await getAdapter().set(`fallback:spotify:${t.info.uri}`, cacheData, 86_400_000);
+          }
+        }
+      } else {
+        const res = await player.search({ query: t.info.uri }, clientRef?.user).catch(() => null);
+        if (res?.tracks?.[0]?.encoded) {
+          await getAdapter().set(key, res.tracks[0], 1_800_000);
+        }
+      }
+    }),
+  );
+  const ok = results.filter(r => r.status === "fulfilled").length;
+  if (ok) Logger.info(`[Prefetch] guild=${guildId} prefetched ${ok}/${targets.length} tracks`);
 }
 
 export function startStuckTimer(guildId: string): void {
@@ -216,8 +284,8 @@ function register(client: any): void {
     const isManualAdvance = manualAdvances.has(player.guildId);
     const suppress = suppressTrackStart.has(player.guildId);
     if (suppress) suppressTrackStart.delete(player.guildId);
-    const isFailover = lavalink.isFailoverGuild?.(player.guildId);
-    if (isFailover) { lavalink.clearFailoverGuild(player.guildId); }
+    const isFailover = fmIsFailoverGuild(player.guildId);
+    if (isFailover) { fmClearFailoverGuild(player.guildId); }
     // Only suppress for first track after restore (not all tracks during startup)
     const isFirstRestored = restoredGuilds.has(player.guildId);
     if (isFirstRestored) restoredGuilds.delete(player.guildId);

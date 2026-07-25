@@ -73,22 +73,30 @@ async function searchViaHealthyNode(query: any, user: any, retries = 1): Promise
 }
 
 export async function searchWithRetry(player: any, query: any, user: any, _retries = 2): Promise<any> {
+  const nodeName = player.node?.id || "?";
+  const nodePenalty = getPenalty(nodeName);
+  if (nodePenalty > 200) {
+    const fallback = await searchViaHealthyNode(query, user);
+    if (fallback) {
+      Logger.info(`[SearchRoute] Skipped unhealthy node: ${nodeName} penalty=${nodePenalty}`);
+      return fallback;
+    }
+  }
   try {
     const result = await player.search(query, user);
     return result;
   } catch (err: any) {
-    const nodeName = player.node?.id || "?";
     const errMsg = err?.message || String(err);
     const qStr = typeof query === "object" ? (query.query || query.q || JSON.stringify(query)) : String(query);
     Logger.warn(`[SearchTimeout] retriesLeft=${_retries} err="${errMsg.slice(0,60)}" query="${qStr.slice(0,60)}" node=${nodeName}`);
     recordError(nodeName, errMsg);
     if (/html|proxy|cloudflare|503|502|gateway/i.test(errMsg)) recordHtmlError(nodeName);
     if (_retries > 0) return searchWithRetry(player, query, user, _retries - 1);
-    const nodePenalty = getPenalty(nodeName);
-    if (nodePenalty > 300) {
+    const finalPenalty = getPenalty(nodeName);
+    if (finalPenalty > 300) {
       const fallback = await searchViaHealthyNode(query, user);
       if (fallback) {
-        Logger.info(`[SearchRoute] Fallback via healthy node for "${qStr.slice(0,40)}" (player node=${nodeName} penalty=${nodePenalty})`);
+        Logger.info(`[SearchRoute] Fallback via healthy node for "${qStr.slice(0,40)}" (player node=${nodeName} penalty=${finalPenalty})`);
         return fallback;
       }
     }

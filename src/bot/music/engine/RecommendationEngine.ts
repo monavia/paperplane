@@ -1,6 +1,10 @@
 import * as EventBus from "../events/EventBus.js";
 import { isCover } from "../services/TitleResolver.js";
+import { getAdapter } from "../../cache/CacheAdapter.js";
 import Logger from "../../core/utils/Logger.js";
+
+const GENRE_PREFIX = "taste:";
+const TASTE_TTL = 7 * 86400000;
 
 class RecommendationEngine {
   private playedTracks: Map<string, Set<string>> = new Map();
@@ -21,7 +25,6 @@ class RecommendationEngine {
   _buildQuery(info: any): string {
     let author = (info.author || "").replace(/^Various\s*$/i, "").trim();
     let title = (info.title || "").trim();
-    // Fix truncated titles: "feat." tanpa tutup kurung
     if (/\(feat\.?\s*$/i.test(title)) title = title.replace(/\(\s*feat\.?\s*$/i, "");
     if (/\(ft\.?\s*$/i.test(title)) title = title.replace(/\(\s*ft\.?\s*$/i, "");
     if (author && author !== "Unknown Artist" && author !== "Unknown") return `${author} - ${title}`.trim();
@@ -65,51 +68,89 @@ class RecommendationEngine {
 
   clearPlayed(guildId: string): void { this.playedTracks.delete(guildId); }
 
+  async _incrementGenre(guildId: string, author: string): Promise<void> {
+    if (!author) return;
+    try {
+      const adapter = getAdapter();
+      const key = `${GENRE_PREFIX}${guildId}`;
+      const taste = await adapter.get<Record<string, number>>(key) || {};
+      const genre = author.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 20);
+      if (genre) { taste[genre] = (taste[genre] || 0) + 1; await adapter.set(key, taste, TASTE_TTL); }
+    } catch {}
+  }
+
+  async _getGenrePrefs(guildId: string): Promise<Set<string>> {
+    try {
+      const taste = await getAdapter().get<Record<string, number>>(`${GENRE_PREFIX}${guildId}`);
+      if (!taste) return new Set();
+      const top = Object.entries(taste).sort((a, b) => b[1] - a[1]).slice(0, 5).map(e => e[0]);
+      return new Set(top);
+    } catch { return new Set(); }
+  }
+
   async getRecommendations(player: any, track: any, guildId: string, count: number = 5): Promise<any[]> {
     if (!track?.info) return [];
     try {
-      let candidates: any[] = [];
+      this._incrementGenre(guildId, track.info.author).catch(() => {});
 
-      // 1. Multi-source search pake judul (paling reliable buat cloud Lavalink)
-      const query = this._buildQuery(track.info);
-      if (query) {
-        const searches = [
-          `ytmsearch:${query}`,
-          `ytsearch:${query}`,
-          `scsearch:${query}`,
-        ];
-        for (const sq of searches) {
-          const r = await this._searchWithRetry(player, { query: sq }).catch(() => null);
-          if (r?.tracks?.length) { candidates = r.tracks; break; }
+      const candidates: any[] = [];
+      const seen = new Set<string>();
+
+      // 1. Primary: YouTube Mix (radio) — real recommendations
+      const mixTracks = await this._getYouTubeMix(player, track);
+      for (const t of mixTracks) {
+        const k = this._trackKey(t);
+        if (!seen.has(k)) { seen.add(k); candidates.push(t); }
+      }
+
+      // 2. Similar artist search — diverse recommendations
+      const author = (track.info.author || "").replace(/^Various\s*$/i, "").trim();
+      if (author && author !== "Unknown Artist") {
+        const r = await this._searchWithRetry(player, { query: `ytmsearch:${author}` }).catch(() => null);
+        if (r?.tracks?.length) {
+          for (const t of r.tracks) {
+            const k = this._trackKey(t);
+            if (!seen.has(k)) { seen.add(k); candidates.push(t); }
+          }
         }
       }
 
-      // 2. Fallback: YouTube Mix (radio) — sering gagal di cloud Lavalink
-      if (!candidates.length) {
-        candidates = await this._getYouTubeMix(player, track);
+      // 3. Only if still low on candidates: search by title
+      if (candidates.length < count) {
+        const query = this._buildQuery(track.info);
+        if (query) {
+          const r = await this._searchWithRetry(player, { query: `ytmsearch:${query}` }).catch(() => null);
+          if (r?.tracks?.length) {
+            for (const t of r.tracks) {
+              const k = this._trackKey(t);
+              if (!seen.has(k)) { seen.add(k); candidates.push(t); }
+            }
+          }
+        }
       }
 
-      // 3. Fallback: search by source URI
-      if (!candidates.length && track.info?.uri && track.info.sourceName === "youtube") {
-        const result = await this._searchWithRetry(player, { query: track.info.uri }).catch(() => null);
-        if (result?.tracks?.length) candidates = result.tracks;
-      }
-
-      if (!candidates.length) {
-        Logger.info(`[RecEngine] No candidates from any source for "${this._buildQuery(track.info)}"`);
-        return [];
-      }
+      // 4. Try genre-boost: boost tracks from preferred genres
+      const genrePrefs = await this._getGenrePrefs(guildId);
       const origDuration = track?.info?.duration || 0;
       const filtered = candidates.filter((t: any) => {
         const titleL = (t?.info?.title || "").toLowerCase();
+        const ta = (t?.info?.author || "").toLowerCase();
         return !this._isSameTrack(t, track) &&
         !this._isPlayed(guildId, t) &&
         !isCover(t?.info?.title || "", t?.info?.author) &&
-        !titleL.includes("instrumental") &&
-        !titleL.includes("karaoke") &&
+        !titleL.includes("instrumental") && !titleL.includes("karaoke") &&
         !/session|#\w+|@\s+\w+|version|tribute\b/i.test(titleL) &&
-        (origDuration < 30000 || !t?.info?.duration || Math.abs(t.info.duration - origDuration) / origDuration < 0.4);
+        (origDuration < 30000 || !t?.info?.duration || Math.abs(t.info.duration - origDuration) / origDuration < 0.4) &&
+        (!genrePrefs.size || genrePrefs.has(ta.replace(/[^a-z0-9]/g, "").slice(0, 20)));
       });
+
+      if (!filtered.length) {
+        const fallback = candidates.filter((t: any) => !this._isSameTrack(t, track) && !this._isPlayed(guildId, t));
+        for (const t of fallback) this._markPlayed(guildId, t);
+        Logger.info(`[RecEngine] Strict filter empty, fallback to lenient (${fallback.length} tracks)`);
+        return fallback.sort(() => Math.random() - 0.5).slice(0, count);
+      }
+
       for (const t of filtered) this._markPlayed(guildId, t);
       return filtered.sort(() => Math.random() - 0.5).slice(0, count);
     } catch { return []; }

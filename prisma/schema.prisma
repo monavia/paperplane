@@ -87,6 +87,20 @@ model HistoryEntry {
   @@index([guildId])
 }
 
+model CachedTrack {
+  identifier String   @id
+  query      String   @default("")
+  source     String   @default("unknown")
+  trackData  Json
+  hitCount   Int      @default(0)
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([hitCount(sort: Desc)])
+  @@index([source, hitCount(sort: Desc)])
+}
+
 // Dashboard tables (managed by Dashboard Discord/, NOT by bot)
 model team_tags {
   name      String @id

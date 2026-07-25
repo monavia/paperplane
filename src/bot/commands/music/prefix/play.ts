@@ -16,13 +16,14 @@ import { getPlayer, createPlayer } from "../../../music/engine/PlayerManager.js"
 import { setTextChannelId } from "../../../music/services/TextChannelStore.js";
 import { getEngine } from "../../../music/services/PlayerService.js";
 
+const MAX_SPOTIFY = 50;
+
 async function resolveSpotifyTrack(player: any, spotifyItem: any, user: any): Promise<any> {
   const q = spotifyItem.query || `${spotifyItem.artists?.join(" ") || ""} ${spotifyItem.name}`.trim();
   if (!q) return null;
   let tracks: any;
-  try { const yt = await searchWithRetry(player, { query: `ytsearch:${q}` }, user); tracks = yt?.tracks; } catch {}
-  if (!tracks?.length) { try { const ytm = await searchWithRetry(player, { query: `ytmsearch:${q}` }, user); tracks = ytm?.tracks; } catch {} }
-  if (!tracks?.length) { try { const sc = await searchWithRetry(player, { query: `scsearch:${q}` }, user); tracks = sc?.tracks; } catch {} }
+  try { const ytm = await searchWithRetry(player, { query: `ytmsearch:${q}` }, user); tracks = ytm?.tracks; } catch {}
+  if (!tracks?.length) { try { const yt = await searchWithRetry(player, { query: `ytsearch:${q}` }, user); tracks = yt?.tracks; } catch {} }
   if (tracks?.length) {
     const track = pickBestTrack(tracks);
     if (!track.info) track.info = {};
@@ -36,15 +37,17 @@ async function resolveSpotifyTrack(player: any, spotifyItem: any, user: any): Pr
   return null;
 }
 
-async function resolveSpotifyBatch(items: any[], player: any, guildId: string, user: any): Promise<any[]> {
+async function resolveSpotifyBatch(items: any[], player: any, guildId: string, user: any, onProgress?: (done: number, total: number) => void): Promise<any[]> {
   const resolved: any[] = [];
-  for (let b = 0; b < items.length; b += 5) {
+  const BATCH = 5;
+  for (let b = 0; b < items.length; b += BATCH) {
     const results = await Promise.allSettled(
-      items.slice(b, b + 5).map((item: any) => resolveSpotifyTrack(player, item, user))
+      items.slice(b, b + BATCH).map((item: any) => resolveSpotifyTrack(player, item, user))
     );
     for (const r of results) {
       if (r.status === "fulfilled" && r.value) resolved.push(r.value);
     }
+    onProgress?.(Math.min(b + BATCH, items.length), items.length);
   }
   const curQueue = state.queues.get(guildId) || [];
   const space = botConfig.maxQueue - curQueue.length;
@@ -88,21 +91,21 @@ export default {
       // Spotify URL handling
       const spotifyParsed = parseSpotifyUrl(query);
       if (spotifyParsed) {
-        const items = await scrapeSpotify(query).catch((err: any) => {
+        const items = (await scrapeSpotify(query).catch((err: any) => {
           throw new Error(`Spotify: ${err.message}`);
-        });
+        }))?.slice(0, MAX_SPOTIFY);
         if (!items?.length) throw new Error("No tracks found on Spotify.");
         Logger.info(`[Spotify] Scraped ${items.length} items. First query: "${items[0]?.query?.slice(0, 80)}"`);
 
         if (player.playing || player.paused || state.queues.get(message.guildId)?.length) {
-          // Already playing — queue all in background
           const statusMsg = await message.channel.send({
-            embeds: [new EmbedBuilder().setDescription(`Added ${items.length} tracks from Spotify.`).setColor(Colors.INFO)]
+            embeds: [new EmbedBuilder().setDescription(`Resolving ${items.length} tracks from Spotify...`).setColor(Colors.INFO)]
           }).catch(() => null);
-          resolveSpotifyBatch(items, player, message.guildId, message.author).then((added) => {
-            statusMsg?.edit({ embeds: [new EmbedBuilder().setDescription(`Added ${added.length} tracks from Spotify.`).setColor(Colors.SUCCESS)] }).catch(() => {});
-            Logger.info(`[Spotify] Resolved ${added.length}/${items.length} tracks`);
-          }).catch((err) => Logger.error(`[Spotify] Background resolve error: ${err.message}`));
+          const added = await resolveSpotifyBatch(items, player, message.guildId, message.author, (done, total) => {
+            statusMsg?.edit({ embeds: [new EmbedBuilder().setDescription(`Resolved ${done}/${total} tracks from Spotify...`).setColor(Colors.INFO)] }).catch(() => {});
+          });
+          statusMsg?.edit({ embeds: [new EmbedBuilder().setDescription(`Added ${added.length} tracks from Spotify.`).setColor(Colors.SUCCESS)] }).catch(() => {});
+          Logger.info(`[Spotify] Resolved ${added.length}/${items.length} tracks`);
           return;
         }
 
@@ -120,12 +123,13 @@ export default {
 
         if (rest.length) {
           const statusMsg = await message.channel.send({
-            embeds: [new EmbedBuilder().setDescription(`Added ${rest.length} tracks from Spotify.`).setColor(Colors.INFO)]
+            embeds: [new EmbedBuilder().setDescription(`Resolving ${rest.length} tracks from Spotify...`).setColor(Colors.INFO)]
           }).catch(() => null);
-          resolveSpotifyBatch(rest, player, message.guildId, message.author).then((added) => {
-            statusMsg?.edit({ embeds: [new EmbedBuilder().setDescription(`Added ${added.length} tracks from Spotify.`).setColor(Colors.SUCCESS)] }).catch(() => {});
-            Logger.info(`[Spotify] Resolved ${added.length}/${rest.length} tracks`);
-          }).catch((err) => Logger.error(`[Spotify] Background resolve error: ${err.message}`));
+          const added = await resolveSpotifyBatch(rest, player, message.guildId, message.author, (done, total) => {
+            statusMsg?.edit({ embeds: [new EmbedBuilder().setDescription(`Resolved ${done}/${total} tracks from Spotify...`).setColor(Colors.INFO)] }).catch(() => {});
+          });
+          statusMsg?.edit({ embeds: [new EmbedBuilder().setDescription(`Added ${added.length} tracks from Spotify.`).setColor(Colors.SUCCESS)] }).catch(() => {});
+          Logger.info(`[Spotify] Resolved ${added.length}/${rest.length} tracks`);
         }
         return;
       }

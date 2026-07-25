@@ -16,17 +16,17 @@ import { getPlayer, createPlayer } from "../../../music/engine/PlayerManager.js"
 import { setTextChannelId } from "../../../music/services/TextChannelStore.js";
 import { getEngine } from "../../../music/services/PlayerService.js";
 
+const MAX_SPOTIFY = 50;
+
 async function resolveSpotifyTrack(player: any, spotifyItem: any, user: any): Promise<any> {
   const q = spotifyItem.query || `${spotifyItem.artists?.join(" ") || ""} ${spotifyItem.name}`.trim();
   if (!q) return null;
   let result: any;
-  try { result = await searchWithRetry(player, { query: `ytsearch:${q}` }, user); } catch {}
-  if (!result?.tracks?.length) { try { result = await searchWithRetry(player, { query: `ytmsearch:${q}` }, user); } catch {} }
-  if (!result?.tracks?.length) { try { result = await searchWithRetry(player, { query: `scsearch:${q}` }, user); } catch {} }
+  try { result = await searchWithRetry(player, { query: `ytmsearch:${q}` }, user); } catch {}
+  if (!result?.tracks?.length) { try { result = await searchWithRetry(player, { query: `ytsearch:${q}` }, user); } catch {} }
   if (result?.tracks?.length) {
     const track = pickBestTrack(result.tracks);
     if (!track.info) track.info = {};
-    // Override YouTube title with clean Spotify name
     const artistStr = spotifyItem.artists?.join(", ") || track.info.author || "";
     track.info.author = artistStr;
     track.info.title = spotifyItem.name || track.info.title;
@@ -80,14 +80,13 @@ export default {
           embeds: [NowPlayingEmbed.build({ info: { title: "Searching tracks from Spotify..." } }, null)],
         });
 
-        const items = await scrapeSpotify(query).catch((err: any) => {
+        const items = (await scrapeSpotify(query).catch((err: any) => {
           throw new Error(`Spotify: ${err.message}`);
-        });
+        }))?.slice(0, MAX_SPOTIFY);
         if (!items?.length) throw new Error("No tracks found on Spotify.");
 
-        // Resolve all tracks to YouTube in parallel batches (asli pake batch 20)
         const resolvedTracks: any[] = [];
-        const BATCH = 20;
+        const BATCH = 5;
         for (let b = 0; b < items.length; b += BATCH) {
           const batch = items.slice(b, b + BATCH);
           const results = await Promise.allSettled(

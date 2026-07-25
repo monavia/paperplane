@@ -3,9 +3,46 @@ import { withQueueLock } from "../../core/state/QueueLock.js";
 import * as SpotifyScraper from "../engine/SpotifyScraper.js";
 import SpotifyResolver from "../engine/SpotifyResolver.js";
 import { searchWithRetry } from "./SearchService.js";
+import { getAdapter } from "../../cache/CacheAdapter.js";
 import ActivityService from "../../services/ActivityService.js";
 import botConfig from "../../config/bot.js";
 import { applySpotifyMeta } from "./TitleResolver.js";
+
+const FALLBACK_PREFIX = "fallback:spotify:";
+const FALLBACK_TTL = 86_400_000;
+
+function extractSpotifyTrackId(uri: string): string | null {
+  const m = uri.match(/spotify:track:([a-zA-Z0-9]+)/);
+  if (m) return m[1];
+  const u = uri.match(/open\.spotify\.com\/track\/([a-zA-Z0-9]+)/);
+  if (u) return u[1];
+  return null;
+}
+
+async function getFallbackCache(uri: string): Promise<any | null> {
+  const adapter = getAdapter();
+  const trackId = extractSpotifyTrackId(uri);
+  const keys = [uri, `byuri:${uri}`];
+  if (trackId) keys.push(trackId);
+  for (const k of keys) {
+    const data = await adapter.get<any>(`${FALLBACK_PREFIX}${k}`);
+    if (data?.encoded) { Logger.info(`[SpotiFailCache] Hit ${k}`); return data; }
+  }
+  return null;
+}
+
+async function setFallbackCache(uri: string, track: any): Promise<void> {
+  const adapter = getAdapter();
+  const data = {
+    encoded: track.encoded || null,
+    title: track.info?.title || "",
+    author: track.info?.author || "",
+    thumbnail: track.info?.artworkUrl || null,
+  };
+  await adapter.set(`${FALLBACK_PREFIX}${uri}`, data, FALLBACK_TTL);
+  const trackId = extractSpotifyTrackId(uri);
+  if (trackId) await adapter.set(`${FALLBACK_PREFIX}${trackId}`, data, FALLBACK_TTL);
+}
 
 function normalize(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, "").trim();
@@ -43,6 +80,21 @@ function pickBestMatch(tracks: any[], expectedMs: number | null, expectedTitle: 
 }
 
 async function searchWithFallback(player: any, item: any, user: any) {
+  if (item.spotifyUri) {
+    const cached = await getFallbackCache(item.spotifyUri);
+    if (cached?.encoded) {
+      const best: any = { encoded: cached.encoded, info: {}, _spotifyUri: item.spotifyUri };
+      best.info.title = cached.title;
+      best.info.author = cached.author;
+      best.info.artworkUrl = cached.thumbnail;
+      applySpotifyMeta(best, {
+        title: item.name || cached.title || null,
+        author: item.artists?.join(", ") || cached.author || null,
+        spotifyUrl: item.spotifyUri || null,
+      });
+      return best;
+    }
+  }
   for (const prefix of ["ytsearch", "ytmsearch", "scsearch"]) {
     const result = await searchWithRetry(player, { query: `${prefix}:${item.query}` }, user, 0);
     if (result?.tracks?.length) {
@@ -54,6 +106,7 @@ async function searchWithFallback(player: any, item: any, user: any) {
           author: item.artists?.join(", ") || null,
           spotifyUrl: item.spotifyUri || null,
         });
+        if (item.spotifyUri && best.encoded) setFallbackCache(item.spotifyUri, best).catch(() => {});
       }
       return best;
     }
