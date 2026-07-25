@@ -486,16 +486,14 @@ Lapisan stabilitas dan observasi sebelum scale.
 
 > **⚠️ Prioritas diturunkan —** Fitur ini penting buat UX tapi gak ngaruh ke stabilitas di 1000+ guilds. Scaling (0.7 Cache, 1.10 Rate Limit) harus duluan.
 
-### 1.10 API Rate Limiting 🟡 (1-2 hari)
+### 1.10 API Rate Limiting ✅
 
-**Masalah:** Bot API (`:3001`) nggak punya rate limiting. Dashboard polling + 1000 guilds bisa flood tak sengaja. Juga gak ada proteksi dari abuse kalo endpoint terekspos.
-
-| # | Task | Detail | File | Priority |
-|---|------|--------|------|----------|
-| 1.10.1 | **Rate limit middleware** | `guildRateLimit()` udah ada di `api-base.ts` — wrapper tiap route. Default: 100 req/min/guild. Config via env `API_RATE_LIMIT`. | `src/lib/api-base.ts` | **Tinggi** |
-| 1.10.2 | **Dashboard polling throttle** | Dashboard poll `/api/guild/:id/nowplaying` + `/api/guild/:id/queue`. Rate limit dashboard user lebih longgar (300 req/min). Bedain via `User-Agent` atau `Referer`. | `src/lib/api-base.ts` | Sedang |
-| 1.10.3 | **Global rate limit** | Per-IP rate limit total (1000 req/min). Proteksi dari DDoS atau loop tak sengaja. | `src/bot/api/apiServer.ts` | Sedang |
-| 1.10.4 | **Rate limiter key spoofing** — C8 | `guildRateLimit()` key by `guildId` — attacker bisa burn rate limit guild lain. Fix: key by `guildId:ip`. Tambah global per-IP limit. | `src/lib/api-base.ts` | Sedang |
+| # | Task | Detail | File | Status |
+|---|------|--------|------|--------|
+| 1.10.1 | **Rate limit middleware** | `guildRateLimit()` per route + config via env `API_RATE_LIMIT`. | `src/lib/api-base.ts` | ✅ |
+| 1.10.2 | **Dashboard polling throttle** | Already handled by existing guildRateLimit (20-30/min). Dashboard polls every ~3s — within limits. | — | ✅ |
+| 1.10.3 | **Global rate limit** | `globalRateLimit()`: 1000 req/min default, trusted IPs bypass, config via `API_RATE_LIMIT`. | `src/lib/api-base.ts`, `apiServer.ts` | ✅ |
+| 1.10.4 | **Rate limiter key spoofing** — C8 | Key `guildId` → `guildId:clientIp` (x-forwarded-for for reverse proxy). | `src/lib/api-base.ts` | ✅ |
 
 ---
 

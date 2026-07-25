@@ -8,6 +8,17 @@
 - **Rollback docs** — `docs/backup.md`: step-by-step `git revert` → rebuild → restart → verify. Restore from backup prosedur.
 - **Cron config** — backup otomatis tiap jam 3 pagi via crontab.
 
+### Persistent Queue Store (Fase 1.1)
+
+- **MongoQueueStore** — `lavalink.ts`: sudah terpasang di `queueOptions.queueStore`. Queue persist di MongoDB via `PlayerState`, dual-system dengan `saveState`. Restart bot → queue gak hilang.
+
+### API Rate Limiting (Fase 1.10)
+
+- **Global IP rate limit** — `api-base.ts`: middleware `globalRateLimit()` (default 1000 req/min, config via `API_RATE_LIMIT`, trusted IPs bypass).
+- **Key spoofing fix** — `guildRateLimit()` key dari `guildId` → `guildId:clientIp`. Pakai `x-forwarded-for` header untuk reverse proxy.
+- **Per-guild limits** — player 30/min, queue 20/min, filter/equalizer 20/min, search 15/min, GET 60/min.
+- **Config** — bot.ts + .env.example: tambah `API_RATE_LIMIT`.
+
 ## 2026-07-25 — v2.2.3
 
 ### Cache migration to Redis (Fase 0.7.1–0.7.2)

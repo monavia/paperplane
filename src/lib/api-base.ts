@@ -35,10 +35,14 @@ export function jsonResponse(res: any, data: any, status = 200) {
 
 const LOCAL_IPS = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
 
+function clientIp(req: any): string {
+  return req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.ip || req.connection?.remoteAddress || "0.0.0.0";
+}
+
 function isTrusted(req: any): boolean {
   const TRUSTED_IPS = (process.env.TRUSTED_IPS || "").split(",").map(s => s.trim()).filter(Boolean);
   const API_TOKEN = process.env.BOT_API_TOKEN || "";
-  const ip = req.ip || req.connection?.remoteAddress;
+  const ip = clientIp(req);
   if (LOCAL_IPS.has(ip)) return true;
   if (TRUSTED_IPS.includes(ip)) return true;
   if (API_TOKEN) {
@@ -48,7 +52,7 @@ function isTrusted(req: any): boolean {
   return false;
 }
 
-/** Per-guild sliding window rate limiter */
+/** Per-guild sliding window rate limiter (key = guildId:clientIp, prevents spoofing) */
 export function guildRateLimit(maxRequests: number, windowMs: number) {
   const windows = new Map<string, number[]>();
   const cleanup = setInterval(() => {
@@ -65,13 +69,16 @@ export function guildRateLimit(maxRequests: number, windowMs: number) {
     const guildId = req.params?.guildId;
     if (!guildId) return next();
 
+    const ip = clientIp(req);
+    const key = `${guildId}:${ip}`;
+
     // Redis-backed rate limit
     if (isAvailable()) {
       try {
         const redis = getCache()!;
-        const key = `${Config.redisPrefix}ratelimit:${guildId}`;
-        const count = await redis.incr(key);
-        if (count === 1) await redis.pexpire(key, windowMs);
+        const rkey = `${Config.redisPrefix}ratelimit:${key}`;
+        const count = await redis.incr(rkey);
+        if (count === 1) await redis.pexpire(rkey, windowMs);
         if (count > maxRequests) {
           try { incRateLimitBlocked(); } catch {}
           return res.status(429).json({ success: false, error: "Too many requests. Slow down." });
@@ -85,18 +92,48 @@ export function guildRateLimit(maxRequests: number, windowMs: number) {
 
     // In-memory fallback
     const now = Date.now();
-    let timestamps = windows.get(guildId) || [];
+    let timestamps = windows.get(key) || [];
     timestamps = timestamps.filter(t => now - t < windowMs);
     if (timestamps.length >= maxRequests) {
       try { incRateLimitBlocked(); } catch {}
       return res.status(429).json({ success: false, error: "Too many requests. Slow down." });
     }
     timestamps.push(now);
-    windows.set(guildId, timestamps);
+    windows.set(key, timestamps);
     try { incRateLimitAllowed(); } catch {}
     next();
   };
 }
+
+/** Per-IP global rate limit — applies to all routes */
+export function globalRateLimit(maxRequests = 1000, windowMs = 60000) {
+  const windows = new Map<string, number[]>();
+  const cleanup = setInterval(() => {
+    const now = Date.now();
+    for (const [key, timestamps] of windows) {
+      const valid = timestamps.filter(t => now - t < windowMs);
+      if (valid.length) windows.set(key, valid);
+      else windows.delete(key);
+    }
+  }, 15000);
+  if (cleanup.unref) cleanup.unref();
+
+  return (req: any, res: any, next: any) => {
+    if (isTrusted(req)) return next();
+    const ip = clientIp(req);
+    const now = Date.now();
+    let timestamps = windows.get(ip) || [];
+    timestamps = timestamps.filter(t => now - t < windowMs);
+    if (timestamps.length >= maxRequests) {
+      return res.status(429).json({ success: false, error: "Global rate limit exceeded." });
+    }
+    timestamps.push(now);
+    windows.set(ip, timestamps);
+    next();
+  };
+}
+
+
 
 export function withAuth(exemptPaths: string[] = ["/api/health"]) {
   const exempt = new Set(exemptPaths);

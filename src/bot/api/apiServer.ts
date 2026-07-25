@@ -18,7 +18,7 @@ import mongoose from "mongoose";
 import { getMetrics } from "../telemetry/MetricsCollector.js";
 import * as redis from "../cache/redis.js";
 import * as Sentry from "@sentry/node";
-import { createApiHandler, jsonResponse, ApiError, withAuth, getUserId, requireApiSameVoice, guildRateLimit } from "../../lib/api-base.js";
+import { createApiHandler, jsonResponse, ApiError, withAuth, getUserId, requireApiSameVoice, guildRateLimit, globalRateLimit } from "../../lib/api-base.js";
 
 const SNOWFLAKE_RE = /^\d{17,20}$/;
 function validateGuildId(req: any, res: any, next: any) {
@@ -58,6 +58,7 @@ function formatTrack(track: any) {
 export async function createApp(): Promise<express.Express> {
   const app = express();
   app.use(express.json());
+  app.use(globalRateLimit(Config.apiRateLimit, 60000));
   app.use(withAuth(["/api/health", "/api/metrics"]));
   app.use("/api/guild/:guildId", validateGuildId);
   app.use("/api/activities/:guildId", validateGuildId);
