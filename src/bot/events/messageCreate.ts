@@ -77,7 +77,8 @@ export function start(client: any): void {
 
     if (!isAI) return;
 
-    const prompt = isMention ? text : text.slice(trigger.length).trim();
+    const MAX_AI_LENGTH = 1500;
+    const prompt = (isMention ? text : text.slice(trigger.length).trim()).slice(0, MAX_AI_LENGTH);
     if (!prompt) return;
 
     // Check filter
