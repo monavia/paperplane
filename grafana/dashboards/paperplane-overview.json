@@ -1,0 +1,270 @@
+{
+  "__inputs": [],
+  "__requires": [],
+  "title": "Paperplane Overview",
+  "uid": "paperplane-overview",
+  "tags": ["paperplane"],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "refresh": "10s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "templating": {
+    "list": []
+  },
+  "panels": [
+    {
+      "title": "Guilds",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 0, "y": 0 },
+      "targets": [{ "expr": "paperplane_guild_count", "legendFormat": "guilds" }],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "steps": [{ "color": "green" }] }
+        }
+      }
+    },
+    {
+      "title": "Active Players",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 3, "y": 0 },
+      "targets": [{ "expr": "paperplane_active_players", "legendFormat": "players" }],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "steps": [{ "color": "green" }] }
+        }
+      }
+    },
+    {
+      "title": "Voice Connections",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 6, "y": 0 },
+      "targets": [{ "expr": "paperplane_voice_connections", "legendFormat": "connections" }],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "steps": [{ "color": "green" }] }
+        }
+      }
+    },
+    {
+      "title": "Lavalink Nodes Online",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 9, "y": 0 },
+      "targets": [{ "expr": "paperplane_lavalink_nodes_online", "legendFormat": "nodes" }],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "steps": [
+            { "color": "red", "value": null },
+            { "color": "orange", "value": 1 },
+            { "color": "green", "value": 2 }
+          ] }
+        }
+      }
+    },
+    {
+      "title": "Tracks Played",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 12, "y": 0 },
+      "targets": [{ "expr": "paperplane_tracks_played", "legendFormat": "played" }],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "steps": [{ "color": "green" }] }
+        }
+      }
+    },
+    {
+      "title": "Node Disconnects",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 15, "y": 0 },
+      "targets": [{ "expr": "sum(paperplane_lavalink_node_disconnects_total)", "legendFormat": "disconnects" }],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "steps": [
+            { "color": "green", "value": null },
+            { "color": "orange", "value": 5 },
+            { "color": "red", "value": 20 }
+          ] }
+        }
+      }
+    },
+    {
+      "title": "Rate Limited",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 18, "y": 0 },
+      "targets": [{ "expr": "paperplane_rate_limit_blocked", "legendFormat": "blocked" }],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "steps": [
+            { "color": "green", "value": null },
+            { "color": "orange", "value": 50 },
+            { "color": "red", "value": 200 }
+          ] }
+        }
+      }
+    },
+    {
+      "title": "Event Loop Lag",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 3, "x": 21, "y": 0 },
+      "targets": [{ "expr": "paperplane_event_loop_lag", "legendFormat": "ms" }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "steps": [
+            { "color": "green", "value": null },
+            { "color": "orange", "value": 50 },
+            { "color": "red", "value": 200 }
+          ] }
+        }
+      }
+    },
+    {
+      "title": "Memory Usage",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "targets": [
+        { "expr": "paperplane_memory_rss", "legendFormat": "RSS" },
+        { "expr": "paperplane_memory_heap_used", "legendFormat": "Heap Used" },
+        { "expr": "paperplane_memory_heap_total", "legendFormat": "Heap Total" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": { "mode": "palette-classic" },
+          "custom": { "showPoints": "never" }
+        }
+      }
+    },
+    {
+      "title": "Event Loop Lag",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "targets": [
+        { "expr": "paperplane_event_loop_lag", "legendFormat": "lag ms" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": { "mode": "palette-classic" },
+          "custom": { "showPoints": "never" },
+          "thresholds": { "steps": [
+            { "color": "green", "value": null },
+            { "color": "orange", "value": 50 },
+            { "color": "red", "value": 200 }
+          ] }
+        }
+      }
+    },
+    {
+      "title": "Players per Node",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 12 },
+      "targets": [
+        { "expr": "paperplane_lavalink_node_players{node=~\"node.*\"}", "legendFormat": "{{node}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "showPoints": "never", "stacking": { "mode": "normal" } }
+        }
+      }
+    },
+    {
+      "title": "Node Penalty",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 12 },
+      "targets": [
+        { "expr": "paperplane_lavalink_node_penalty{node=~\"node.*\"}", "legendFormat": "{{node}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "showPoints": "never" },
+          "thresholds": { "steps": [
+            { "color": "green", "value": null },
+            { "color": "orange", "value": 300 },
+            { "color": "red", "value": 500 }
+          ] }
+        }
+      }
+    },
+    {
+      "title": "Node Disconnects",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 12 },
+      "targets": [
+        { "expr": "rate(paperplane_lavalink_node_disconnects_total{node=~\"node.*\"}[5m])", "legendFormat": "{{node}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "showPoints": "never" }
+        }
+      }
+    },
+    {
+      "title": "Track Activity",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "targets": [
+        { "expr": "rate(paperplane_tracks_played[5m])", "legendFormat": "played" },
+        { "expr": "rate(paperplane_tracks_failed[5m])", "legendFormat": "failed" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "showPoints": "never" }
+        }
+      }
+    },
+    {
+      "title": "Command Latency",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "targets": [
+        { "expr": "paperplane_command_latency_ms{command=~\".*\"}", "legendFormat": "{{command}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": { "mode": "palette-classic" },
+          "custom": { "showPoints": "never" }
+        }
+      }
+    },
+    {
+      "title": "Track Errors by Type",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+      "targets": [
+        { "expr": "topk(10, paperplane_tracks_failed_total)", "legendFormat": "{{error}}", "format": "table" }
+      ],
+      "transformations": [
+        { "id": "organize", "options": { "excludeByName": { "Time": true } } }
+      ]
+    },
+    {
+      "title": "Commands Executed",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+      "targets": [
+        { "expr": "topk(10, paperplane_commands_executed_total)", "legendFormat": "{{command}}", "format": "table" }
+      ],
+      "transformations": [
+        { "id": "organize", "options": { "excludeByName": { "Time": true } } }
+      ]
+    }
+  ]
+}

@@ -382,4 +382,5 @@ FodyWeavers.xsd
 /.claude-flow
 /.swarm
 *.json
+!grafana/dashboards/*.json
 /CLAUDE.md
