@@ -1,6 +1,6 @@
 import Logger from "../../core/utils/Logger.js";
 import { cleanTitle, isCover } from "./TitleResolver.js";
-import { getBestNode, getPenalty, recordError, recordHtmlError } from "../engine/NodePenaltyService.js";
+import { getBestNode, getPenalty, recordError, recordHtmlError, isDraining, isUnhealthy } from "../engine/NodePenaltyService.js";
 import { get } from "../engine/lavalink.js";
 
 const BAD_KEYWORDS = [
@@ -75,7 +75,7 @@ async function searchViaHealthyNode(query: any, user: any, retries = 1): Promise
 export async function searchWithRetry(player: any, query: any, user: any, _retries = 2): Promise<any> {
   const nodeName = player.node?.id || "?";
   const nodePenalty = getPenalty(nodeName);
-  if (nodePenalty > 200) {
+  if (isDraining(nodeName) || isUnhealthy(nodeName) || nodePenalty > 100) {
     const fallback = await searchViaHealthyNode(query, user);
     if (fallback) {
       Logger.info(`[SearchRoute] Skipped unhealthy node: ${nodeName} penalty=${nodePenalty}`);
@@ -111,6 +111,13 @@ export async function findTrackWithDuration(
   clientRef?: any
 ): Promise<any | null> {
   const origDur = origTrack.info?.length || origTrack.info?.durationMs || 0;
+  const n = player.node?.id || "?";
+  if (isDraining(n) || isUnhealthy(n) || getPenalty(n) > 100) {
+    const fallback = await searchViaHealthyNode({ query: `ytmsearch:${query}` }, clientRef, 0);
+    if (fallback?.tracks?.length) {
+      return fallback.tracks.find((t: any) => !t.info?.sourceName?.includes("deezer")) || fallback.tracks[0];
+    }
+  }
   for (const prefix of ["ytmsearch", "ytsearch", "scsearch"]) {
     let res = null;
     try {

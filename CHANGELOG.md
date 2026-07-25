@@ -50,7 +50,7 @@
 ### Node Failover + Search Route Fix (v2.2.1)
 
 - **failoverGuilds duplikat** — `musicEvents.ts`: panggil `FailoverManager.isFailoverGuild()` langsung, bukan `lavalink.isFailoverGuild()` yang pake set kosong. Fix embed tetap terkirim saat failover.
-- **Search skip unhealthy node** — `SearchService.ts`: `searchWithRetry()` cek penalty >200 sebelum `player.search()`. Skip langsung ke `searchViaHealthyNode()`. Cegah ~3s delay retry di node broken.
+- **Search skip unhealthy node** — `SearchService.ts`: `searchWithRetry()` + `findTrackWithDuration()` cek `isDraining()` / `isUnhealthy()` / penalty >100 sebelum `player.search()`. Skip langsung ke `searchViaHealthyNode()`. Cegah ~3s delay retry di node broken.
 
 ### Infra & fixes
 
