@@ -58,7 +58,7 @@ function formatTrack(track: any) {
 export async function startApiServer(_status?: any): Promise<void> {
   const app = express();
   app.use(express.json());
-  app.use(withAuth());
+  app.use(withAuth(["/api/health", "/api/metrics"]));
   app.use("/api/guild/:guildId", validateGuildId);
   app.use("/api/activities/:guildId", validateGuildId);
 
