@@ -1,5 +1,7 @@
 import Logger from "../bot/core/utils/Logger.js";
 import { incRateLimitBlocked, incRateLimitAllowed } from "../bot/telemetry/MetricsCollector.js";
+import { isAvailable, getCache } from "../bot/cache/redis.js";
+import Config from "../bot/config/bot.js";
 
 export class ApiError extends Error {
   constructor(
@@ -56,12 +58,32 @@ export function guildRateLimit(maxRequests: number, windowMs: number) {
       if (valid.length) windows.set(key, valid);
       else windows.delete(key);
     }
-  }, 60000);
+  }, 15000);
   if (cleanup.unref) cleanup.unref();
 
-  return (req: any, res: any, next: any) => {
+  return async (req: any, res: any, next: any) => {
     const guildId = req.params?.guildId;
     if (!guildId) return next();
+
+    // Redis-backed rate limit
+    if (isAvailable()) {
+      try {
+        const redis = getCache()!;
+        const key = `${Config.redisPrefix}ratelimit:${guildId}`;
+        const count = await redis.incr(key);
+        if (count === 1) await redis.pexpire(key, windowMs);
+        if (count > maxRequests) {
+          try { incRateLimitBlocked(); } catch {}
+          return res.status(429).json({ success: false, error: "Too many requests. Slow down." });
+        }
+        try { incRateLimitAllowed(); } catch {}
+        return next();
+      } catch (err) {
+        Logger.warn(`[RateLimit] Redis error, fallback to memory: ${err}`);
+      }
+    }
+
+    // In-memory fallback
     const now = Date.now();
     let timestamps = windows.get(guildId) || [];
     timestamps = timestamps.filter(t => now - t < windowMs);

@@ -2,6 +2,7 @@
   "name": "paperplane-single",
   "version": "2.1.5",
   "description": "Paperplane bot — single node",
+  "license": "Apache-2.0",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
@@ -27,6 +28,7 @@
     "discord.js": "^14.27.0",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "ioredis": "^5.11.1",
     "lavalink-client": "^2.10.2",
     "mongoose": "^9.7.4",
     "reflect-metadata": "^0.2.2",

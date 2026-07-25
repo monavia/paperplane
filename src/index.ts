@@ -14,7 +14,7 @@ console.error = (...args: any[]) => {
   _origConsoleError(...args);
 };
 
-import { Client, GatewayIntentBits, REST, Routes, Collection } from "discord.js";
+import { Client, GatewayIntentBits, REST, Routes, Collection, Options, Partials, Sweepers } from "discord.js";
 import Config from "./bot/config/bot.js";
 import AIConfig from "./bot/config/ai.js";
 import Logger from "./bot/core/utils/Logger.js";
@@ -23,6 +23,7 @@ import { load as loadEvents } from "./bot/core/bootstrap/loadEvents.js";
 import { loadSlash, loadPrefix, getSlashData } from "./bot/core/bootstrap/loadCommands.js";
 import { ShutdownManager } from "./bot/core/utils/ShutdownManager.js";
 import { registerShutdownTasks } from "./bot/core/bootstrap/registerShutdownTasks.js";
+import * as redis from "./bot/cache/redis.js";
 import { startApiServer } from "./bot/api/apiServer.js";
 
 const client: Client = new Client({
@@ -32,6 +33,21 @@ const client: Client = new Client({
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.MessageContent,
   ],
+  makeCache: Options.cacheWithLimits({
+    ...Options.DefaultMakeCacheSettings,
+    GuildMemberManager: { maxSize: 200, keepOverLimit: (member: any) => member.id === client.user?.id },
+    ReactionManager: 0,
+    PresenceManager: 0,
+    MessageManager: 0,
+  }),
+  sweepers: {
+    ...Options.DefaultSweeperSettings,
+    threads: { interval: 300, lifetime: 1800 },
+    voiceStates: { interval: 600, filter: Sweepers.filterByLifetime({ lifetime: 600 }) },
+    messages: { interval: 600, filter: Sweepers.filterByLifetime({ lifetime: 600 }) },
+  },
+  partials: [Partials.Message, Partials.Channel, Partials.Reaction],
+  allowedMentions: { parse: ["users"], repliedUser: true },
 });
 
 (client as any).slashCommands = new Collection();
@@ -70,18 +86,19 @@ async function main() {
     // Database
     try {
       await connectDB();
-      Logger.ready("Database connected");
     } catch (err) {
       Logger.error("Database connection failed:", err);
       process.exit(1);
     }
+
+    // Redis
+    await redis.init();
 
     // Load event handlers
     loadEvents(client);
 
     // Login
     await client.login(Config.token);
-    Logger.ready(`Logged in as ${client.user?.tag}`);
 
     // Load slash + prefix commands
     const slashCount = loadSlash(client);
@@ -147,6 +164,7 @@ process.on("uncaughtException", (err: any) => {
   if (err.message?.includes("Unhandled error")) return;
   Logger.error("Uncaught exception:", err?.message || String(err));
   import("@sentry/node").then(S => S.captureException(err));
+  process.exit(1);
 });
 
 main();

@@ -16,6 +16,7 @@ import { fetchLyrics } from "../music/services/LyricsService.js";
 import { removeFromQueue, swapTracks, moveTrack, clearQueue } from "../music/services/QueueService.js";
 import mongoose from "mongoose";
 import { getMetrics } from "../telemetry/MetricsCollector.js";
+import * as redis from "../cache/redis.js";
 import * as Sentry from "@sentry/node";
 import { createApiHandler, jsonResponse, ApiError, withAuth, getUserId, requireApiSameVoice, guildRateLimit } from "../../lib/api-base.js";
 
@@ -114,6 +115,9 @@ export async function startApiServer(_status?: any): Promise<void> {
     for (const [key, val] of Object.entries(m.lavalinkNodePenalty || {})) {
       lines.push(`paperplane_lavalink_node_penalty{node="${key}"} ${val}`);
     }
+    for (const [key, val] of Object.entries(m.lavalinkNodeDisconnectsByLabel || {})) {
+      lines.push(`paperplane_lavalink_node_disconnects_total{node="${key}"} ${val}`);
+    }
     for (const [key, val] of Object.entries(m.tracksFailedByLabel || {})) {
       lines.push(`paperplane_tracks_failed_total{error="${key}"} ${val}`);
     }
@@ -123,15 +127,56 @@ export async function startApiServer(_status?: any): Promise<void> {
     for (const [key, val] of Object.entries(m.commandLatency || {})) {
       lines.push(`paperplane_command_latency_ms{command="${key}"} ${val}`);
     }
+    // Memory metrics
+    if (m.memory) {
+      lines.push(`# HELP paperplane_memory_rss Resident set size bytes`);
+      lines.push(`# TYPE paperplane_memory_rss gauge`);
+      lines.push(`paperplane_memory_rss ${m.memory.rss}`);
+      lines.push(`# HELP paperplane_memory_heap_used Heap used bytes`);
+      lines.push(`# TYPE paperplane_memory_heap_used gauge`);
+      lines.push(`paperplane_memory_heap_used ${m.memory.heapUsed}`);
+      lines.push(`# HELP paperplane_memory_heap_total Heap total bytes`);
+      lines.push(`# TYPE paperplane_memory_heap_total gauge`);
+      lines.push(`paperplane_memory_heap_total ${m.memory.heapTotal}`);
+    }
+    if (m.eventLoopLag !== undefined) {
+      lines.push(`# HELP paperplane_event_loop_lag Event loop lag ms`);
+      lines.push(`# TYPE paperplane_event_loop_lag gauge`);
+      lines.push(`paperplane_event_loop_lag ${m.eventLoopLag}`);
+    }
+    // Cache metrics
+    lines.push(`# HELP paperplane_cache_hit_total Cache hits`);
+    lines.push(`# TYPE paperplane_cache_hit_total counter`);
+    lines.push(`paperplane_cache_hit_total ${m.cacheHit}`);
+    for (const [key, val] of Object.entries(m.cacheHitByLabel || {})) {
+      lines.push(`paperplane_cache_hit_total{cache="${key}"} ${val}`);
+    }
+    lines.push(`# HELP paperplane_cache_miss_total Cache misses`);
+    lines.push(`# TYPE paperplane_cache_miss_total counter`);
+    lines.push(`paperplane_cache_miss_total ${m.cacheMiss}`);
+    for (const [key, val] of Object.entries(m.cacheMissByLabel || {})) {
+      lines.push(`paperplane_cache_miss_total{cache="${key}"} ${val}`);
+    }
     res.type("text/plain").send(lines.join("\n") + "\n");
   });
 
 app.get("/api/health", createApiHandler(async (_req, res) => {
     const client = getClient();
+    const lavalink = getLavalink();
+    const connectedNodes = lavalink?.nodeManager
+      ? Array.from(lavalink.nodeManager.nodes.values()).filter((n: any) => n.connected).length
+      : 0;
+    const dbReady = mongoose.connection?.readyState === 1;
+    const mem = process.memoryUsage();
+    const redisOk = redis.isAvailable();
     jsonResponse(res, {
       status: "ok",
       uptime: process.uptime(),
       guilds: client?.guilds?.cache?.size || 0,
+      database: { status: dbReady ? "connected" : "disconnected", readyState: mongoose.connection?.readyState ?? 0 },
+      redis: { status: redisOk ? "connected" : "disabled" },
+      lavalink: { connectedNodes },
+      memory: { rss: Math.round(mem.rss / 1024 / 1024) + "MB", heapUsed: Math.round(mem.heapUsed / 1024 / 1024) + "MB", heapTotal: Math.round(mem.heapTotal / 1024 / 1024) + "MB" },
     });
   }));
 

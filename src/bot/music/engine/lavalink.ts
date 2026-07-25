@@ -14,7 +14,7 @@ import { setFilter, setEqualizer } from "../services/PlayerService.js";
 import { getBestNode, recordDisconnect, recordError, recordHtmlError, startDrain } from "./NodePenaltyService.js";
 import * as FailoverManager from "./FailoverManager.js";
 import { clearStuckTimer, startStuckTimer } from "./musicEvents.js";
-import { setGuildCount, setVoiceConnections, setActivePlayers, setActiveGuilds, setLavalinkNodePlayers, setLavalinkNodeLatency, setLavalinkNodesOnline, setLavalinkNodePenalty } from "../../telemetry/MetricsCollector.js";
+import { setGuildCount, setVoiceConnections, setActivePlayers, setActiveGuilds, setLavalinkNodePlayers, setLavalinkNodeLatency, setLavalinkNodesOnline, setLavalinkNodePenalty, incLavalinkNodeDisconnects } from "../../telemetry/MetricsCollector.js";
 import { getPenalty } from "./NodePenaltyService.js";
 import MongoQueueStore from "../services/MongoQueueStore.js";
 
@@ -30,6 +30,7 @@ const recoveringGuildsTimestamps = new Map<string, number>();
 const RECOVERING_GUILDS_TTL_MS = 10 * 60 * 1000; // 10min
 let allNodesDownTimer: NodeJS.Timeout | null = null;
 const trackCache = new Map<string, { encoded: string; ts: number }>(); // guildId → {encoded, timestamp}
+const connectedNodes = new Set<string>();
 
 const TRACK_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 const TRACK_CACHE_PRUNE_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
@@ -180,8 +181,10 @@ export async function init(client: any): Promise<boolean> {
   });
 
   l.on("nodeDisconnect", async (node: any) => {
+    connectedNodes.delete(node.id);
     try {
       Logger.warn(`[NodeLink] Node ${node.id} (${node.options?.regions?.[0] || "?"}) disconnected`);
+      incLavalinkNodeDisconnects(node.id);
       if (lavalink?.nodeManager) await failoverFromNode(node.id);
 
       // Try reconnecting (once per 15s)
@@ -208,6 +211,8 @@ export async function init(client: any): Promise<boolean> {
   });
 
   l.nodeManager?.on("connect", async (node: any) => {
+    if (connectedNodes.has(node.id)) return;
+    connectedNodes.add(node.id);
     Logger.ready(`[NodeLink] Node ${node.id} (${node.options?.regions?.[0] || "?"}) connected`);
     cancelNodesDownTimer();
     // Enable session resume per lavalink-client docs — restores <360s outage instantly from Lavalink data

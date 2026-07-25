@@ -9,4 +9,7 @@ export default {
   apiHost: process.env.API_HOST || "127.0.0.1",
   deployCommands: process.env.DEPLOY_COMMANDS !== "false",
   maxQueue: parseInt(process.env.MAX_QUEUE || "150"),
+  redisUrl: process.env.REDIS_URL || "redis://localhost:6379",
+  redisPrefix: process.env.REDIS_PREFIX || "paperplane:",
+  redisEnabled: process.env.REDIS_ENABLED !== "false",
 };

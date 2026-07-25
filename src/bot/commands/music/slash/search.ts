@@ -1,5 +1,5 @@
 import { SlashCommandBuilder } from "discord.js";
-import { getPlayer } from "../../../../bot/music/engine/PlayerManager.js";
+import { getPlayer, createPlayer } from "../../../../bot/music/engine/PlayerManager.js";
 import * as MusicService from "../../../../bot/music/services/MusicService.js";
 import * as SearchEmbed from "../../../../bot/ui/embeds/SearchEmbed.js";
 import * as ErrorEmbed from "../../../../bot/ui/embeds/ErrorEmbed.js";
@@ -24,9 +24,11 @@ export default {
     try {
       let player = getPlayer(interaction.guildId!);
       if (!player) {
-        const node = get()?.nodeManager?.nodes?.values()?.next()?.value as any;
-        if (!node) return interaction.editReply({ embeds: [ErrorEmbed.build("Lavalink not connected.")] });
-        player = node;
+        if (!voice) return interaction.editReply({ embeds: [ErrorEmbed.build("You must be in a voice channel to search.")] });
+        player = createPlayer(interaction.guildId!, voice.id, interaction.channelId!, voice.rtcRegion);
+        if (!player) return interaction.editReply({ embeds: [ErrorEmbed.build("Lavalink not connected.")] });
+        await player.connect();
+        MusicService.getEngine(interaction.guildId!).player = player;
       }
 
       const result = await player.search({ query: `ytsearch:${query}` }, interaction.user);

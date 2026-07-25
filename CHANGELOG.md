@@ -1,5 +1,45 @@
 # Changelog — Paperplane Single Node
 
+## 2026-07-25 — v2.2.2
+
+### Foundation hardening (Fase 0.5)
+
+- **DB disconnect shutdown** (0.5.2) — `registerShutdownTasks.ts`: +`disconnect-db` task priority `low`. Tutup Mongoose koneksi di shutdown sebelum process exit.
+- **Health endpoint upgrade** (0.5.3) — `/api/health` now returns `database` (Mongoose readyState), `lavalink` (connected nodes), `memory` (rss/heap).
+- **Uncaught exit** (0.5.5) — `index.ts`: `process.exit(1)` setelah uncaughtException handler. Cegah process zombie.
+- **Shutdown task priority** (0.5.7) — `registerShutdownTasks.ts`: +`lavalink-disconnect` task priority `normal`. NodeLink disconnect duluan sebelum DB.
+- **Rate limiter cleanup** (0.5.8) — `api-base.ts:52`: cleanup interval 60s→15s. Cegah memory leak di sliding window rate limiter.
+- **Memory & event loop gauges** (0.5.10) — `MetricsCollector.ts`: RSS/heap/heapTotal + event loop lag di `/api/metrics`, update tiap 10s.
+- **Label cardinality fix** (0.5.11) — `MetricsCollector.ts`: `tracksFailed` label `guild`→`error_type`. Turunkan cardinality dari ribuan guild ke ~10 error types.
+- **JSON structured logging** (0.5.5.3) — `Logger.ts`: support `LOG_FORMAT=json` / `LOG_FORMAT=pretty`. JSON output `{"ts","level","msg"}` untuk Loki.
+
+### Discord.js cache optimasi (Fase 0.6)
+
+- **makeCache** — `index.ts`: `GuildMemberManager` max 200 per guild (keep bot sendiri), `ReactionManager` 0, `PresenceManager` 0, `MessageManager` 0. Cegah cache unlimited >3GB di 1000 guilds.
+- **Sweepers agresif** — `index.ts`: `voiceStates` + `messages` purged tiap 10 menit (default 1 jam), `threads` purged >30 menit. Spread dari `Options.DefaultSweeperSettings`.
+- **Partials** — `index.ts`: `[Message, Channel, Reaction]` — cegah crash di event uncached data.
+- **allowedMentions** — `index.ts`: cuma `{parse:["users"]}` — cegah @everyone/@here auto-reply.
+- **Consistent player lifecycle** — `/search.ts`: pake `createPlayer()` bukan raw lavalink node. Search tanpa player aktif sekarang buat player proper dengan queue + events.
+
+### Queue end disconnect fix
+
+- **Deferred path queue guard** — `musicEvents.ts:321`: tambah `(state.queues.get(player.guildId)?.length || 0) > 0` di condition deferred retry path. Cegah bot stuck di voice selamanya pas queue kosong. Sebelumnya `state.nowPlaying` masih ada (track terakhir) → masuk deferred retry → return tanpa set disconnect timer.
+
+### Redis cache foundation (Fase 0.7.0)
+
+- **Redis connection singleton** (0.7.0.1) — `src/bot/cache/redis.ts`: 2 koneksi terpisah — `redisCache` (opsional, retry + fallback) + `redisBus` (pub/sub, no fallback). Auto-connect di startup, graceful shutdown task priority `low`.
+- **CacheAdapter interface** (0.7.0.1) — `src/bot/cache/CacheAdapter.ts`: `CacheAdapter` interface (`get`/`set`/`del`/`has`/`clear`/`size`) + `MemoryAdapter` (Map + TTL) + `RedisAdapter` (ioredis + JSON serialize + SCAN-based clear). Lazy singleton via `getAdapter()`, otomatis pilih Redis kalo available.
+- **Cache hit/miss metrics** (0.7.0.4) — `MetricsCollector.ts`: counter `cacheHitCount` + `cacheMissCount` label `{cache:"..."}`. Ekspose di `/api/metrics` Prometheus (`paperplane_cache_hit_total`, `paperplane_cache_miss_total`).
+- **Redis health check** — `/api/health` return `redis: {status: "connected"|"disabled"}`.
+- **Rate limiter Redis backend** (0.7.0.8) — `api-base.ts`: `guildRateLimit()` pake Redis INCR+EXPIRE kalo available, fallback ke in-memory Map. Key prefix `paperplane:ratelimit:{guildId}`. Graceful degrade kalo Redis error.
+- **Config env** — `bot.ts` + `.env.example`: tambah `REDIS_URL`, `REDIS_PREFIX`, `REDIS_ENABLED`.
+- **Docker Compose Redis** — `docker-compose.yml`: tambah service `redis` (redis:7-alpine, maxmemory 512mb, allkeys-lru). Data persist di volume `redis_data`. Join stack bareng Prometheus/Loki/Grafana.
+
+### Documentation & license
+
+- **README refactor** — update stack (Express 5, discord.js v14.27, Redis), tambah section Docker deploy + observability stack, update env table.
+- **License alignment** — `LICENSE.txt` udah Apache 2.0 sejak awal, tapi `README.md` bilang MIT. Fix: `package.json` + `README.md` → Apache 2.0.
+
 ## 2026-07-24 — v2.2.1
 
 ### Search health routing + failover fix

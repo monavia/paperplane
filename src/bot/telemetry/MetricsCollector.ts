@@ -74,7 +74,33 @@ const rateLimitBlocked = new Counter();
 const rateLimitAllowed = new Counter();
 const lavalinkNodesOnline = new Gauge();
 const lavalinkNodePenalty = new Gauge();
+const lavalinkNodeDisconnects = new Counter();
 const commandLatency = new Gauge();
+const memoryRss = new Gauge();
+const memoryHeapUsed = new Gauge();
+const memoryHeapTotal = new Gauge();
+const eventLoopLag = new Gauge();
+const cacheHitCount = new Counter();
+const cacheMissCount = new Counter();
+
+let lastLoopMeasure = Date.now();
+function measureEventLoopLag(): void {
+  const start = Date.now();
+  setImmediate(() => {
+    const delta = Date.now() - start;
+    eventLoopLag.set(delta);
+    lastLoopMeasure = Date.now();
+  });
+}
+setInterval(measureEventLoopLag, 10000);
+
+// Periodic memory metric update
+setInterval(() => {
+  const mem = process.memoryUsage();
+  memoryRss.set(mem.rss);
+  memoryHeapUsed.set(mem.heapUsed);
+  memoryHeapTotal.set(mem.heapTotal);
+}, 10000);
 
 export function incTracksPlayed(labels?: Record<string, string>) {
   tracksPlayed.inc(labels);
@@ -118,11 +144,21 @@ export function setLavalinkNodesOnline(n: number) {
 export function setLavalinkNodePenalty(nodeId: string, n: number) {
   lavalinkNodePenalty.set(n, { node: nodeId });
 }
+export function incLavalinkNodeDisconnects(nodeId: string) {
+  lavalinkNodeDisconnects.inc({ node: nodeId });
+}
 export function observeCommandLatency(command: string, ms: number) {
   commandLatency.set(ms, { command });
 }
+export function incCacheHit(cache: string) {
+  cacheHitCount.inc({ cache });
+}
+export function incCacheMiss(cache: string) {
+  cacheMissCount.inc({ cache });
+}
 
 export function getMetrics() {
+  const mem = process.memoryUsage();
   return {
     tracksPlayed: tracksPlayed.get(),
     tracksPlayedByLabel: tracksPlayed.getAllLabels(),
@@ -141,7 +177,19 @@ export function getMetrics() {
     rateLimitAllowed: rateLimitAllowed.get(),
     lavalinkNodesOnline: lavalinkNodesOnline.get(),
     lavalinkNodePenalty: lavalinkNodePenalty.getAllLabels(),
+    lavalinkNodeDisconnects: lavalinkNodeDisconnects.get(),
+    lavalinkNodeDisconnectsByLabel: lavalinkNodeDisconnects.getAllLabels(),
     commandLatency: commandLatency.getAllLabels(),
+    memory: {
+      rss: mem.rss,
+      heapUsed: mem.heapUsed,
+      heapTotal: mem.heapTotal,
+    },
+    eventLoopLag: eventLoopLag.get(),
+    cacheHit: cacheHitCount.get(),
+    cacheHitByLabel: cacheHitCount.getAllLabels(),
+    cacheMiss: cacheMissCount.get(),
+    cacheMissByLabel: cacheMissCount.getAllLabels(),
   };
 }
 
@@ -157,7 +205,7 @@ EventBus.on('metrics:trackPlayed', (p: any) => {
 EventBus.on('metrics:trackFailed', (p: any) => {
   if (p?.guildId) {
     const errMsg = p.error?.error || p.error?.exception?.message || "Unknown";
-    tracksFailed.inc({ guild: p.guildId, error_type: errMsg.substring(0, 50) });
+    tracksFailed.inc({ error_type: errMsg.substring(0, 50) });
   }
   incTracksFailed();
 });
@@ -181,5 +229,8 @@ export default {
   rateLimitAllowed,
   lavalinkNodesOnline,
   lavalinkNodePenalty,
+  lavalinkNodeDisconnects,
   commandLatency,
+  cacheHitCount,
+  cacheMissCount,
 };

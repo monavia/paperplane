@@ -318,7 +318,7 @@ const advancingFromTrackEnd = new Set<string>();
       if (played) return;
 
       // Track masih "now playing" (failover replay, dll) — jangan disconnect
-      if (player.node?.connected && state.nowPlaying.get(player.guildId)) {
+      if (player.node?.connected && state.nowPlaying.get(player.guildId) && (state.queues.get(player.guildId)?.length || 0) > 0) {
         const attempt = (deferredQueueGuilds.get(player.guildId) || 0) + 1;
         deferredQueueGuilds.set(player.guildId, attempt);
         if (attempt <= DEFERRED_QUEUE_MAX) {
