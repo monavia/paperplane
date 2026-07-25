@@ -1,5 +1,13 @@
 # Changelog — Paperplane
 
+## 2026-07-26 — v3.0.0
+
+### Backup & Rollback Runbook (Fase 1.0)
+
+- **Backup script** — `scripts/backup.sh` (Linux) + `scripts/backup.ps1` (Windows). MongoDB dump + .env copy + auto-prune 7 hari.
+- **Rollback docs** — `docs/backup.md`: step-by-step `git revert` → rebuild → restart → verify. Restore from backup prosedur.
+- **Cron config** — backup otomatis tiap jam 3 pagi via crontab.
+
 ## 2026-07-25 — v2.2.3
 
 ### Cache migration to Redis (Fase 0.7.1–0.7.2)

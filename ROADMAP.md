@@ -1,6 +1,6 @@
 # ROADMAP — Paperplane Single Node
 
-**Mulai:** 2026-07-20 | **Update prioritas:** 2026-07-25 — 108 tests across 11 suites. **Fase 0.9 selesai**. | **Status:** Fase 0 ✅, Patch v2.1.6 ✅, v2.2.0 ✅, v2.2.1 ✅, **v2.2.2 ✅ (released)**, **v2.2.3 ✅ (not pushed)**, Fase 0.5 ✅, Fase 0.5.5 ✅, Fase 0.6 ✅, Fase 0.7.0–0.7.10 ✅, **Fase 0.8 ✅**, **Fase 0.9 ✅**, Fase 1 🟡.
+**Mulai:** 2026-07-20 | **Update prioritas:** 2026-07-26 — **v3.0.0 released**. | **Status:** Fase 0 ✅, Patch v2.1.6 ✅, v2.2.0 ✅, v2.2.1 ✅, **v2.2.2 ✅ (released)**, **v2.2.3 ✅ (merged to v3.0.0)**, **v3.0.0 ✅ (latest)**, Fase 0.5 ✅, Fase 0.5.5 ✅, Fase 0.6 ✅, Fase 0.7.0–0.7.10 ✅, **Fase 0.8 ✅**, **Fase 0.9 ✅**, Fase 1 🟡 (1.0 ✅).
 
 ---
 
@@ -368,8 +368,8 @@ Lapisan stabilitas dan observasi sebelum scale.
 
 | Task | Detail | Effort |
 |------|--------|--------|
-| DB backup procedure | Script backup MongoDB + Prisma sebelum upgrade. Cron job auto-backup. | 30 menit |
-| Rollback step-by-step | Dokumen: `git revert`, deploy ulang, restore queue from backup, verify playback. | 30 menit |
+| DB backup procedure | Script backup MongoDB + .env. Cron auto-backup. ✅ `scripts/backup.sh`, `scripts/backup.ps1` | ✅ |
+| Rollback step-by-step | Dokumen: `git revert`, rebuild, restart, verify. ✅ `docs/backup.md` | ✅ |
 
 ### 1.1 Persistent Queue Store (MongoDB/Postgres)
 
