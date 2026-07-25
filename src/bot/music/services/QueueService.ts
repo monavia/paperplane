@@ -70,13 +70,18 @@ function moveTrack(guildId: string, fromIndex: number, toIndex: number): Promise
   });
 }
 
-function removeByQuery(guildId: string, query: string): Promise<number> {
+const REMOVE_CONFIRM_THRESHOLD = 3;
+
+function removeByQuery(guildId: string, query: string, force = false): Promise<number> {
   return withQueueLock(guildId, async () => {
     const engine = getEngine(guildId);
     const current = getNowPlaying(guildId);
     const q = query.toLowerCase();
     const matched = engine.queue.getAll().filter((t: any) => (t.info?.title || "").toLowerCase().includes(q));
     if (!matched.length) return 0;
+    if (matched.length > REMOVE_CONFIRM_THRESHOLD && !force) {
+      return -matched.length;
+    }
     const remaining = engine.queue.getAll().filter((t: any) => !matched.includes(t));
     engine.queue.clear();
     for (const t of remaining) engine.queue.add(t);

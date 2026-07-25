@@ -8,12 +8,14 @@ export default {
   data: new SlashCommandBuilder()
     .setName("remove")
     .setDescription("Remove tracks from the queue")
-    .addStringOption((o) => o.setName("query").setDescription("Track name or position (e.g. 3 or 2-5)").setRequired(true)),
+    .addStringOption((o) => o.setName("query").setDescription("Track name or position (e.g. 3 or 2-5)").setRequired(true))
+    .addBooleanOption((o) => o.setName("confirm").setDescription("Confirm removing >3 tracks at once").setRequired(false)),
 
   async execute(interaction: any) {
     if (!await requireSameVoice(interaction)) return;
 
     const input = interaction.options.getString("query", true);
+    const force = interaction.options.getBoolean("confirm") === true;
     const guildId = interaction.guildId!;
 
     const queue = MusicService.getQueue(guildId);
@@ -45,8 +47,11 @@ export default {
       return interaction.editReply({ embeds: [SuccessEmbed.build(`Removed **${title}** from the queue.`)] });
     }
 
-    const count = MusicService.removeByQuery(guildId, input);
-    if (!count) return interaction.reply({ embeds: [ErrorEmbed.build(`No tracks found matching "${input}".`)] });
+    const count = await MusicService.removeByQuery(guildId, input, force);
+    if (count === 0) return interaction.reply({ embeds: [ErrorEmbed.build(`No tracks found matching "${input}".`)] });
+    if (count < 0) {
+      return interaction.reply({ embeds: [ErrorEmbed.build(`This will remove ${-count} tracks matching "${input}". Use \`confirm:true\` to proceed.`)] });
+    }
     await interaction.deferReply();
     await interaction.editReply({ embeds: [SuccessEmbed.build(`Removed ${count} track(s) matching "${input}".`)] });
   },

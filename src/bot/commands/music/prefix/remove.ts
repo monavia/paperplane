@@ -42,8 +42,12 @@ export default {
       return (message.channel as any).send({ embeds: [SuccessEmbed.build(`Removed **${title}** from the queue.`)] });
     }
 
-    const count = MusicService.removeByQuery(guildId, input);
-    if (!count) return (message.channel as any).send({ embeds: [ErrorEmbed.build(`No tracks found matching "${input}".`)] });
+    const force = args.includes("--yes");
+    const count = await MusicService.removeByQuery(guildId, input, force);
+    if (count === 0) return (message.channel as any).send({ embeds: [ErrorEmbed.build(`No tracks found matching "${input}".`)] });
+    if (count < 0) {
+      return (message.channel as any).send({ embeds: [ErrorEmbed.build(`This will remove ${-count} tracks matching "${input}". Add \`--yes\` to confirm.`)] });
+    }
     (message.channel as any).send({ embeds: [SuccessEmbed.build(`Removed ${count} track(s) matching "${input}".`)] });
   },
 };
