@@ -1,6 +1,6 @@
 # ROADMAP — Paperplane Single Node
 
-**Mulai:** 2026-07-20 | **Update prioritas:** 2026-07-25 — 78 tests across 9 suites. 0.9.1–0.9.5 done. | **Status:** Fase 0 ✅, Patch v2.1.6 ✅, v2.2.0 ✅, v2.2.1 ✅, **v2.2.2 ✅ (released)**, **v2.2.3 ✅ (not pushed)**, Fase 0.5 ✅, Fase 0.5.5 ✅, Fase 0.6 ✅, Fase 0.7.0–0.7.10 ✅, **Fase 0.8 ✅**, Fase 0.9 🟡 (0.9.1–0.9.5 ✅), Fase 1 🟡.
+**Mulai:** 2026-07-20 | **Update prioritas:** 2026-07-25 — 108 tests across 11 suites. **Fase 0.9 selesai**. | **Status:** Fase 0 ✅, Patch v2.1.6 ✅, v2.2.0 ✅, v2.2.1 ✅, **v2.2.2 ✅ (released)**, **v2.2.3 ✅ (not pushed)**, Fase 0.5 ✅, Fase 0.5.5 ✅, Fase 0.6 ✅, Fase 0.7.0–0.7.10 ✅, **Fase 0.8 ✅**, **Fase 0.9 ✅**, Fase 1 🟡.
 
 ---
 
@@ -337,9 +337,11 @@ Semua tuntas.
 
 ---
 
-## Fase 0.9: Reliability & Testing 🟡 (2-3 hari)
+## Fase 0.9: Reliability & Testing ✅
 
 **Masalah:** 4 test suite existing cuma unit test isolated utils. Gak ada test yang verifikasi bot jalan di 1000+ guilds. Gak ada benchmark baseline — target "<1GB RAM di 1000 guilds" gak bisa diukur improvement-nya.
+
+**Hasil: 11 test suites, 108 tests. Dari harness API sampai FailoverManager sampai musicEvents advanceQueue. Semua lulus.**
 
 | # | Task | Detail | File | Effort |
 |---|------|--------|------|--------|
@@ -350,7 +352,7 @@ Semua tuntas.
 
 | 0.9.5 | **Test StateService restore/backup** | 10 tests: saveState (skip, call upsert), deleteState (clear stores + deleteOne), start/stopPositionSync, restoreGuildState (already restored, no guild, no voice, join fails), restoreAllStates (no states), restored set helpers. | `src/test/state.test.ts` | ✅ |
 | 0.9.6 | **Test FailoverManager** | 17 tests: set helpers, connectWithRetry (success/retry/fail), track cache (set/get/clear/prune), failoverFromNode (null lavalink, no players, no healthy target, no session, changeNode success, changeNode fail→destroy, lock duplicate, Spotify resolve). Found bug: `globalFailoverLocks` leaks when `continue` skips cleanup. | `src/test/failover.test.ts` | ✅ |
-| 0.9.7 | **Test musicEvents track lifecycle** | Test trackStart, trackEnd, trackError, queueEnd, stuckTimer. 80 cyclomatic — regression gak terdeteksi tanpa test. | `src/test/music-events.test.ts` (baru) | 4 jam |
+| 0.9.7 | **Test musicEvents track lifecycle** | 13 tests: disconnect flags (idle/stop), stuckTimer, disconnectTimer, manualAdvance/markSuppress, advanceQueue (empty, play, skip dead, playlist loop, all dead, Spotify re-resolve). | `src/test/music-events.test.ts` | ✅ |
 
 > **Note:** 0.9.1 (harness) ✅ — prasyarat buat 0.9.2, 0.9.3, 0.9.5–0.9.7. 0.9.4 bisa jalan independen.
 
