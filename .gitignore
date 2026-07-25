@@ -388,3 +388,5 @@ FodyWeavers.xsd
 /src/test
 /BENCHMARK.md
 /ROADMAP.md
+/docs/secrets-rotation.md
+/require_list.txt
