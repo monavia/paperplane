@@ -371,14 +371,13 @@ Lapisan stabilitas dan observasi sebelum scale.
 | DB backup procedure | Script backup MongoDB + .env. Cron auto-backup. ✅ `scripts/backup.sh`, `scripts/backup.ps1` | ✅ |
 | Rollback step-by-step | Dokumen: `git revert`, rebuild, restart, verify. ✅ `docs/backup.md` | ✅ |
 
-### 1.1 Persistent Queue Store (MongoDB/Postgres)
+### 1.1 Persistent Queue Store ✅
 
 **Masalah:** Queue hanya di RAM. Restart bot → queue hilang.
 
 | Task | Detail |
 |---|---|
-| `MongoQueueStore.ts` | Sudah ada (50 baris, implements `QueueStoreManager`), belum di-import. Konflik dengan saveState dual-system. |
-| **Solusi:** | QueueStore hanya untuk queue persistence. saveState tetap untuk position/nowPlaying. Dua sistem berjalan paralel — queueStore simpan queue, saveState simpan state player. |
+| MongoQueueStore | ✅ Udah ada + di-import + dipasang. queueStore simpan queue, saveState simpan position/nowPlaying. |
 
 ### 1.2 Dashboard API → Full CRUD ✅
 
