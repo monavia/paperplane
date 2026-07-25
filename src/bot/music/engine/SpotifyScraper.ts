@@ -1,20 +1,16 @@
 import Logger from "../../core/utils/Logger.js";
 import * as dns from "node:dns/promises";
 import * as net from "node:net";
+import { getAdapter } from "../../cache/CacheAdapter.js";
 
-const CACHE_TTL = 30 * 60 * 1000;
+const SPOTIFY_PREFIX = "spotify:";
+const CACHE_TTL = 86_400_000;
 const MAX_RETRIES = 2;
 const RETRY_DELAY = 1000;
 const SPOTIFY_HOST = "open.spotify.com";
 
-interface CacheEntry {
-  data: any;
-  expiry: number;
-}
-
 class SpotifyScraper {
   headers: any;
-  private cache: Map<string, CacheEntry> = new Map();
 
   constructor() {
     this.headers = {
@@ -23,23 +19,14 @@ class SpotifyScraper {
     };
   }
 
-  private getCache(key: string): any | null {
-    const entry = this.cache.get(key);
-    if (!entry) return null;
-    if (Date.now() > entry.expiry) { this.cache.delete(key); return null; }
-    return entry.data;
+  private async getCached(key: string): Promise<any> {
+    const data = await getAdapter().get(`${SPOTIFY_PREFIX}${key}`);
+    if (data) Logger.info(`[SpotifyScraper] Cache hit ${key}`);
+    return data;
   }
 
-  private setCache(key: string, data: any): void {
-    this.cache.set(key, { data, expiry: Date.now() + CACHE_TTL });
-    if (this.cache.size > 500) this.pruneCache();
-  }
-
-  private pruneCache(): void {
-    const now = Date.now();
-    for (const [k, v] of this.cache) {
-      if (now > v.expiry) this.cache.delete(k);
-    }
+  private async setCached(key: string, data: any): Promise<void> {
+    await getAdapter().set(`${SPOTIFY_PREFIX}${key}`, data, CACHE_TTL);
   }
 
   _getDurationMs(item: any): any {
@@ -75,8 +62,8 @@ class SpotifyScraper {
 
   async scrapePlaylist(id: any): Promise<any> {
     const cacheKey = `playlist:${id}`;
-    const cached = this.getCache(cacheKey);
-    if (cached) { Logger.info(`[SpotifyScraper] Cache hit playlist/${id}`); return cached; }
+    const cached = await this.getCached(cacheKey);
+    if (cached) return cached;
 
     const allTracks: any[] = [];
     let offset = 0;
@@ -96,19 +83,19 @@ class SpotifyScraper {
     }
 
     const unique = this._deduplicate(allTracks);
-    if (unique.length) { Logger.info(`[SpotifyScraper] Embed path: ${unique.length} tracks`); this.setCache(cacheKey, unique); return unique; }
+    if (unique.length) { Logger.info(`[SpotifyScraper] Embed path: ${unique.length} tracks`); await this.setCached(cacheKey, unique); return unique; }
 
     Logger.info(`[SpotifyScraper] Embed path empty, trying HTML scrape`);
     const html = await this._fetchPage(`https://open.spotify.com/playlist/${id}`);
     const htmlTracks = this._extractFromHtml(html);
-    if (htmlTracks?.length) { Logger.info(`[SpotifyScraper] HTML scrape: ${htmlTracks.length} tracks`); this.setCache(cacheKey, htmlTracks); return htmlTracks; }
+    if (htmlTracks?.length) { Logger.info(`[SpotifyScraper] HTML scrape: ${htmlTracks.length} tracks`); await this.setCached(cacheKey, htmlTracks); return htmlTracks; }
 
     throw new Error("Could not extract playlist data from Spotify");
   }
 
   async scrapeTrack(id: any): Promise<any> {
     const cacheKey = `track:${id}`;
-    const cached = this.getCache(cacheKey);
+    const cached = await this.getCached(cacheKey);
     if (cached) return cached;
 
     const data = await this._fetchEntity("track", id);
@@ -122,13 +109,13 @@ class SpotifyScraper {
       duration: this._getDurationMs(e),
       spotifyUri: e.uri || `spotify:track:${id}`,
     }];
-    this.setCache(cacheKey, result);
+    await this.setCached(cacheKey, result);
     return result;
   }
 
   async scrapeAlbum(id: any): Promise<any> {
     const cacheKey = `album:${id}`;
-    const cached = this.getCache(cacheKey);
+    const cached = await this.getCached(cacheKey);
     if (cached) return cached;
 
     const data = await this._fetchEntity("album", id);
@@ -139,12 +126,12 @@ class SpotifyScraper {
         duration: this._getDurationMs(t), spotifyUri: t.uri || t.id || null,
       }));
       const unique = this._deduplicate(mapped);
-      if (unique.length) { this.setCache(cacheKey, unique); return unique; }
+      if (unique.length) { await this.setCached(cacheKey, unique); return unique; }
     }
 
     const html = await this._fetchPage(`https://open.spotify.com/album/${id}`);
     const tracks = this._extractFromHtml(html);
-    if (tracks?.length) { this.setCache(cacheKey, tracks); return tracks; }
+    if (tracks?.length) { await this.setCached(cacheKey, tracks); return tracks; }
 
     throw new Error("Could not extract album data from Spotify");
   }
@@ -167,7 +154,7 @@ class SpotifyScraper {
 
   async fetchOEmbed(id: string): Promise<any> {
     const cacheKey = `oembed:${id}`;
-    const cached = this.getCache(cacheKey);
+    const cached = await this.getCached(cacheKey);
     if (cached) return cached;
     for (let a = 0; a <= MAX_RETRIES; a++) {
       const c = new AbortController(); const t = setTimeout(() => c.abort(), 10000);
@@ -175,7 +162,7 @@ class SpotifyScraper {
         const r = await fetch(`https://open.spotify.com/oembed?url=https://open.spotify.com/track/${id}`, { headers: this.headers, signal: c.signal });
         if (!r.ok) { if (a < MAX_RETRIES) { await new Promise(r => setTimeout(r, RETRY_DELAY * (a + 1))); continue; } return null; }
         const d: any = await r.json();
-        if (d?.title) { const r2 = { entity: { title: d.title, artists: [{ name: d.author_name }], uri: `spotify:track:${id}` } }; this.setCache(cacheKey, r2); return r2; }
+        if (d?.title) { const r2 = { entity: { title: d.title, artists: [{ name: d.author_name }], uri: `spotify:track:${id}` } }; await this.setCached(cacheKey, r2); return r2; }
         return null;
       } catch { if (a < MAX_RETRIES) { await new Promise(r => setTimeout(r, RETRY_DELAY * (a + 1))); continue; } return null; }
       finally { clearTimeout(t); }
