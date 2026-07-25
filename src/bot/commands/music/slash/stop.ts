@@ -3,7 +3,7 @@ import * as MusicService from "../../../../bot/music/services/MusicService.js";
 import * as ErrorEmbed from "../../../../bot/ui/embeds/ErrorEmbed.js";
 import Colors from "../../../../bot/core/constants/Colors.js";
 import { requireSameVoice } from "../../../../bot/core/utils/VoiceCheck.js";
-import state from "../../../../bot/core/state/StateManager.js";
+import { markStopDisconnect } from "../../../music/engine/musicEvents.js";
 
 export default {
   data: new SlashCommandBuilder().setName("stop").setDescription("Stop playback"),
@@ -16,6 +16,7 @@ export default {
     }
     await interaction.deferReply();
     try {
+      markStopDisconnect(interaction.guildId!);
       await MusicService.stop(interaction.guildId!, interaction.user.id, interaction.member?.displayName || interaction.user.username);
       await interaction.editReply({ embeds: [new EmbedBuilder().setDescription("Playback stopped.").setColor(Colors.INFO)] });
     } catch (err: any) {

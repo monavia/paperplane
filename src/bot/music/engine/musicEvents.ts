@@ -38,6 +38,7 @@ const STUCK_TRACK_TIMEOUT_MS = 30000;
 const JITTER_BUFFER_MS = 500;
 const stuckTimers = new Map<string, any>();
 const idleDisconnects = new Set<string>();
+const stopDisconnects = new Set<string>();
 const deferredQueueGuilds = new Map<string, number>();
 const DEFERRED_QUEUE_MAX = 5;
 let startupPhase = true;
@@ -46,6 +47,9 @@ const restoredGuilds = new Set<string>();
 export function markIdleDisconnect(guildId: string): void { idleDisconnects.add(guildId); }
 export function isIdleDisconnect(guildId: string): boolean { return idleDisconnects.has(guildId); }
 export function clearIdleDisconnect(guildId: string): void { idleDisconnects.delete(guildId); }
+export function markStopDisconnect(guildId: string): void { stopDisconnects.add(guildId); }
+export function isStopDisconnect(guildId: string): boolean { return stopDisconnects.has(guildId); }
+export function clearStopDisconnect(guildId: string): void { stopDisconnects.delete(guildId); }
 
 function markManualAdvance(guildId: string): void {
   manualAdvances.set(guildId, Date.now());

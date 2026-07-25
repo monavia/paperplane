@@ -14,7 +14,7 @@ import state from "../core/state/StateManager.js";
 import { get } from "../music/engine/lavalink.js";
 import { setTextChannelId } from "../music/services/TextChannelStore.js";
 import { withQueueLock } from "../core/state/QueueLock.js";
-import { markTrackStartSuppressed } from "../music/engine/musicEvents.js";
+import { markTrackStartSuppressed, markStopDisconnect } from "../music/engine/musicEvents.js";
 import { saveState } from "../music/services/StateService.js";
 import * as NowPlayingEmbed from "../ui/embeds/NowPlayingEmbed.js";
 import { build as buildQueueEmbed } from "../ui/embeds/QueueEmbed.js";
@@ -169,6 +169,7 @@ export function start(client: any): void {
           case "stop": {
             const engine = MusicService.getEngine(guildId);
             if (!engine.player) return message.channel.send({ embeds: [ErrorEmbed.build("Nothing to stop.")] });
+            markStopDisconnect(guildId);
             await MusicService.stop(guildId, message.author.id, name);
             return message.channel.send({ embeds: [new EmbedBuilder().setDescription("Playback stopped.").setColor(Colors.INFO)] });
           }

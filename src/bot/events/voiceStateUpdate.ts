@@ -3,7 +3,7 @@ import Logger from "../core/utils/Logger.js";
 import Colors from "../core/constants/Colors.js";
 import { getTextChannelId } from "../music/services/TextChannelStore.js";
 import { setLastFilter, setAutoplay, setShuffle } from "../database/repositories/GuildRepository.js";
-import { isIdleDisconnect, clearIdleDisconnect } from "../music/engine/musicEvents.js";
+import { isIdleDisconnect, clearIdleDisconnect, isStopDisconnect, clearStopDisconnect } from "../music/engine/musicEvents.js";
 import state from "../core/state/StateManager.js";
 import { isLavalinkReady } from "../music/services/MusicService.js";
 import { getEngine, destroyEngine } from "../music/services/PlayerService.js";
@@ -46,6 +46,11 @@ export function start(client: any): void {
 
       if (isIdleDisconnect(guildId)) {
         clearIdleDisconnect(guildId);
+        return;
+      }
+
+      if (isStopDisconnect(guildId)) {
+        clearStopDisconnect(guildId);
         return;
       }
 
