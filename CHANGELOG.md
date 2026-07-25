@@ -19,6 +19,28 @@
 - **Per-guild limits** — player 30/min, queue 20/min, filter/equalizer 20/min, search 15/min, GET 60/min.
 - **Config** — bot.ts + .env.example: tambah `API_RATE_LIMIT`.
 
+### DB Indexing (Fase 1.12)
+
+- **Prisma** — compound index `(guildId, timestamp desc)` di Activity/HistoryEntry, `(userId, createdAt desc)` di Conversation/Memory, `updatedAt` di PlayerState.
+- **Mongoose** — `updatedAt` index di PlayerState, `timestamp` index di UserActivity.
+
+### Spotify env vars
+
+- **Config** — bot.ts + .env.example: `MAX_SPOTIFY=100` (max playlist tracks), `SPOTIFY_BATCH=20` (parallel resolve per batch).
+
+### AI prompt limit (1.8 H2)
+
+- **Truncation** — `messageCreate.ts`: prompt di-potong ke 1500 chars sebelum dikirim ke AI. Cegah token abuse.
+
+### removeByQuery confirmation (1.4 H5)
+
+- **Button confirmation** — `remove.ts` (slash + prefix): kalo match >3, kirim embed + `ActionRow` button "Yes, Remove N Tracks" / "Cancel". Click Confirm → execute. Cancel / 30s timeout → disabled buttons.
+
+### Fixes
+
+- **Stop double embed** — `markStopDisconnect()` flag cegah `voiceStateUpdate.ts` kirim "Disconnected from voice channel." embed setelah manual stop.
+- **removeByQuery await** — `prefix/remove.ts`: fix missing `await` on async function.
+
 ## 2026-07-25 — v2.2.3
 
 ### Cache migration to Redis (Fase 0.7.1–0.7.2)
