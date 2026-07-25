@@ -349,7 +349,7 @@ Semua tuntas.
 | 0.9.4 | **Benchmark baseline** | 82 KB/guild (queue 50), ~192 KB/guild (queue 160). Target <1GB di 1000 ✅ — bahkan 5000 guilds masih ~480 MB. | `BENCHMARK.md`, `src/test/benchmark.test.ts` | ✅ |
 
 | 0.9.5 | **Test StateService restore/backup** | 10 tests: saveState (skip, call upsert), deleteState (clear stores + deleteOne), start/stopPositionSync, restoreGuildState (already restored, no guild, no voice, join fails), restoreAllStates (no states), restored set helpers. | `src/test/state.test.ts` | ✅ |
-| 0.9.6 | **Test FailoverManager** | Test failoverFromNode — 6 linear scans, depth 2, zero test. Simulasi node disconnect → failover → reconnect. | `src/test/failover.test.ts` (baru) | 3 jam |
+| 0.9.6 | **Test FailoverManager** | 17 tests: set helpers, connectWithRetry (success/retry/fail), track cache (set/get/clear/prune), failoverFromNode (null lavalink, no players, no healthy target, no session, changeNode success, changeNode fail→destroy, lock duplicate, Spotify resolve). Found bug: `globalFailoverLocks` leaks when `continue` skips cleanup. | `src/test/failover.test.ts` | ✅ |
 | 0.9.7 | **Test musicEvents track lifecycle** | Test trackStart, trackEnd, trackError, queueEnd, stuckTimer. 80 cyclomatic — regression gak terdeteksi tanpa test. | `src/test/music-events.test.ts` (baru) | 4 jam |
 
 > **Note:** 0.9.1 (harness) ✅ — prasyarat buat 0.9.2, 0.9.3, 0.9.5–0.9.7. 0.9.4 bisa jalan independen.
