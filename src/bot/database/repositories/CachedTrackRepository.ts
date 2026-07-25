@@ -26,7 +26,7 @@ export async function upsertCachedTrack(
       },
       $inc: { hitCount: 1 },
     };
-    return await CachedTrack.findOneAndUpdate({ identifier }, update, { upsert: true, new: true });
+    return await CachedTrack.findOneAndUpdate({ identifier }, update, { upsert: true, returnDocument: "after" });
   } catch (err) {
     Logger.warn(`[CachedTrackRepo] upsert error: ${err}`);
     return null;
