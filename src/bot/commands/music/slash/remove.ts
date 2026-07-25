@@ -1,4 +1,4 @@
-import { SlashCommandBuilder } from "discord.js";
+import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
 import * as MusicService from "../../../../bot/music/services/MusicService.js";
 import * as ErrorEmbed from "../../../../bot/ui/embeds/ErrorEmbed.js";
 import { requireSameVoice } from "../../../../bot/core/utils/VoiceCheck.js";
@@ -49,9 +49,30 @@ export default {
 
     const count = await MusicService.removeByQuery(guildId, input, force);
     if (count === 0) return interaction.reply({ embeds: [ErrorEmbed.build(`No tracks found matching "${input}".`)] });
+
     if (count < 0) {
-      return interaction.reply({ embeds: [ErrorEmbed.build(`This will remove ${-count} tracks matching "${input}". Use \`confirm:true\` to proceed.`)] });
+      const confirmId = `rm_cf_${guildId}`;
+      const cancelId = `rm_cx_${guildId}`;
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(confirmId).setLabel(`Yes, Remove ${-count} Tracks`).setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId(cancelId).setLabel("Cancel").setStyle(ButtonStyle.Secondary),
+      );
+      const reply = await interaction.reply({ embeds: [ErrorEmbed.build(`This will remove ${-count} track(s) matching "${input}". Proceed?`)], components: [row], fetchReply: true });
+      try {
+        const btn = await reply.awaitMessageComponent({ filter: (i: any) => i.user.id === interaction.user.id, time: 30000 });
+        await btn.deferUpdate();
+        if (btn.customId === confirmId) {
+          const removed = await MusicService.removeByQuery(guildId, input, true);
+          await interaction.editReply({ embeds: [SuccessEmbed.build(`Removed ${removed} track(s) matching "${input}".`)], components: [] });
+        } else {
+          await interaction.editReply({ embeds: [ErrorEmbed.build("Cancelled. No tracks removed.")], components: [] });
+        }
+      } catch {
+        await interaction.editReply({ components: [ActionRowBuilder.from(row).setComponents(row.components.map((b: any) => b.setDisabled(true)))] });
+      }
+      return;
     }
+
     await interaction.deferReply();
     await interaction.editReply({ embeds: [SuccessEmbed.build(`Removed ${count} track(s) matching "${input}".`)] });
   },

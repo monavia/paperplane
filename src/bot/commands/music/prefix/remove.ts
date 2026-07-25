@@ -1,4 +1,5 @@
 import botConfig from "../../../../bot/config/bot.js";
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
 import * as MusicService from "../../../../bot/music/services/MusicService.js";
 import * as ErrorEmbed from "../../../../bot/ui/embeds/ErrorEmbed.js";
 import { requireSameVoice } from "../../../../bot/core/utils/VoiceCheck.js";
@@ -45,9 +46,30 @@ export default {
     const force = args.includes("--yes");
     const count = await MusicService.removeByQuery(guildId, input, force);
     if (count === 0) return (message.channel as any).send({ embeds: [ErrorEmbed.build(`No tracks found matching "${input}".`)] });
+
     if (count < 0) {
-      return (message.channel as any).send({ embeds: [ErrorEmbed.build(`This will remove ${-count} tracks matching "${input}". Add \`--yes\` to confirm.`)] });
+      const confirmId = `rm_cf_${guildId}`;
+      const cancelId = `rm_cx_${guildId}`;
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(confirmId).setLabel(`Yes, Remove ${-count} Tracks`).setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId(cancelId).setLabel("Cancel").setStyle(ButtonStyle.Secondary),
+      );
+      const sent = await (message.channel as any).send({ embeds: [ErrorEmbed.build(`This will remove ${-count} track(s) matching "${input}". Proceed?`)], components: [row] });
+      try {
+        const btn = await sent.awaitMessageComponent({ filter: (i: any) => i.user.id === message.author.id, time: 30000 });
+        await btn.deferUpdate();
+        if (btn.customId === confirmId) {
+          const removed = await MusicService.removeByQuery(guildId, input, true);
+          await sent.edit({ embeds: [SuccessEmbed.build(`Removed ${removed} track(s) matching "${input}".`)], components: [] });
+        } else {
+          await sent.edit({ embeds: [ErrorEmbed.build("Cancelled. No tracks removed.")], components: [] });
+        }
+      } catch {
+        await sent.edit({ components: [ActionRowBuilder.from(row).setComponents(row.components.map((b: any) => b.setDisabled(true)))] });
+      }
+      return;
     }
+
     (message.channel as any).send({ embeds: [SuccessEmbed.build(`Removed ${count} track(s) matching "${input}".`)] });
   },
 };
