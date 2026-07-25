@@ -384,3 +384,4 @@ FodyWeavers.xsd
 *.json
 !grafana/provisioning/**/*.json
 /CLAUDE.md
+/ROADMAP.md
