@@ -55,7 +55,7 @@ function formatTrack(track: any) {
   };
 }
 
-export async function startApiServer(_status?: any): Promise<void> {
+export async function createApp(): Promise<express.Express> {
   const app = express();
   app.use(express.json());
   app.use(withAuth(["/api/health", "/api/metrics"]));
@@ -675,6 +675,11 @@ app.get("/api/health", createApiHandler(async (_req, res) => {
 
   Sentry.setupExpressErrorHandler(app);
 
+  return app;
+}
+
+export async function startApiServer(_status?: any): Promise<void> {
+  const app = await createApp();
   const port = Config.apiPort;
   app.listen(port, Config.apiHost, () => {
     Logger.ready(`API server on ${Config.apiHost}:${port}`);
