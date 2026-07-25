@@ -62,6 +62,10 @@
 - **Idle disconnect 60s** — README update: 60s all cases.
 - **Prometheus fix** — config mount path, `--add-host host.docker.internal`, `0.0.0.0`, `/api/metrics` exempt from auth.
 - **Grafana provisioning** — datasource Prometheus+Loki, dashboard auto-import via Docker network.
+- **Fase 0.8 CI pipeline** — `.github/workflows/ci.yml`: `typecheck` + `test` on push/PR. `npm audit fix`. Secrets rotation doc `docs/secrets-rotation.md`. `.env.example` sync (+6 missing vars).
+- **Fase 0.9 test suites** — 7 new test files (harness, API, errors, concurrent, benchmark, state, failover, music-events). `createApp()` refactor dari `apiServer.ts`. Total 108 tests. **Dihapus dari git — lokal only.**
+- **Fase 1.12 DB indexing** — Prisma: compound index `(guildId, timestamp desc)` di Activity/HistoryEntry, `(userId, createdAt desc)` di Conversation/Memory, `updatedAt` di PlayerState. Mongoose: `updatedAt` index di PlayerState, `timestamp` index di UserActivity.
+- **Stop command double embed fix** — `markStopDisconnect()` flag cegah `voiceStateUpdate.ts` kirim "Disconnected from voice channel." embed setelah manual stop.
 
 ## 2026-07-25 — v2.2.2
 
