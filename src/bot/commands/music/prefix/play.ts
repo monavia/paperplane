@@ -16,7 +16,7 @@ import { getPlayer, createPlayer } from "../../../music/engine/PlayerManager.js"
 import { setTextChannelId } from "../../../music/services/TextChannelStore.js";
 import { getEngine } from "../../../music/services/PlayerService.js";
 
-const MAX_SPOTIFY = 50;
+const MAX_SPOTIFY = botConfig.maxSpotify;
 
 async function resolveSpotifyTrack(player: any, spotifyItem: any, user: any): Promise<any> {
   const q = spotifyItem.query || `${spotifyItem.artists?.join(" ") || ""} ${spotifyItem.name}`.trim();
@@ -39,7 +39,7 @@ async function resolveSpotifyTrack(player: any, spotifyItem: any, user: any): Pr
 
 async function resolveSpotifyBatch(items: any[], player: any, guildId: string, user: any, onProgress?: (done: number, total: number) => void): Promise<any[]> {
   const resolved: any[] = [];
-  const BATCH = 5;
+  const BATCH = botConfig.spotifyBatch;
   for (let b = 0; b < items.length; b += BATCH) {
     const results = await Promise.allSettled(
       items.slice(b, b + BATCH).map((item: any) => resolveSpotifyTrack(player, item, user))

@@ -9,6 +9,8 @@ export default {
   apiHost: process.env.API_HOST || "0.0.0.0",
   deployCommands: process.env.DEPLOY_COMMANDS !== "false",
   maxQueue: parseInt(process.env.MAX_QUEUE || "150"),
+  maxSpotify: parseInt(process.env.MAX_SPOTIFY || "100"),
+  spotifyBatch: parseInt(process.env.SPOTIFY_BATCH || "20"),
   apiRateLimit: parseInt(process.env.API_RATE_LIMIT || "1000"),
   redisUrl: process.env.REDIS_URL || "redis://localhost:6379",
   redisPrefix: process.env.REDIS_PREFIX || "paperplane:",
