@@ -52,6 +52,11 @@
 - **failoverGuilds duplikat** — `musicEvents.ts`: panggil `FailoverManager.isFailoverGuild()` langsung, bukan `lavalink.isFailoverGuild()` yang pake set kosong. Fix embed tetap terkirim saat failover.
 - **Search skip unhealthy node** — `SearchService.ts`: `searchWithRetry()` + `findTrackWithDuration()` cek `isDraining()` / `isUnhealthy()` / penalty >100 sebelum `player.search()`. Skip langsung ke `searchViaHealthyNode()`. Cegah ~3s delay retry di node broken.
 
+### AI & fixes
+
+- **AI prefix change fix** — `CommandInterpreter.ts`: tambah tipe `"prefix"`, regex detect "ubah prefix / ganti prefix / set prefix". `messageCreate.ts`: handler langsung `setPrefix()` + embed, bukan cuma display.
+- **Mongoose deprecation fix** — `CachedTrackRepository.ts`: `new: true` → `returnDocument: "after"`.
+
 ### Infra & fixes
 
 - **Idle disconnect 60s** — README update: 60s all cases.
