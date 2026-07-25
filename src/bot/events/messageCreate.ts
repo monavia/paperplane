@@ -288,6 +288,15 @@ export function start(client: any): void {
         }
       }
 
+      if (interpreted.type === "prefix" && interpreted.prefix) {
+        if (!message.member?.permissions?.has("ManageGuild")) {
+          return message.channel.send({ embeds: [ErrorEmbed.build("Changing prefix requires `Manage Server` permission.")] });
+        }
+        const newP = String(interpreted.prefix).substring(0, 3);
+        await setPrefix(message.guildId, newP);
+        return message.channel.send({ embeds: [new EmbedBuilder().setDescription(`Prefix changed to \`${newP}\``).setColor(Colors.SUCCESS)] });
+      }
+
       let reply: string;
       if (interpreted.reply) {
         reply = interpreted.reply;

@@ -23,6 +23,9 @@ class CommandInterpreter {
     const playMatch = input.match(playPattern);
     if (playMatch) return { type: "play", query: playMatch[1].trim() };
 
+    const prefixMatch = lower.match(/(?:ubah\s+prefix|ganti\s+prefix|set\s+prefix|prefix\s+menjadi|prefix\s+to|change\s+prefix)\s+(\S+)/i);
+    if (prefixMatch) return { type: "prefix", prefix: prefixMatch[1].trim() };
+
     const correctionMatch = lower.match(/(?:bukan|salah|wrong|incorrect|هذا ليس|ليس)\s+(.+)/);
     if (correctionMatch && correctionMatch[1].trim()) return { type: "correct_playlist", keyword: correctionMatch[1].trim() };
 
