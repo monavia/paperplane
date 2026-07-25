@@ -4,12 +4,12 @@ datasources:
   - name: Prometheus
     type: prometheus
     access: proxy
-    url: http://prometheus:9090
+    url: http://paperplane-prometheus:9090
     isDefault: true
     editable: false
 
   - name: Loki
     type: loki
     access: proxy
-    url: http://loki:3100
+    url: http://paperplane-loki:3100
     editable: false
