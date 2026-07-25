@@ -6,7 +6,7 @@ export default {
   prefix: process.env.PREFIX || "-",
   trigger: (process.env.TRIGGER || "mona").toLowerCase(),
   apiPort: parseInt(process.env.API_PORT || process.env.BOT_API_PORT || "3001"),
-  apiHost: process.env.API_HOST || "127.0.0.1",
+  apiHost: process.env.API_HOST || "0.0.0.0",
   deployCommands: process.env.DEPLOY_COMMANDS !== "false",
   maxQueue: parseInt(process.env.MAX_QUEUE || "150"),
   redisUrl: process.env.REDIS_URL || "redis://localhost:6379",
