@@ -26,7 +26,7 @@ TypeScript, discord.js v14, Express 5, Lavalink, PostgreSQL/MongoDB, Redis.
 - **Spotify Scraper** — HTML scraper, no API key needed
 - **Auto-Failover** — 3 layers (nodeError, nodeDisconnect, health check 1s)
 - **Smart Search** — `ytmsearch:` → `ytsearch:` → `scsearch:` fallback chain
-- **Idle Disconnect** — 1-min alone / 3-min with others
+- **Idle Disconnect** — 60s after queue ends or all humans leave VC
 
 ## Quick Start
 
