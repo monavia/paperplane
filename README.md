@@ -2,7 +2,7 @@
 
 # Paperplane
 
-Single-process Discord music bot + AI assistant.  
+Discord music bot + AI assistant.  
 TypeScript, discord.js v14, Express 5, Lavalink, PostgreSQL/MongoDB, Redis.
 
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
