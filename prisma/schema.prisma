@@ -29,6 +29,8 @@ model PlayerState {
   position      Int      @default(0)
   nodeId        String?
   updatedAt     DateTime @default(now()) @updatedAt
+
+  @@index([updatedAt])
 }
 
 model Conversation {
@@ -38,7 +40,7 @@ model Conversation {
   expiresAt DateTime?
   createdAt DateTime @default(now())
 
-  @@index([userId])
+  @@index([userId, createdAt(sort: Desc)])
 }
 
 model Memory {
@@ -47,7 +49,7 @@ model Memory {
   summary   String?
   timestamp DateTime @default(now())
 
-  @@index([userId])
+  @@index([userId, timestamp(sort: Desc)])
 }
 
 model Activity {
@@ -61,7 +63,7 @@ model Activity {
   artist    String?
   timestamp DateTime @default(now())
 
-  @@index([guildId])
+  @@index([guildId, timestamp(sort: Desc)])
 }
 
 model SongRequest {
@@ -84,7 +86,7 @@ model HistoryEntry {
   artworkUrl String?
   timestamp  DateTime @default(now())
 
-  @@index([guildId])
+  @@index([guildId, timestamp(sort: Desc)])
 }
 
 model CachedTrack {

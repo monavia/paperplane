@@ -13,7 +13,7 @@ const UserActivitySchema = new Schema<IUserActivity>({
   userId: { type: String, required: true },
   action: { type: String, required: true },
   detail: { type: String, default: "" },
-  timestamp: { type: Date, default: Date.now },
+  timestamp: { type: Date, default: Date.now, index: true },
 });
 
 UserActivitySchema.index({ guildId: 1, timestamp: -1 });

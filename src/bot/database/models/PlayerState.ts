@@ -19,7 +19,7 @@ const playerStateSchema = new Schema({
   nowPlaying: { type: Schema.Types.Mixed, default: null },
   position: { type: Number, default: 0 },
   nodeId: { type: String, default: null },
-  updatedAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now, index: true },
 });
 
 export default model<IPlayerState>("PlayerState", playerStateSchema);
