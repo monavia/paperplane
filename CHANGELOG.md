@@ -1,4 +1,62 @@
-# Changelog — Paperplane Single Node
+# Changelog — Paperplane
+
+## 2026-07-25 — v2.2.3
+
+### Cache migration to Redis (Fase 0.7.1–0.7.2)
+
+- **SearchCache → getAdapter** (0.7.1) — `SearchCache.ts`: hapus in-memory Map class, `cachedSearch()` langsung pake `getAdapter()` — Redis auto kalo ada, fallback MemoryAdapter. TTL 1h→24h. Cache survive restart.
+- **SpotifyScraper cache → getAdapter** (0.7.2) — `SpotifyScraper.ts`: hapus `Map<string, CacheEntry>` + `pruneCache()`. Pake `getCached()`/`setCached()` via `CacheAdapter`. TTL 30m→24h. Prefix `spotify:`.
+
+### DB-Backed Track Resolver (0.7.3)
+
+- **CachedTrack model** — `models/CachedTrack.ts` baru: Mongoose schema `{identifier, query, source, trackData, hitCount, expiresAt}`. TTL index 30 hari, indexed by hitCount.
+- **CachedTrackRepository** — `repositories/CachedTrackRepository.ts` baru: `findCachedTrack()`, `upsertCachedTrack()` (upsert + inc hitCount), `pruneExpired()`.
+- **Prisma schema** — `schema.prisma`: tambah model `CachedTrack` untuk PostgreSQL.
+- **cachedSearch DB layer** — `SearchCache.ts`: flow Redis→DB→Lavalink. Miss di Redis → cek MongoDB → hit → simpan ke Redis + return. Miss di DB → Lavalink → simpan ke DB + Redis.
+
+### Pre-Fetch Batch (0.7.4)
+
+- **schedulePreFetch** — `musicEvents.ts`: setelah advanceQueue sukses play track, resolve n+1..n+5 di background via `Promise.allSettled`. Cache di Redis prefix `prefetch:{uri}` TTL 30m.
+- **advanceQueue cache check** — sebelum re-resolution ke Lavalink, cek prefetch cache dulu. Skip Lavalink kalo ada cached encoded.
+
+### SpotiFail Cache (0.7.5)
+
+- **Fallback persistent** — `SpotifyFallbackService.ts`: `getFallbackCache()` + `setFallbackCache()`. Cek cache by Spotify URI + trackId. Simpan mapping `fallback:spotify:{trackId}` dan `fallback:spotify:{uri}` TTL 24h.
+- **searchWithFallback cache** — sebelum Lavalink search, cek fallback cache. HIT → skip search, return cached YouTube track langsung. Setelah search sukses → simpan ke cache.
+
+### Negative Cache — Dead Track Detection (0.7.6)
+
+- **DeadTrackService** — `cache/DeadTrackService.ts` baru: `deadFingerprint(title, author)` → SHA1 hash, `isDead()` cek attempts >=3, `markDead()` increment + simpan. Cache `dead:{hash}` TTL 1h, `dead:spotify:{trackId}` TTL 6h.
+- **advanceQueue integration** — `musicEvents.ts`: 3 titik cek dead fingerprint: sebelum resolve, setelah resolve gagal, setelah play gagal. Cegah infinite retry loop.
+
+### Proactive Spotify Pre-Resolve (0.7.7)
+
+- **schedulePreFetch Spotify path** — `musicEvents.ts`: preFetch deteksi Spotify URI → `findTrackWithDuration()` → simpan ke SpotiFailCache + prefetch cache. Non-Spotify via `player.search()`.
+
+### Spotify batch overload fix (0.7.8)
+
+- **Cap playlist** — `slash/play.ts` + `prefix/play.ts`: `MAX_SPOTIFY=50`. Source priority ytmsearch→ytsearch (scsearch dropped). Batch 5 (from 20).
+
+### Prefix play fire-and-forget fix (0.7.9)
+
+- **Await batch** — `prefix/play.ts`: `.then()` → `await` dengan `onProgress` callback. Status "Resolved X/Y tracks..." progressive, final "Added N tracks."
+
+### RecommendationEngine autoplay fix (0.7.10)
+
+- **Source priority: Mix first** — `RecommendationEngine.ts`: YouTube Mix (radio) jadi primary source, bukan fallback.
+- **Source diversity** — similar artist search (`ytmsearch:{author}`), title search hanya kalo candidates < count.
+- **Taste profile** — Redis `taste:{guildId}`: record artist preference per guild, boost rekomendasi dari artist favorit.
+
+### Node Failover + Search Route Fix (v2.2.1)
+
+- **failoverGuilds duplikat** — `musicEvents.ts`: panggil `FailoverManager.isFailoverGuild()` langsung, bukan `lavalink.isFailoverGuild()` yang pake set kosong. Fix embed tetap terkirim saat failover.
+- **Search skip unhealthy node** — `SearchService.ts`: `searchWithRetry()` cek penalty >200 sebelum `player.search()`. Skip langsung ke `searchViaHealthyNode()`. Cegah ~3s delay retry di node broken.
+
+### Infra & fixes
+
+- **Idle disconnect 60s** — README update: 60s all cases.
+- **Prometheus fix** — config mount path, `--add-host host.docker.internal`, `0.0.0.0`, `/api/metrics` exempt from auth.
+- **Grafana provisioning** — datasource Prometheus+Loki, dashboard auto-import via Docker network.
 
 ## 2026-07-25 — v2.2.2
 
