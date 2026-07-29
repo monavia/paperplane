@@ -1,5 +1,14 @@
 # Changelog — Paperplane
 
+## 2026-07-30 — v3.2.0
+
+### Playlist Import/Export
+
+- **PlaylistService.ts** — new service: `exportPlaylist()` serializes queue + nowPlaying to portable format, `savePlaylist()` stores in-memory per-user, `importPlaylist()` resolves tracks (URI direct → ytmsearch → ytsearch) and appends to queue via `withQueueLock` + `saveState()`.
+- **Slash command** — `/playlist save <name>` / `load <name>` / `list` / `delete`. Shows track count, error handling for empty queues / not found.
+- **Prefix command** — `-playlist save <name>` / `load <name>` / `list` / `delete`. Aliases: `pl`.
+- **PlaylistService.test.ts** — 14 tests: export (empty/null/queue/nowPlaying/missing fields), save (success/empty queue), list (empty/multiple/user isolation), get (unknown/case-insensitive), delete (unknown/existing), import (no Lavalink).
+
 ## 2026-07-30 — v3.1.0
 
 ### P2 / Sprint B — Voice & State Testing (P2)
