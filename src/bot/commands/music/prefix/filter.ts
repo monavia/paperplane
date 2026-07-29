@@ -1,8 +1,7 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
 import * as MusicService from "../../../../bot/music/services/MusicService.js";
-import { setLastFilter, getLastFilter } from "../../../../bot/database/repositories/GuildRepository.js";
+import { setLastFilter } from "../../../../bot/database/repositories/GuildRepository.js";
 import * as ErrorEmbed from "../../../../bot/ui/embeds/ErrorEmbed.js";
-import * as SuccessEmbed from "../../../../bot/ui/embeds/SuccessEmbed.js";
 import Colors from "../../../../bot/core/constants/Colors.js";
 import { requireSameVoice } from "../../../../bot/core/utils/VoiceCheck.js";
 import state from "../../../../bot/core/state/StateManager.js";
@@ -46,39 +45,40 @@ export default {
   async execute(message: any, args: string[]) {
     if (!message.member) return;
     if (!await requireSameVoice(message)) return;
-    const down = MusicService.requireLavalink();
-    if (down) return (message.channel as any).send(down);
 
     const guildId = message.guildId!;
-    const engine = MusicService.getEngine(guildId);
-
-    const currentFilter = await getLastFilter(guildId);
+    const activeFilters = state.filter.get(guildId);
 
     const embed = new EmbedBuilder()
-      .setDescription(`Current filter: **${currentFilter}**`)
+      .setTitle("Audio Filters")
+      .setDescription(`Active: **${formatActive(activeFilters)}**\n\nTap to toggle. Compatible filters stack.`)
       .setColor(Colors.INFO);
 
-    const rows = buildButtons(currentFilter);
+    const rows = buildButtons(activeFilters);
     const msg = await message.channel.send({ embeds: [embed], components: rows });
 
     const collector = msg.createMessageComponentCollector({
       filter: (i: any) => i.user.id === message.author.id,
       time: 30000,
-      max: 1,
     });
 
     collector.on("collect", async (i: any) => {
       const filterValue = i.customId.replace("filter_", "");
-      state.filter.set(guildId, filterValue);
-      const label = FILTERS.find((f) => f.value === filterValue)?.name || filterValue;
-      await i.update({ embeds: [SuccessEmbed.build(`Applied filter: ${label}`)], components: [] });
-      if (filterValue === MusicModes.FILTERS.NONE) {
-        MusicService.resetFilters(guildId, message.author.id, message.member?.displayName || message.author.username).catch(() => {});
-        setLastFilter(guildId, "none").catch(() => {});
+      if (filterValue === "none") {
+        state.filter.clear(guildId);
+        await MusicService.resetFilters(guildId, message.author.id, message.member?.displayName || message.author.username);
+        await setLastFilter(guildId, "none");
       } else {
-        MusicService.setFilter(guildId, filterValue, message.author.id, message.member?.displayName || message.author.username).catch(() => {});
-        setLastFilter(guildId, filterValue).catch(() => {});
+        await MusicService.toggleFilter(guildId, filterValue, message.author.id, message.member?.displayName || message.author.username);
+        await setLastFilter(guildId, state.filter.get(guildId).join(",") || "none");
       }
+      const updated = state.filter.get(guildId);
+      const newRows = buildButtons(updated);
+      const newEmbed = new EmbedBuilder()
+        .setTitle("Audio Filters")
+        .setDescription(`Active: **${formatActive(updated)}**\n\nTap to toggle. Compatible filters stack.`)
+        .setColor(Colors.INFO);
+      await i.update({ embeds: [newEmbed], components: newRows });
     });
 
     collector.on("end", async () => {

@@ -2,6 +2,17 @@
 
 ## 2026-07-30 — v3.2.0
 
+### Advanced Filter Chains
+
+- **FilterStore** — refactor dari single string (`string`) ke koleksi (`string[]`). Metode baru: `toggle()` add/remove filter, `isActive()`, `clear()`. `set()` terima array, dedup otomatis, filter "none".
+- **PlayerService** — `applyFilters()` baru: baca semua filter aktif, group by property family (speed/volume/eq/rotation), apply satu per family, stacked. `toggleFilter()`: toggle on/off tanpa reset. `setFilter()`: replace single. `setEqualizer()`: hapus `resetFilters()`. `resetFilters()`: clearkan state + reset FM.
+- **Filter family conflict** — speed (nightcore/vaporwave/slowmo), eq (treble/bassboost), volume (soft), rotation (8d). Dalam 1 family: last wins. Cross-family: stack.
+- **Slash filter** — multi-toggle UI: Active filters highlighted hijau, tap to toggle, compatible stack. Max: 1 → unlimited collector.
+- **Prefix filter** — same multi-toggle UI as slash.
+- **Restore path** — StateService restore: parse comma-separated `lastFilter` → array. FailoverManager: pake `applyFilters()` untuk multi-filter.
+- **DB** — `setLastFilter()` stores comma-separated (backward-compatible). `getLastFilter()` returns comma-separated.
+- **FilterStore test** — expanded to 11 tests (toggle, isActive, clear, dedup, none filtering).
+
 ### Playlist Import/Export
 
 - **PlaylistService.ts** — new service: `exportPlaylist()` serializes queue + nowPlaying to portable format, `savePlaylist()` stores in-memory per-user, `importPlaylist()` resolves tracks (URI direct → ytmsearch → ytsearch) and appends to queue via `withQueueLock` + `saveState()`.
