@@ -1,5 +1,63 @@
 # Changelog — Paperplane
 
+## 2026-07-30 — v3.1.0
+
+### P2 / Sprint B — Voice & State Testing (P2)
+
+- **VoiceCheck.test.ts** — 18 tests: checkUserVoice (in VC/not/no member), checkBotVoice (engine null/player missing), checkSameVoice (same/different VC), requireSameVoice (reply/channel.send), withVoiceCheck wrapper.
+- **QueueStore.test.ts** — 18 tests: CRUD + copy isolation, syncToPlayer (player.queue bridge), syncFromPlayer, clear with player queue cleanup.
+- **StateStores.test.ts** — 55 tests: LoopStore (track/playlist/off), ShuffleStore (toggle), PositionStore (has/entries), FilterStore, EqualizerStore, AutoplayStore, TwentyFourSevenStore (enabled+channelId), VoiceChannelStore (entries), NowPlayingStore (size/entries).
+- **CooldownManager edge cases** — 10 new tests: getUses unknown, getRemaining zero/expiry, reset non-existent, bulk 50 entries, concurrent rapid set+check, exact boundary.
+
+### P3 / Sprint C — Integration Testing
+
+- **apiServer.test.ts** — 21 tests: health (status/uptime/redis/memory), metrics (prometheus text), status, metrics/json, guild queue empty, nowplaying null, equalizer/filter defaults, settings read/write, search validation, guildId validation, 404 handling. Uses supertest + mock Lavalink/PlayerService/GuildRepository/redis/mongoose/Sentry.
+- **interactionCreate.test.ts** — 8 tests: non-command filter, unknown command, registered command dispatch, Lavalink down guard (music blocked, non-music passes), cooldown block, error handling (deferred/not-deferred reply).
+- **messageCreate.test.ts** — 9 tests: bot message filter, DM filter, prefix command dispatch, unknown prefix, non-prefix passthrough, AI trigger via mention, AI trigger via trigger word, filtered prompt block. Uses EventEmitter-based client mock + listener capture pattern.
+
+### P4 / Sprint D — AI Engine & Edge Cases
+
+- **PromptFilter.test.ts** — 60 tests: 11 allowed contexts (music overrides block), 23 blocked patterns (academic, coding, homework, calculus, resume), 9 allowed non-blocking, 17 edge cases (empty/whitespace/null/undefined/mixed case/special chars/emoji/numbers).
+- **CommandInterpreter edge cases** — extended to 41 tests: play with spaces/mixed case/special chars/numbers/punctuation, `cari` keyword, Arabic play, prefix change variations, correction variants (`bukan`/`wrong`/Arabic), all sub-command variants, empty/whitespace/special-only/number-only, very long input, `autoplay` substring guard.
+- **AIDJ.test.ts** — 28 tests: CommandInterpreter delegation, PLAY/PLAYLIST/CORRECT from AI response, all 15 command types (SKIP/STOP/PAUSE/RESUME/QUEUE/AUTOPLAY/SHUFFLE/LOOP/247/CLEAR/RECOMMEND/NOWPLAYING/VOLUME/INFO/PING/HELP), chat fallback, multiline response parsing, whitespace trimming, AI memory clear verification, ask param verification.
+- **musicEvents.test.ts** — 22 tests: idle disconnect (mark/check/clear/guild isolation), stop disconnect, track start suppression, network error pattern matching (ECONNRESET/ETIMEDOUT/ENOTFOUND/timeout/aborted/Deezer), error loop detection (5 errors/15s), stuck timer lifecycle, playerUpdate reset.
+- **CommandInterpreter.fuzz.test.ts** — 7 tests: all ASCII single-char inputs, random long strings, unicode mixed (Arabic/Chinese/Japanese/emoji), repeated patterns, SQL injection patterns (DROP TABLE/XSS/template injection), all play prefixes validation, all command prefix validation.
+
+### v3.1.0 — Production Hardening
+
+- **Bot config tests** — 5 tests: defaults (empty env), custom env vars, trigger lowercasing, DEPLOY_COMMANDS false, BOT_API_PORT fallback.
+- **AI config tests** — 4 tests: defaults, AI_* env vars, OPENROUTER_* fallback, AI_* priority.
+- **MetricsCollector.test.ts** — 15 tests: initial zeros, incTracksPlayed (plain/labeled), incTracksFailed, incCommandsExecuted (labeled), setGuildCount/VoiceConnections/ActivePlayers, incRateLimitBlocked/Allowed, setLavalinkNodesOnline/NodePlayers/NodePenalty/NodeLatency, incLavalinkNodeDisconnects, observeCommandLatency, incCacheHit/Miss, getMetrics memory info.
+- **api-base.test.ts** — 16 tests: ApiError (status/message/name), jsonResponse (success/custom status), createApiHandler (success/ApiError/500), withAuth (exempt/localhost/remote 401/x-forwarded-for/Bearer token), globalRateLimit (allow/block/trusted bypass), getUserId (missing/header).
+- **connection.test.ts** — 4 tests: isUsingPrisma false/no DATABASE_URL, true/postgresql://, true/postgres://, Prisma selected correctly.
+- **Embed tests** — 27 tests: MusicModes constants (LOOP/AUTOPLAY/FILTERS), SuccessEmbed, LoadingEmbed, PingEmbed (latency fields/string API/footer sum), AIEmbed (truncation/footer), NowPlayingEmbed (source emoji/build/missing info/spotify URI/addedToQueue), QueueEmbed (empty/single/multi-page/pagination next/prev disabled).
+
+### P5 — Performance Benchmarks
+
+- **benchmark.test.ts** — 15 latency/growth/concurrent tests: add 10/1000 tracks, remove 500 front, shuffle 1000, next 1000, 1000 swaps, 1000 moves, clear 1000, addMultiple 500, remove 100 middle/end, QueueStore 1000 guilds, CooldownManager 10000 ops, concurrent 50 guilds add, concurrent 30 guilds shuffle. Uses `process.hrtime.bigint()` for sub-ms precision.
+
+### SpotifyScraper — Playlist Pagination Fix
+
+- **Root cause**: `scrapePlaylist()` menggunakan embed endpoint (`open.spotify.com/embed/playlist/{id}?offset=N`) untuk pagination. Spotify tidak mendukung `?offset=` pada embed — setiap request return 50 tracks yang sama. Akibatnya playlist >50 track cuma discrape 50 item lalu di-cache.
+- **Fix**: Deteksi partial result (embed return tracks, offset pagination gagal) → fallthrough ke HTML scrape (`open.spotify.com/playlist/{id}`) yang render full track list di server-side `__NEXT_DATA__`. Prioritas: embed full > HTML scrape > embed partial > error.
+- **SpotifyScraper.test.ts** — 7 tests: parseUrl (playlist/track/album, reject non-spotify/invalid/wrong path format).
+
+### Docs & Planning Sync
+
+- **roadmap.md** — rewrite: add Completed section (Fase 0.5–1.12, P1, P5), restructure sprints A–D, add Sprint↔P mapping, mark all completed items.
+- **planing.md** — add P#↔Sprint# mapping header, sync P2–P4 scope with roadmap, mark P5 done.
+- **AGENTS.md** — created with compact agent instructions: exact commands, DB dual-mode, critical conventions (.js imports, require() autoload, node:assert, vi.stubEnv, Logger.safe, ShutdownManager), architecture tree, observability stack, command layout, env quirks.
+
+## 2026-07-27 — v3.0.1
+
+### Core Unit Tests Expansion (P1)
+
+- **Duration.test.ts** — 15 tests: parseDuration edge cases (null/undefined/NaN/0/hours/seconds), parseTimestamp (mm:ss, hh:mm:ss, seconds alone, empty string, invalid, mixed parts).
+- **Formatter.test.ts** — 9 tests: formatTrack with/without URL, missing title/author, originalUrl priority, index padding, formatTrackCompact, formatPlaylist, formatVolume bar count.
+- **Logger.test.ts** — 8 tests: JSON format (info/warn/error/ready level + extra args), safe handler with/without error, pretty format [INFO] tag. Uses `vi.resetModules()` + `vi.stubEnv()` for ESM module isolation.
+- **CacheAdapter.test.ts** — 15 tests: MemoryAdapter get/set/del/has/clear/size, value types (string/object/number/boolean/null), key independence, TTL expiry, expired entry detection.
+- **Total test coverage** — 4 file baru, 47 tests baru, dari 38 → 90 tests passing.
+
 ## 2026-07-26 — v3.0.0
 
 ### Backup & Rollback Runbook (Fase 1.0)

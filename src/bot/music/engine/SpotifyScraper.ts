@@ -83,12 +83,35 @@ class SpotifyScraper {
     }
 
     const unique = this._deduplicate(allTracks);
-    if (unique.length) { Logger.info(`[SpotifyScraper] Embed path: ${unique.length} tracks`); await this.setCached(cacheKey, unique); return unique; }
 
-    Logger.info(`[SpotifyScraper] Embed path empty, trying HTML scrape`);
+    // Embed pagination via ?offset= is unreliable — Spotify ignores it.
+    // If we tried paginating (offset went >0) but stopped with tracks,
+    // fall through to HTML scrape which has the full track list.
+    if (unique.length && offset === 0) {
+      Logger.info(`[SpotifyScraper] Embed path: ${unique.length} tracks`);
+      await this.setCached(cacheKey, unique);
+      return unique;
+    }
+
+    if (unique.length) {
+      Logger.info(`[SpotifyScraper] Embed partial (${unique.length}), trying HTML scrape supplement`);
+      const html = await this._fetchPage(`https://open.spotify.com/playlist/${id}`);
+      const htmlTracks = this._extractFromHtml(html);
+      if (htmlTracks?.length) {
+        Logger.info(`[SpotifyScraper] HTML scrape: ${htmlTracks.length} tracks`);
+        await this.setCached(cacheKey, htmlTracks);
+        return htmlTracks;
+      }
+    }
+
+    Logger.info(`[SpotifyScraper] Embed empty, trying HTML scrape`);
     const html = await this._fetchPage(`https://open.spotify.com/playlist/${id}`);
     const htmlTracks = this._extractFromHtml(html);
-    if (htmlTracks?.length) { Logger.info(`[SpotifyScraper] HTML scrape: ${htmlTracks.length} tracks`); await this.setCached(cacheKey, htmlTracks); return htmlTracks; }
+    if (htmlTracks?.length) {
+      Logger.info(`[SpotifyScraper] HTML scrape: ${htmlTracks.length} tracks`);
+      await this.setCached(cacheKey, htmlTracks);
+      return htmlTracks;
+    }
 
     throw new Error("Could not extract playlist data from Spotify");
   }
