@@ -70,6 +70,7 @@ export class PlaybackEngine {
           const autoTrack = await autoplayInst.getNextTrack(player, sourceTrack, this.guildId);
           if (autoTrack?.info) {
             state.nowPlaying.set(this.guildId, autoTrack);
+            markManualAdvance(this.guildId);
             clearQueueEndGuard(this.guildId);
             try {
               await player.play({ track: autoTrack, clientTrack: autoTrack });
