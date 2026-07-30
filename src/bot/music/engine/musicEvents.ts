@@ -538,6 +538,7 @@ function register(client: any): void {
           try {
             await player.play({ track, clientTrack: track });
           } catch {
+            manualAdvances.delete(player.guildId);
             player.stopPlaying().catch(Logger.safe("bot/music/engine/musicEvents.ts"));
           }
           return;
@@ -564,6 +565,7 @@ function register(client: any): void {
           }
         }
         if (player.node?.connected) {
+          manualAdvances.delete(player.guildId);
           player.stopPlaying().catch(Logger.safe("bot/music/engine/musicEvents.ts"));
         } else {
           Logger.info(`[trackError] guild=${player.guildId} node disconnected — recovering player`);

@@ -31,6 +31,12 @@ Two root causes found. The `node=?` in logs was a **red herring**.
 - **Fix** — added `/\b(?:keroncong|kroncong|akustik|acoustic|dangdut|remix|dj\s+remix)\b/i` to `COVER_PATTERNS`. Added `keroncong|kroncong|akustik|acoustic` to both the strict inline regex and the lenient fallback filter. Lenient fallback now also checks `isCover` and blocks `version|ver\.|tribute|instrumental|karaoke|session`.
 - **Impact**: keroncong/akustik tracks still appear in candidates (YouTube Mix) but are filtered out before autoplay picks them. Lenient fallback no longer bypasses all quality filters.
 
+### Autoplay Delay — Clear ManualAdvance on Track Error
+
+- **Bug**: after skip + track error, `manualAdvances` entry from the skip blocked `queueEnd` from firing autoplay. Player went silent until the 30s watchdog cycle kicked in.
+- **Fix**: `musicEvents.ts:trackError` — `manualAdvances.delete(guildId)` before `player.stopPlaying()`. This lets `queueEnd` run its full flow (advanceQueue → autoplay) immediately instead of returning early.
+- **Impact**: autoplay continues seamlessly after skip + error instead of 30s silent gap.
+
 ## 2026-07-30 — v3.2.5
 
 ### Position Sync Optimization — 90% DB Writes Reduction
