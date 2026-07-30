@@ -82,6 +82,7 @@ const memoryHeapTotal = new Gauge();
 const eventLoopLag = new Gauge();
 const cacheHitCount = new Counter();
 const cacheMissCount = new Counter();
+const audioStartupLatency = new Gauge();
 
 let lastLoopMeasure = Date.now();
 function measureEventLoopLag(): void {
@@ -150,6 +151,9 @@ export function incLavalinkNodeDisconnects(nodeId: string) {
 export function observeCommandLatency(command: string, ms: number) {
   commandLatency.set(ms, { command });
 }
+export function observeAudioStartupLatency(source: string, ms: number) {
+  audioStartupLatency.set(ms, { source });
+}
 export function incCacheHit(cache: string) {
   cacheHitCount.inc({ cache });
 }
@@ -180,6 +184,7 @@ export function getMetrics() {
     lavalinkNodeDisconnects: lavalinkNodeDisconnects.get(),
     lavalinkNodeDisconnectsByLabel: lavalinkNodeDisconnects.getAllLabels(),
     commandLatency: commandLatency.getAllLabels(),
+    audioStartupLatency: audioStartupLatency.getAllLabels(),
     memory: {
       rss: mem.rss,
       heapUsed: mem.heapUsed,
@@ -194,6 +199,12 @@ export function getMetrics() {
 }
 
 import * as EventBus from "../music/events/EventBus.js";
+
+EventBus.on('metrics:audioStartupLatency', (p: any) => {
+  if (p?.ms && p?.source) {
+    audioStartupLatency.set(p.ms, { source: p.source });
+  }
+});
 
 EventBus.on('metrics:trackPlayed', (p: any) => {
   if (p?.guildId) {
@@ -233,4 +244,5 @@ export default {
   commandLatency,
   cacheHitCount,
   cacheMissCount,
+  audioStartupLatency,
 };

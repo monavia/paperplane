@@ -259,6 +259,13 @@ function register(client: any): void {
     state.nowPlaying.set(player.guildId, track);
     EventBus.emit('lavalink:cacheTrack', { guildId: player.guildId, track });
 
+    const trackStartTime = Date.now();
+    const playerCreateTime = (player as any)._createTime || trackStartTime;
+    const latency = trackStartTime - playerCreateTime;
+    if (latency > 0 && latency < 30000) {
+      EventBus.emit('metrics:audioStartupLatency', { guildId: player.guildId, ms: latency, source: track?.info?.source || 'unknown' });
+    }
+
     
     EventBus.emit('state:startPositionSync', { guildId: player.guildId });
 
