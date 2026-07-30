@@ -44,6 +44,27 @@ class RecommendationEngine {
     return result.tracks;
   }
 
+  _extractKeywords(track: any): Set<string> {
+    const stopWords = new Set([
+      "the","a","an","in","on","at","to","for","of","with","and","or","is",
+      "are","was","were","be","been","being","have","has","had","do","does",
+      "did","will","would","can","could","shall","should","may","might",
+      "feat","ft","featuring","official","mv","m/v","video","audio",
+      "lyrics","lyric","hd","hq","4k","1080p","2160p","new","remix","mix",
+      "edit","version","song","music","track","album","single",
+    ]);
+    const words = new Set<string>();
+    const add = (s: string) => {
+      for (const raw of (s || "").toLowerCase().split(/[\s,()[\]]+/)) {
+        const w = raw.replace(/[^a-z0-9가-힣]/g, "").trim();
+        if (w && w.length > 1 && !stopWords.has(w)) words.add(w);
+      }
+    };
+    add(track.info?.author);
+    add(track.info?.title);
+    return words;
+  }
+
   _isSameTrack(a: any, b: any): boolean {
     if (!a?.info || !b?.info) return false;
     const norm = (s: any) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -96,9 +117,10 @@ class RecommendationEngine {
       const candidates: any[] = [];
       const seen = new Set<string>();
 
-      // 1. Primary: YouTube Mix (radio) — real recommendations
+      // 1. Primary: YouTube Mix (radio) — cap at top N to avoid garbage flooding
+      const MAX_MIX = 15;
       const mixTracks = await this._getYouTubeMix(player, track);
-      for (const t of mixTracks) {
+      for (const t of mixTracks.slice(0, MAX_MIX)) {
         const k = this._trackKey(t);
         if (!seen.has(k)) { seen.add(k); candidates.push(t); }
       }
@@ -132,16 +154,21 @@ class RecommendationEngine {
       // 4. Try genre-boost: boost tracks from preferred genres
       const genrePrefs = await this._getGenrePrefs(guildId);
       const origDuration = track?.info?.duration || 0;
+      const origKeywords = this._extractKeywords(track);
       const filtered = candidates.filter((t: any) => {
         const titleL = (t?.info?.title || "").toLowerCase();
         const ta = (t?.info?.author || "").toLowerCase();
+        const candKeywords = this._extractKeywords(t);
+        const hasOverlap = !origKeywords.size || origKeywords.size < 2 ||
+          [...origKeywords].some(k => candKeywords.has(k));
         return !this._isSameTrack(t, track) &&
         !this._isPlayed(guildId, t) &&
         !isCover(t?.info?.title || "", t?.info?.author) &&
         !titleL.includes("instrumental") && !titleL.includes("karaoke") &&
         !/session|#\w+|@\s+\w+|version|tribute\b/i.test(titleL) &&
         (origDuration < 30000 || !t?.info?.duration || Math.abs(t.info.duration - origDuration) / origDuration < 0.4) &&
-        (!genrePrefs.size || genrePrefs.has(ta.replace(/[^a-z0-9]/g, "").slice(0, 20)));
+        (!genrePrefs.size || genrePrefs.has(ta.replace(/[^a-z0-9]/g, "").slice(0, 20))) &&
+        hasOverlap;
       });
 
       if (!filtered.length) {

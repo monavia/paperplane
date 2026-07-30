@@ -2,6 +2,12 @@
 
 ## 2026-07-30 — v3.2.1
 
+### Search Flow: ytsearch > ytmsearch > dzsearch
+
+- **ytsearch primary** — all search flows changed from `ytmsearch` first to `ytsearch` first. ytsearch hits regular YouTube uploads which are less likely to be age/region-restricted than YouTube Music catalog entries.
+- **dzsearch fallback** — Deezer search added as last resort after scsearch. If the node supports `dzsearch:`, age-restricted tracks may resolve through Deezer's catalog instead.
+- **Files affected** — 10 files: play.ts (slash+prefix), FailoverManager, SearchService, StateService, musicEvents, messageCreate, RecommendationEngine, PlaylistService, SpotifyFallbackService.
+
 ### Audio Startup Latency Optimization
 
 - **Parallel connect+resolve** — voice `connect()` starts immediately without await, track resolution runs in parallel, then `connectPromise` awaited before `player.play()`. Cuts ~500ms from startup.
