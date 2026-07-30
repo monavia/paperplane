@@ -84,12 +84,28 @@ const positionSyncTimers = new Map<string, any>();
 
 export function startPositionSync(guildId: string): void {
   if (positionSyncTimers.has(guildId)) return;
+  let lastLoggedPos = 0;
   const timer = setInterval(async () => {
     try {
       const engine = getEngine(guildId);
       const player = engine.player;
-      if (!player?.playing) return;
-      const pos = Math.max(state.position.get(guildId) || 0, player.position || 0, player.lastPosition || 0);
+      if (!player) return;
+
+      if (player.paused) {
+        await updatePlayerState(guildId, { nodeId: player.node?.id || null, updatedAt: new Date() });
+        return;
+      }
+
+      if (!player.playing) return;
+
+      const playerPos = player.position || 0;
+      const pos = playerPos > 0 ? playerPos : (state.position.get(guildId) || 0);
+
+      if (pos !== lastLoggedPos) {
+        Logger.info(`[PositionSync] guild=${guildId} pos=${pos} playerPos=${playerPos} delta=${pos - lastLoggedPos}`);
+        lastLoggedPos = pos;
+      }
+
       await updatePlayerState(guildId, { position: pos, nodeId: player.node?.id || null, updatedAt: new Date() });
     } catch { Logger.warn(`[StateRestore] positionSync failed for ${guildId}`); }
   }, 1000);
@@ -117,12 +133,10 @@ async function saveState(guildId: string) {
     const queue = engine.queue.getAll();
 
     const textChannelId = getTextChannelId(guildId);
-    const statePos = state.position.get(guildId) || 0;
     const playerPos = player.position || 0;
-    const lastPos = player.lastPosition || 0;
-    const pos = Math.max(statePos, playerPos, lastPos);
+    const pos = playerPos > 0 ? playerPos : (state.position.get(guildId) || 0);
 
-      Logger.info(`[StateSave] guild=${guildId} title="${(nowPlaying?.info?.title || "").slice(0,40)}" pos=${pos} statePos=${statePos} playerPos=${playerPos} lastPos=${lastPos} playing=${player.playing} region=${player.node?.options?.regions?.[0] || "?"}`);
+      Logger.info(`[StateSave] guild=${guildId} title="${(nowPlaying?.info?.title || "").slice(0,40)}" pos=${pos} playerPos=${playerPos} playing=${player.playing} region=${player.node?.options?.regions?.[0] || "?"}`);
       await upsertPlayerState(guildId, {
         voiceChannelId,
         textChannelId,
