@@ -3,29 +3,59 @@ import { destroyEngine } from "../services/PlayerService.js";
 import { failoverFromNode, connectWithRetry } from "./lavalink.js";
 import { markTrackStartSuppressed, advanceQueue } from "./musicEvents.js";
 import state from "../../core/state/StateManager.js";
+import * as EventBus from "../events/EventBus.js";
 
 const STUCK_TIMEOUT_MS = 15000;
 const CHECK_INTERVAL_MS = 30000;
 const MAX_STUCK = 3;
 const MAX_RECONNECT_ATTEMPTS = 3;
 const RECONNECT_BACKOFF_MS = 5000;
+const POSITION_FREEZE_MS = 30000;
 
 const stuckCounts = new Map<string, number>();
 const reconnectAttempts = new Map<string, number>();
+const skipAttempted = new Set<string>();
+const lastPositions = new Map<string, number>();
+const positionFreezeTimestamps = new Map<string, number>();
+let totalErrors = 0;
+let managerRef: any = null;
+
+export interface WatchdogStats {
+  totalPlayers: number;
+  activePlayers: number;
+  stuckCounts: Record<string, number>;
+  reconnectAttempts: Record<string, number>;
+  totalErrors: number;
+}
 
 function startWatchdog(manager: any, clientRef: any): void {
   if (!manager) return;
+  managerRef = manager;
 
   setInterval(async () => {
     const players = manager.players;
-    if (!players?.size) return;
+    if (!players?.size) {
+      emitMetrics(manager);
+      return;
+    }
 
-    // Process all guilds concurrently (no blocking)
     const checks: Promise<void>[] = [];
     for (const [guildId, player] of players) {
-      checks.push(checkPlayer(guildId, player, clientRef).catch(Logger.safe("bot/music/engine/PlayerWatchdog.ts")));
+      checks.push(
+        checkPlayer(guildId, player, clientRef).catch((err: any) => {
+          totalErrors++;
+          Logger.safe("bot/music/engine/PlayerWatchdog.ts")(err);
+        }),
+      );
     }
     await Promise.allSettled(checks);
+
+    await checkNodes(manager).catch((err: any) => {
+      totalErrors++;
+      Logger.safe("bot/music/engine/PlayerWatchdog.ts")(err);
+    });
+
+    emitMetrics(manager);
   }, CHECK_INTERVAL_MS);
 
   Logger.info("[Watchdog] Player watchdog started (30s interval)");
@@ -41,6 +71,7 @@ async function checkPlayer(guildId: string, player: any, clientRef: any): Promis
     await destroyEngine(guildId).catch(Logger.safe("bot/music/engine/PlayerWatchdog.ts"));
     stuckCounts.delete(guildId);
     reconnectAttempts.delete(guildId);
+    skipAttempted.delete(guildId);
     return;
   }
 
@@ -51,13 +82,12 @@ async function checkPlayer(guildId: string, player: any, clientRef: any): Promis
       await destroyEngine(guildId).catch(Logger.safe("bot/music/engine/PlayerWatchdog.ts"));
       stuckCounts.delete(guildId);
       reconnectAttempts.delete(guildId);
+      skipAttempted.delete(guildId);
       return;
     }
   }
 
-  // Internet glitch recovery — skip, health check (15s) handles reconnect + failover
-
-  // Voice disconnected — try reconnect with backoff (non-blocking)
+  // Voice disconnected — try reconnect with backoff
   if (player.voiceChannelId && !player.connected) {
     if (node && !node.connected) {
       Logger.warn(`[Watchdog] Node ${node.id} not connected, skipping voice reconnect for ${guildId}`);
@@ -71,6 +101,7 @@ async function checkPlayer(guildId: string, player: any, clientRef: any): Promis
       Logger.error(`[Watchdog] Player ${guildId} failed to reconnect after ${MAX_RECONNECT_ATTEMPTS} attempts — destroying player`);
       reconnectAttempts.delete(guildId);
       stuckCounts.delete(guildId);
+      skipAttempted.delete(guildId);
       await destroyEngine(guildId).catch(Logger.safe("bot/music/engine/PlayerWatchdog.ts"));
       return;
     }
@@ -78,14 +109,13 @@ async function checkPlayer(guildId: string, player: any, clientRef: any): Promis
     const backoff = RECONNECT_BACKOFF_MS * attempts;
     Logger.info(`[Watchdog] Player ${guildId} disconnected, attempting reconnect (${attempts}/${MAX_RECONNECT_ATTEMPTS}) after ${backoff}ms`);
 
-    // Fire reconnect without blocking the watchdog loop
-    const reconnectPromise = new Promise(r => setTimeout(r, backoff))
+    new Promise(r => setTimeout(r, backoff))
       .then(() => player.connect())
       .then(() => { reconnectAttempts.delete(guildId); })
       .catch((err: any) => {
         Logger.error(`[Watchdog] Player ${guildId} reconnect failed (attempt ${attempts}): ${err.message}`);
+        totalErrors++;
       });
-    // Don't await — let watchdog continue checking other guilds
     return;
   }
 
@@ -117,28 +147,114 @@ async function checkPlayer(guildId: string, player: any, clientRef: any): Promis
     } catch { Logger.warn(`[Watchdog] fetchPlayer failed for ${guildId}`); }
   }
 
-  // Stuck detection
+  // Stuck + position freeze detection
   if (player.playing && current && !player.paused) {
     const lastChange = player.lastPositionChange || 0;
     const now = Date.now();
+    let stuck = false;
 
+    // Existing lastPositionChange-based stuck check (15s)
     if (lastChange > 0 && now - lastChange > STUCK_TIMEOUT_MS) {
+      stuck = true;
+    }
+
+    // Position freeze detection (30s of unchanged position)
+    if (!stuck) {
+      const pos = player.position || 0;
+      const lastPos = lastPositions.get(guildId);
+      if (lastPos !== undefined && pos > 0 && pos === lastPos) {
+        const freezeStart = positionFreezeTimestamps.get(guildId) || now;
+        if (now - freezeStart >= POSITION_FREEZE_MS) {
+          stuck = true;
+        }
+      } else {
+        lastPositions.set(guildId, pos);
+        positionFreezeTimestamps.set(guildId, now);
+      }
+    }
+
+    if (stuck) {
       const count = (stuckCounts.get(guildId) || 0) + 1;
       stuckCounts.set(guildId, count);
       const title = current.info?.title || "unknown";
 
-      if (count >= MAX_STUCK && node?.id) {
-        Logger.warn(`[Watchdog] Player ${guildId} stuck ${count}x — triggering failover from ${node.id}`);
-        await failoverFromNode(node.id).catch(Logger.safe("bot/music/engine/PlayerWatchdog.ts"));
-        stuckCounts.delete(guildId);
+      if (count >= MAX_STUCK) {
+        if (skipAttempted.has(guildId)) {
+          Logger.warn(`[Watchdog] Player ${guildId} stuck ${count}x — triggering failover from ${node?.id || "?"}`);
+          if (node?.id) {
+            await failoverFromNode(node.id).catch((err: any) => { totalErrors++; Logger.safe("bot/music/engine/PlayerWatchdog.ts")(err); });
+          }
+          stuckCounts.delete(guildId);
+          skipAttempted.delete(guildId);
+        } else {
+          Logger.warn(`[Watchdog] Player ${guildId} stuck ${count}x (max) — skipping before failover`);
+          await player.stopPlaying().catch((err: any) => { totalErrors++; Logger.safe("bot/music/engine/PlayerWatchdog.ts")(err); });
+          skipAttempted.add(guildId);
+        }
       } else {
         Logger.warn(`[Watchdog] Player ${guildId} stuck on "${title}" (${count}/${MAX_STUCK}) — stopping`);
-        await player.stopPlaying().catch(Logger.safe("bot/music/engine/PlayerWatchdog.ts"));
+        await player.stopPlaying().catch((err: any) => { totalErrors++; Logger.safe("bot/music/engine/PlayerWatchdog.ts")(err); });
+        if (count >= Math.floor(MAX_STUCK / 2)) {
+          skipAttempted.add(guildId);
+        }
       }
     } else if (lastChange > 0) {
       stuckCounts.delete(guildId);
+      skipAttempted.delete(guildId);
     }
   }
+}
+
+async function checkNodes(manager: any): Promise<void> {
+  const nodes = manager?.nodeManager?.nodes;
+  if (!nodes) return;
+
+  for (const [nodeId, node] of nodes) {
+    if (node.connected) {
+      Logger.info(`[Watchdog] Node ${nodeId}: connected`);
+    } else {
+      Logger.warn(`[Watchdog] Node ${nodeId}: disconnected`);
+      if (node.connect) {
+        Logger.info(`[Watchdog] Reconnecting node ${nodeId}...`);
+        try {
+          await node.connect();
+          Logger.info(`[Watchdog] Node ${nodeId} reconnected`);
+        } catch (err: any) {
+          Logger.error(`[Watchdog] Node ${nodeId} reconnect failed: ${err?.message || err}`);
+          totalErrors++;
+        }
+      }
+    }
+  }
+}
+
+function emitMetrics(manager: any): void {
+  const stats = buildStats(manager);
+  EventBus.emit("metrics:watchdog", stats);
+  Logger.info(
+    `[Watchdog] Health summary: ${stats.totalPlayers} players, ${stats.activePlayers} active, ` +
+    `${Object.keys(stats.stuckCounts).length} stuck, ${Object.keys(stats.reconnectAttempts).length} reconnecting, ${stats.totalErrors} errors`,
+  );
+}
+
+function buildStats(manager: any): WatchdogStats {
+  let activePlayers = 0;
+  if (manager?.players) {
+    for (const [, p] of manager.players) {
+      if (p.playing) activePlayers++;
+    }
+  }
+  return {
+    totalPlayers: manager?.players?.size || 0,
+    activePlayers,
+    stuckCounts: Object.fromEntries(stuckCounts),
+    reconnectAttempts: Object.fromEntries(reconnectAttempts),
+    totalErrors,
+  };
+}
+
+export function getWatchdogStats(): WatchdogStats {
+  return buildStats(managerRef);
 }
 
 export { startWatchdog };
