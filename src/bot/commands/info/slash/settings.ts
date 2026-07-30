@@ -39,11 +39,9 @@ export default {
     }
 
     const eqName = typeof lastEq === "string" ? lastEq : lastEq ? "Custom" : "Flat";
-    const filterName = lastFilter && lastFilter !== "none" ? lastFilter : "None";
+    const filterName = lastFilter && lastFilter !== "none" ? lastFilter.replace(",", ", ") : "None";
 
-    const activeFilters: string[] = [];
-    const sf = state.filter.get(guildId);
-    if (sf && sf !== "none") activeFilters.push(sf);
+    const activeFilters = [...state.filter.get(guildId)];
     const eq = state.equalizer.get(guildId);
     if (eq && eq !== "flat") activeFilters.push("Equalizer");
 

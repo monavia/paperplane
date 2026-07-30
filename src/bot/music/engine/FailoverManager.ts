@@ -4,7 +4,7 @@ import { saveSpotifyMeta, applySpotifyMeta } from "../services/TitleResolver.js"
 import { getTextChannelId } from "../services/TextChannelStore.js";
 import { getEngine } from "../services/PlayerService.js";
 import { getBestNode, getPenalty, isDraining, recordDisconnect, recordError } from "./NodePenaltyService.js";
-import { setFilter, setEqualizer } from "../services/PlayerService.js";
+import { applyFilters, setFilter, setEqualizer } from "../services/PlayerService.js";
 import { searchWithRetry } from "../services/SearchService.js";
 import type { LavalinkManager } from "lavalink-client" with { "resolution-mode": "require" };
 
@@ -127,9 +127,8 @@ export async function failoverFromNode(nodeId: string) {
           await player.play({ track: resolved, clientTrack: resolved, position: player.position || 0 }).catch(Logger.safe("bot/music/engine/FailoverManager.ts"));
         }
         getEngine(guildId).player = player;
-        const savedFilter = state.filter.get(guildId);
-        if (savedFilter && savedFilter !== "none") {
-          setFilter(guildId, savedFilter, "system", "System").catch(Logger.safe("bot/music/engine/FailoverManager.ts"));
+        if (state.filter.isActive(guildId)) {
+          applyFilters(guildId).catch(Logger.safe("bot/music/engine/FailoverManager.ts"));
         }
         const savedBands = state.equalizer.get(guildId);
         if (savedBands) {
@@ -188,9 +187,8 @@ export async function failoverFromNode(nodeId: string) {
             await newPlayer.play({ track: resolved, clientTrack: resolved, position: savedPos });
           }
           getEngine(guildId).player = newPlayer;
-          const savedFilter = state.filter.get(guildId);
-          if (savedFilter && savedFilter !== "none") {
-            setFilter(guildId, savedFilter, "system", "System").catch(Logger.safe("bot/music/engine/FailoverManager.ts"));
+          if (state.filter.isActive(guildId)) {
+            applyFilters(guildId).catch(Logger.safe("bot/music/engine/FailoverManager.ts"));
           }
           const savedBands = state.equalizer.get(guildId);
           if (savedBands) {

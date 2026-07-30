@@ -157,9 +157,8 @@ export async function stop(guildId: string, userId: string, userName: string): P
       if (vcData) {
         try {
           await engine.join(vcData.voiceChannelId, vcData.textChannelId);
-          const savedFilter = state.filter.get(guildId);
-          if (savedFilter && savedFilter !== "none") {
-            setFilter(guildId, savedFilter, "system", "System").catch(Logger.safe("bot/music/services/PlayerService.ts"));
+          if (state.filter.isActive(guildId)) {
+            applyFilters(guildId).catch(Logger.safe("bot/music/services/PlayerService.ts"));
           }
           const savedBands = state.equalizer.get(guildId);
           if (savedBands) {
@@ -219,6 +218,14 @@ export async function resolveAndQueueTracks(guildId: string, tracks: any[], user
     }
   });
 }
+/** Filter property families — filters in the same family conflict (last wins) */
+const FILTER_FAMILIES: Record<string, string> = {
+  nightcore: "speed", vaporwave: "speed", slowmo: "speed",
+  soft: "volume",
+  treble: "eq", bassboost: "eq",
+  "8d": "rotation",
+};
+
 const FILTER_CONFIGS: Record<string, (fm: any) => Promise<any>> = {
   nightcore: async (fm) => { await fm.setSpeed(1.3); await fm.setPitch(1.3); await fm.setRate(1); },
   vaporwave: async (fm) => { await fm.setSpeed(0.85); await fm.setPitch(0.85); await fm.setRate(1); },
@@ -229,17 +236,55 @@ const FILTER_CONFIGS: Record<string, (fm: any) => Promise<any>> = {
   "8d": async (fm) => { await fm.toggleRotation(0.15); },
 };
 
-export async function setFilter(guildId: string, filter: string, _userId: string, _userName: string): Promise<boolean> {
+/**
+ * Apply all active filters (from FilterStore) to the player's filter manager.
+ * Handles stacking: filters in different property families are additive.
+ * Filters in the same family: only the last one wins.
+ */
+export async function applyFilters(guildId: string): Promise<boolean> {
   const engine = getEngine(guildId);
   if (!engine.player) return false;
   try {
     const fm = engine.player.filterManager;
     await fm.resetFilters();
-    const apply = FILTER_CONFIGS[filter];
-    if (apply) await apply(fm);
+    const active = state.filter.get(guildId);
+    if (!active.length) { await fm.applyPlayerFilters(); return true; }
+
+    // Group by family, keep only the last filter per family
+    const byFamily: Record<string, string> = {};
+    for (const f of active) {
+      const family = FILTER_FAMILIES[f] || "other";
+      byFamily[family] = f;
+    }
+
+    // Apply one filter per family
+    for (const f of Object.values(byFamily)) {
+      const apply = FILTER_CONFIGS[f];
+      if (apply) await apply(fm);
+    }
     await fm.applyPlayerFilters();
     return true;
   } catch { return false; }
+}
+
+/**
+ * Toggle a named filter on/off for a guild.
+ * Returns the new toggle state (true = on).
+ */
+export async function toggleFilter(guildId: string, filter: string, _userId: string, _userName: string): Promise<boolean> {
+  const engine = getEngine(guildId);
+  if (!engine.player) return false;
+  const on = state.filter.toggle(guildId, filter);
+  await applyFilters(guildId);
+  return on;
+}
+
+export async function setFilter(guildId: string, filter: string, _userId: string, _userName: string): Promise<boolean> {
+  const engine = getEngine(guildId);
+  if (!engine.player) return false;
+  state.filter.set(guildId, filter === "none" ? [] : [filter]);
+  await applyFilters(guildId);
+  return true;
 }
 
 export async function setEqualizer(guildId: string, bands: any[], _userId: string, _userName: string): Promise<boolean> {
@@ -258,6 +303,7 @@ export async function resetFilters(guildId: string, _userId: string, _userName: 
   const engine = getEngine(guildId);
   if (!engine.player) return false;
   try {
+    state.filter.clear(guildId);
     await engine.player.filterManager.resetFilters();
     return true;
   } catch { return false; }

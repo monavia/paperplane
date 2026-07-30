@@ -184,7 +184,8 @@ async function restoreGuildState(client: any, saved: any): Promise<boolean> {
   state.loop.set(saved.guildId, await getLoop(saved.guildId) as "off" | "track" | "playlist");
   state.shuffle.set(saved.guildId, await getShuffle(saved.guildId));
   state.twentyFourSeven.set(saved.guildId, await get247(saved.guildId), "");
-  state.filter.set(saved.guildId, await getLastFilter(saved.guildId));
+  const lastFilter = await getLastFilter(saved.guildId);
+  state.filter.set(saved.guildId, lastFilter && lastFilter !== "none" ? lastFilter.split(",").filter(Boolean) : []);
   state.equalizer.set(saved.guildId, await getLastEqualizer(saved.guildId));
   // Populate nowPlaying BEFORE engine.join so nodeConnect recovery can find it if join fails
   if (saved.nowPlaying) state.nowPlaying.set(saved.guildId, saved.nowPlaying);
@@ -324,9 +325,9 @@ async function restoreGuildState(client: any, saved: any): Promise<boolean> {
     });
     if (first) {
       // Apply saved filter/equalizer
-      const savedFilter = state.filter.get(saved.guildId);
-      if (savedFilter && savedFilter !== "none") {
-        setFilter(saved.guildId, savedFilter, "system", "System").catch(Logger.safe("bot/music/services/StateService.ts"));
+      if (state.filter.isActive(saved.guildId)) {
+        const { applyFilters } = await import("./PlayerService.js");
+        applyFilters(saved.guildId).catch(Logger.safe("bot/music/services/StateService.ts"));
       }
       const savedBands = state.equalizer.get(saved.guildId);
       if (savedBands) {
