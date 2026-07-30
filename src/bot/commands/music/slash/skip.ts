@@ -4,7 +4,6 @@ import * as NowPlayingEmbed from "../../../../bot/ui/embeds/NowPlayingEmbed.js";
 import * as ErrorEmbed from "../../../../bot/ui/embeds/ErrorEmbed.js";
 import Colors from "../../../../bot/core/constants/Colors.js";
 import { requireSameVoice } from "../../../../bot/core/utils/VoiceCheck.js";
-import state from "../../../../bot/core/state/StateManager.js";
 
 export default {
   data: new SlashCommandBuilder().setName("skip").setDescription("Skip the current track"),
@@ -16,7 +15,6 @@ export default {
     try {
       const nextTrack = await MusicService.skip(interaction.guildId!, interaction.user.id, interaction.member?.displayName || interaction.user.username);
       if (nextTrack) await interaction.editReply({ embeds: [NowPlayingEmbed.build(nextTrack, null)] });
-      else if (state.autoplay.get(interaction.guildId)) await interaction.editReply({ embeds: [new EmbedBuilder().setDescription("Skipped. Finding next track...").setColor(Colors.INFO)] });
       else await interaction.editReply({ embeds: [new EmbedBuilder().setDescription("Queue empty.").setColor(Colors.INFO)] });
     } catch (err: any) {
       await interaction.editReply({ embeds: [ErrorEmbed.build(err.message)] });
