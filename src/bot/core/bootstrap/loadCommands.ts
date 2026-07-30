@@ -9,7 +9,7 @@ let prefixCommands: Collection<string, any> = new Collection();
 function loadDir(client: any, dir: string, type: "slash" | "prefix"): number {
   let files: string[];
   try {
-    files = readdirSync(dir).filter((f) => f.endsWith(".ts") || f.endsWith(".js"));
+    files = readdirSync(dir).filter((f) => (f.endsWith(".ts") || f.endsWith(".js")) && !f.endsWith(".test.ts"));
   } catch (err) {
     Logger.warn(`[loadDir] Failed to read directory ${dir}: ${err}`);
     return 0;

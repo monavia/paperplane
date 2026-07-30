@@ -6,7 +6,7 @@ export function load(client: any): number {
   const eventsPath = join(__dirname, "../../events");
   let count = 0;
   try {
-    const files = readdirSync(eventsPath).filter((f) => f.endsWith(".ts") || f.endsWith(".js"));
+    const files = readdirSync(eventsPath).filter((f) => (f.endsWith(".ts") || f.endsWith(".js")) && !f.endsWith(".test.ts"));
     for (const file of files) {
       try {
         const mod = require(join(eventsPath, file)); // dynamic path — must stay require()
