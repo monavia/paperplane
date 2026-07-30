@@ -106,7 +106,7 @@ class RecommendationEngine {
       // 2. Similar artist search — diverse recommendations
       const author = (track.info.author || "").replace(/^Various\s*$/i, "").trim();
       if (author && author !== "Unknown Artist") {
-        const r = await this._searchWithRetry(player, { query: `ytmsearch:${author}` }).catch(() => null);
+        const r = await this._searchWithRetry(player, { query: `ytsearch:${author}` }).catch(() => null);
         if (r?.tracks?.length) {
           for (const t of r.tracks) {
             const k = this._trackKey(t);
@@ -119,7 +119,7 @@ class RecommendationEngine {
       if (candidates.length < count) {
         const query = this._buildQuery(track.info);
         if (query) {
-          const r = await this._searchWithRetry(player, { query: `ytmsearch:${query}` }).catch(() => null);
+          const r = await this._searchWithRetry(player, { query: `ytsearch:${query}` }).catch(() => null);
           if (r?.tracks?.length) {
             for (const t of r.tracks) {
               const k = this._trackKey(t);

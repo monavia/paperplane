@@ -113,12 +113,12 @@ export async function findTrackWithDuration(
   const origDur = origTrack.info?.length || origTrack.info?.durationMs || 0;
   const n = player.node?.id || "?";
   if (isDraining(n) || isUnhealthy(n) || getPenalty(n) > 100) {
-    const fallback = await searchViaHealthyNode({ query: `ytmsearch:${query}` }, clientRef, 0);
+    const fallback = await searchViaHealthyNode({ query: `ytsearch:${query}` }, clientRef, 0);
     if (fallback?.tracks?.length) {
       return fallback.tracks.find((t: any) => !t.info?.sourceName?.includes("deezer")) || fallback.tracks[0];
     }
   }
-  for (const prefix of ["ytmsearch", "ytsearch", "scsearch"]) {
+  for (const prefix of ["ytsearch", "ytmsearch", "scsearch", "dzsearch"]) {
     let res = null;
     try {
       res = await player.search({ query: `${prefix}:${query}` }, clientRef);
