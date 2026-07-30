@@ -8,12 +8,21 @@
 - **Always re-search** — replaced stale-encoded-track playback with fresh `player.search()` from `state.nowPlaying` URI. Eliminates "Something broke when playing the track" errors caused by expired encoded tracks after node reconnect.
 - **Removed error embed** — `musicEvents.ts:trackError`: silent error handling; no more per-error embeds sent to the text channel.
 
-### Track Error Deadlock — `recoverPlayer` Destroy + Recreate
+### Track Error Loop — Fix `node=?` Log + Prevent Same-Song Replay
 
-- **`recoverPlayer()`** — `lavalink.ts` (new export): destroys orphaned player (node=null) and creates a fresh player on the least-loaded connected node via `createPlayer()` + `connectWithRetry()`. Solves root cause: previous `connectWithRetry` failed silently because `player.connect()` needs a valid node.
-- **`trackError` now uses `recoverPlayer`** — `musicEvents.ts:trackError`: when `player.node?.connected` is false, calls `recoverPlayer(guildId)` in `setImmediate`, then `advanceQueue` on the rebuilt player. Handles the per-track-error recovery path.
-- **Watchdog idle player recovery** — `PlayerWatchdog.ts`: replaces `connectWithRetry` → `recoverPlayer` in the idle-player-with-pending-tracks check. Also handles autoplay fallback via `autoplayInst.getNextTrack()` when queue is empty.
-- **Stale player cleanup on node connect** — `lavalink.ts:connect` handler: now also destroys players with `node=null` (not just `node.id === node.id && !p.connected`). Previously, orphaned players survived the cleanup loop and were skipped by the recovery loop because `lavalink.players.get(guildId)` still returned them.
+Two root causes found. The `node=?` in logs was a **red herring**.
+
+#### 1. `node=?` is a logging bug — node WAS connected
+
+- **`lavalink-client` Node has `.id`, not `.name`** — all `player.node?.name` evaluated to `undefined`, masked by `|| "?"`. Real node identity is `player.node?.id`, which logged correctly as e.g. `node4` in other places.
+- **Fix** — `musicEvents.ts:trackError` (line 464) and `trackEnd` (line 305): changed `node=${player.node?.name || "?"}` → `node=${player.node?.id || "?"}`. Now `node4` shows when connected.
+
+#### 2. Same-song replay on track error — push-to-queue bug
+
+- **Bug**: when a fallback (alt) track also errored, the 3-attempt retry block pushed the errored fallback back to the queue. `queueEnd` → `advanceQueue` then replayed the same song. This repeated until the 3-attempt limit dropped it.
+- **Repro**: autoplay recommends track A → track A errors → fallback (re-resolved track B of same song) plays → track B errors → pushed to queue → played again → error loop.
+- **Fix**: `musicEvents.ts:trackError` — before pushing to queue, check if the errored track matches `state.nowPlaying`. If it's the currently-playing track (not a queued pending track), skip the push. `player.stopPlaying()` fires naturally, `queueEnd` handles autoplay if queue is empty, or advances to the next queued track if one exists.
+- **Impact**: errored currently-playing tracks are dropped cleanly instead of looping. Autoplay gets a new recommendation on the next cycle.
 
 ## 2026-07-30 — v3.2.5
 

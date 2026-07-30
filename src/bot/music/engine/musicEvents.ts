@@ -302,7 +302,7 @@ function register(client: any): void {
     clearStuckTimer(player.guildId);
     const reasonStr = typeof reason === "object" ? reason?.reason : reason;
     const queueLen = state.queues.get(player.guildId)?.length || 0;
-    Logger.info(`[trackEnd] guild=${player.guildId}/${getGuildName(player.guildId)} reason=${reasonStr} queue=${queueLen} playing=${player.playing} node=${player.node?.name || "?"} restored=${state.restored.has(player.guildId)}`);
+    Logger.info(`[trackEnd] guild=${player.guildId}/${getGuildName(player.guildId)} reason=${reasonStr} queue=${queueLen} playing=${player.playing} node=${player.node?.id || "?"} restored=${state.restored.has(player.guildId)}`);
     if (reasonStr === "finished" && queueLen > 0 && player.node?.connected) {
       advancingFromTrackEnd.add(player.guildId);
       advanceQueue(player).catch(err => Logger.error(`[trackEnd] advanceQueue failed for ${player.guildId}: ${err.message}`))
@@ -461,7 +461,7 @@ function register(client: any): void {
       const errMsg = payload?.error || payload?.exception?.message || "Unknown";
       const trackId = track?.info?.uri || track?.info?.title || "unknown";
       const queueLen = state.queues.get(player.guildId)?.length || 0;
-      Logger.error(`[trackError] guild=${player.guildId}/${getGuildName(player.guildId)} err="${errMsg}" track="${track?.info?.title || "?"}" queue=${queueLen} node=${player.node?.name || "?"} restored=${state.restored.has(player.guildId)}`);
+      Logger.error(`[trackError] guild=${player.guildId}/${getGuildName(player.guildId)} err="${errMsg}" track="${track?.info?.title || "?"}" queue=${queueLen} node=${player.node?.id || "?"} restored=${state.restored.has(player.guildId)}`);
 
       const now = Date.now();
       const guildErrors = errorTimestamps.get(player.guildId) || [];
@@ -550,9 +550,18 @@ function register(client: any): void {
           Logger.warn(`[trackError] Track "${track?.info?.title}" failed ${currentAttempts}x — dropping permanently`);
           retried.delete(trackId);
         } else if (track?.info?.title) {
-          const q = state.queues.get(player.guildId) || [];
-          q.push(track);
-          state.queues.set(player.guildId, q);
+          // Skip push if this track is the currently-playing one (not a queued track).
+          // Pushing a currently-playing errored track back to queue causes it to be
+          // replayed by queueEnd → advanceQueue — same song loops.
+          const current = state.nowPlaying.get(player.guildId);
+          const isCurrent = current?.info?.uri && track?.info?.uri && current.info.uri === track.info.uri;
+          if (isCurrent) {
+            Logger.info(`[trackError] Currently playing track errored — skipping queue push`);
+          } else {
+            const q = state.queues.get(player.guildId) || [];
+            q.push(track);
+            state.queues.set(player.guildId, q);
+          }
         }
         if (player.node?.connected) {
           player.stopPlaying().catch(Logger.safe("bot/music/engine/musicEvents.ts"));
