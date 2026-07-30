@@ -1,9 +1,0 @@
-
- RUN  v4.1.10 C:/Users/Wafer/orca/workspaces/Paperplane Single Node/position-desync
-
-
- Test Files  25 passed (25)
-      Tests  398 passed (398)
-   Start at  19:49:04
-   Duration  15.64s (transform 4.94s, setup 0ms, import 31.33s, tests 8.93s, environment 12ms)
-
