@@ -334,23 +334,27 @@ export async function init(client: any): Promise<boolean> {
           node: node.id,
         });
         await connectWithRetry(player, data.guildId);
+        await new Promise(r => setTimeout(r, 2500));
         if (data.filters) player.filterManager.data = data.filters;
         if (data.track) player.queue.current = l.utils.buildTrack(data.track, player.queue.current?.requester || clientRef.user);
         player.paused = data.paused;
         player.playing = !data.paused && !!data.track;
         player.lastPosition = data.state.position || 0;
         player.lastPositionChange = Date.now();
-        // Actually resume playback — property changes alone don't start audio
         if (data.track && !data.paused) {
-          await player.play({ encoded: data.track, position: data.state.position || 0 }).catch(async () => {
-            Logger.warn(`[NodeLink] Stale encoded track for ${data.guildId} — fallback to re-search`);
-            const saved = state.nowPlaying.get(data.guildId);
-            if (saved?.info?.uri) {
-              const fallback = await player.search({ query: saved.info.uri }, { id: "system" }).catch(() => null);
-              if (fallback?.tracks?.length) await player.play({ track: fallback.tracks[0], clientTrack: fallback.tracks[0], position: data.state.position || 0 }).catch(Logger.safe("bot/music/engine/lavalink.ts"));
+          const saved = state.nowPlaying.get(data.guildId);
+          if (saved?.info?.uri) {
+            Logger.info(`[NodeLink] Re-searching track for ${data.guildId}: "${saved.info.uri}"`);
+            const fallback = await player.search({ query: saved.info.uri }, { id: "system" }).catch(() => null);
+            if (fallback?.tracks?.length) {
+              await player.play({ track: fallback.tracks[0], clientTrack: fallback.tracks[0], position: data.state.position || 0 }).catch((err: any) => Logger.warn(`[NodeLink] Resume play failed for ${data.guildId}: ${err.message}`));
+              Logger.ready(`[NodeLink] Resumed playback for ${data.guildId} at pos ${data.state.position || 0}`);
+            } else {
+              Logger.warn(`[NodeLink] No search results for ${data.guildId}, skipping`);
             }
-          });
-          Logger.ready(`[NodeLink] Resumed playback for ${data.guildId} at pos ${data.state.position || 0}`);
+          } else {
+            Logger.warn(`[NodeLink] No saved track data for ${data.guildId}, skipping`);
+          }
         }
         EventBus.emit('state:addRestored', { guildId: data.guildId });
         recoveringGuilds.delete(data.guildId);

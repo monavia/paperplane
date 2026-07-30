@@ -1,5 +1,13 @@
 # Changelog — Paperplane
 
+## 2026-07-30 — v3.2.6
+
+### Node Resume Stability — Delay + Fresh Search
+
+- **2.5s stabilisation delay** — `lavalink.ts:resumed` handler: waits 2.5s after voice reconnect before attempting playback, giving the Lavalink node time to stabilise.
+- **Always re-search** — replaced stale-encoded-track playback with fresh `player.search()` from `state.nowPlaying` URI. Eliminates "Something broke when playing the track" errors caused by expired encoded tracks after node reconnect.
+- **Removed error embed** — `musicEvents.ts:trackError`: silent error handling; no more per-error embeds sent to the text channel.
+
 ## 2026-07-30 — v3.2.5
 
 ### Position Sync Optimization — 90% DB Writes Reduction

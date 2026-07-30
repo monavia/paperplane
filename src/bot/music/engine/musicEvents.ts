@@ -257,7 +257,7 @@ function register(client: any): void {
     if (isFirstRestored) restoredGuilds.delete(player.guildId);
     const shouldSendEmbed = !isFirstRestored && !isManualAdvance && !suppress && !isFailover;
     const textChannelId2 = getTextChannelId(player.guildId);
-    Logger.info(`[DBUG-trackStart] guild=${player.guildId} track=${track?.info?.title?.slice(0, 40) || "?"} restored=${restored} isFirstRest=${isFirstRestored} manual=${isManualAdvance} suppr=${suppress} fail=${isFailover} send=${shouldSendEmbed} ch=${textChannelId2 || "none"} region=${player.node?.options?.regions?.[0] || "?"}`);
+    Logger.info(`[DBUG-trackStart] guild=${player.guildId} track=${track?.info?.title?.slice(0, 40) || "?"} restored=${restored} isFirstRest=${isFirstRestored} manual=${isManualAdvance} suppr=${suppress} fail=${isFailover} send=${shouldSendEmbed} ch=${textChannelId2 || "none"} region=${player.node?.options?.regions?.[0] || "?"} paused=${player.paused}`);
     EventBus.emit('metrics:trackPlayed', { guildId: player.guildId, source: track?.info?.source || 'unknown' });
     if (textChannelId2 && shouldSendEmbed) {
       const channel = client.channels.cache.get(textChannelId2);
@@ -554,20 +554,6 @@ function register(client: any): void {
           q.push(track);
           state.queues.set(player.guildId, q);
         }
-        const textChannelId = getTextChannelId(player.guildId);
-        if (textChannelId) {
-          const channel = clientRef?.channels?.cache?.get(textChannelId);
-          if (channel) {
-            const title = track?.info?.title || "Unknown";
-            const author = track?.info?.author || "Unknown";
-            const url = track?.info?.originalUrl || track?.info?.uri || "";
-            const embed = new EmbedBuilder()
-              .setDescription(`Error: [${author} - ${title}](${url}) — ${errMsg}\nSkipping to next track...`)
-              .setColor(Colors.ERROR);
-            (channel as any).send({ embeds: [embed] }).catch(Logger.safe("bot/music/engine/musicEvents.ts"));
-          }
-        }
-
         if (player.node?.connected) {
           player.stopPlaying().catch(Logger.safe("bot/music/engine/musicEvents.ts"));
         }
