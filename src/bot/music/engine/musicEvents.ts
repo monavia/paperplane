@@ -44,6 +44,8 @@ const DEFERRED_QUEUE_MAX = 5;
 let startupPhase = true;
 setTimeout(() => { startupPhase = false; }, 15000);
 const restoredGuilds = new Set<string>();
+const queueEndGuard = new Set<string>();
+const advancingFromTrackEnd = new Set<string>();
 export function markIdleDisconnect(guildId: string): void { idleDisconnects.add(guildId); }
 export function isIdleDisconnect(guildId: string): boolean { return idleDisconnects.has(guildId); }
 export function clearIdleDisconnect(guildId: string): void { idleDisconnects.delete(guildId); }
@@ -355,9 +357,6 @@ function register(client: any): void {
         .finally(() => advancingFromTrackEnd.delete(player.guildId));
     }
   });
-
-const queueEndGuard = new Set<string>();
-const advancingFromTrackEnd = new Set<string>();
 
   l.on("queueEnd", async (player: any, track: any, payload: any) => {
     if (advancingFromTrackEnd.has(player.guildId)) return;
@@ -721,6 +720,10 @@ const advancingFromTrackEnd = new Set<string>();
       Logger.error(`[playerDisconnect] guild=${player.guildId} handler crashed: ${err?.message}`);
     }
   });
+}
+
+export function clearQueueEndGuard(guildId: string): void {
+  queueEndGuard.delete(guildId);
 }
 
 export { register, clearDisconnectTimer, markManualAdvance, markTrackStartSuppressed, advanceQueue };

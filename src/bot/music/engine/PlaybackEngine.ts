@@ -1,8 +1,11 @@
 import { getPlayer, createPlayer } from "./PlayerManager.js";
-import { markManualAdvance } from "./musicEvents.js";
+import { markManualAdvance, clearQueueEndGuard } from "./musicEvents.js";
 import { withQueueLock } from "../../core/state/QueueLock.js";
 import state from "../../core/state/StateManager.js";
+import AutoplayEngine from "./AutoplayEngine.js";
 import Logger from "../../core/utils/Logger.js";
+
+const autoplayInst = new AutoplayEngine();
 
 export class PlaybackEngine {
   guildId: string;
@@ -60,6 +63,24 @@ export class PlaybackEngine {
           if (err?.message?.includes?.("not connected to the Lavalink")) throw new Error("Engine music is offline, try again 1 minutes.");
           throw err;
         }
+      } else if (state.autoplay.get(this.guildId)) {
+        clearQueueEndGuard(this.guildId);
+        const sourceTrack = state.nowPlaying.get(this.guildId) || player.queue.previous?.[0];
+        if (sourceTrack?.info) {
+          const autoTrack = await autoplayInst.getNextTrack(player, sourceTrack, this.guildId);
+          if (autoTrack?.info) {
+            state.nowPlaying.set(this.guildId, autoTrack);
+            clearQueueEndGuard(this.guildId);
+            try {
+              await player.play({ track: autoTrack, clientTrack: autoTrack });
+            } catch (err: any) {
+              if (err?.message?.includes?.("not connected to the Lavalink")) throw new Error("Engine music is offline, try again 1 minutes.");
+              throw err;
+            }
+            return autoTrack;
+          }
+        }
+        await player.stopPlaying();
       } else {
         await player.stopPlaying();
       }
