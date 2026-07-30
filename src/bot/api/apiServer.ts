@@ -585,6 +585,41 @@ app.get("/api/health", createApiHandler(async (_req, res) => {
     jsonResponse(res, getMetrics());
   }));
 
+  // ── User Favorites API ──────────────────────────────────────────
+
+  app.get("/api/user/:userId/favorites", createApiHandler(async (req, res) => {
+    const { default: Fav } = await import("../music/services/FavoritesService.js");
+    const list = Fav.listFavorites(req.params.userId);
+    jsonResponse(res, list.map((f: any) => f.track));
+  }));
+
+  app.post("/api/user/:userId/favorites", createApiHandler(async (req, res) => {
+    const { default: Fav } = await import("../music/services/FavoritesService.js");
+    const r = Fav.addFavorite(req.params.userId, req.body);
+    jsonResponse(res, r);
+  }));
+
+  app.delete("/api/user/:userId/favorites", createApiHandler(async (req, res) => {
+    const { default: Fav } = await import("../music/services/FavoritesService.js");
+    const ok = Fav.removeFavorite(req.params.userId, req.body.identifier || req.body.title);
+    jsonResponse(res, { ok });
+  }));
+
+  // ── User History API ────────────────────────────────────────────
+
+  app.get("/api/user/:userId/history", createApiHandler(async (req, res) => {
+    const { getHistory } = await import("../music/services/HistoryService.js");
+    const limit = parseInt(req.query.limit as string) || 20;
+    const history = await getHistory("all", limit);
+    const userEntries = history.filter((h: any) => h.userId === req.params.userId);
+    jsonResponse(res, userEntries.map((h: any) => ({
+      songTitle: h.track?.info?.title || h.songTitle || "Unknown",
+      artist: h.track?.info?.artist || h.artist || "",
+      playedAt: h.playedAt || h.timestamp || new Date(),
+      source: h.track?.info?.sourceName || "unknown",
+    })));
+  }));
+
   // ── 1.2 Dashboard API CRUD ─────────────────────────────────────
 
   app.delete("/api/guild/:guildId/queue", createApiHandler(async (req, res) => {

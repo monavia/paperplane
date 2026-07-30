@@ -1,34 +1,38 @@
 import { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
 import * as MusicService from "../../../../bot/music/services/MusicService.js";
 import { setLastFilter } from "../../../../bot/database/repositories/GuildRepository.js";
-import * as ErrorEmbed from "../../../../bot/ui/embeds/ErrorEmbed.js";
 import Colors from "../../../../bot/core/constants/Colors.js";
 import { requireSameVoice } from "../../../../bot/core/utils/VoiceCheck.js";
 import state from "../../../../bot/core/state/StateManager.js";
 import MusicModes from "../../../../bot/core/constants/MusicModes.js";
 
 const FILTERS = [
-  { name: "Bass Boost", value: MusicModes.FILTERS.BASSBOOST },
+  { name: "Bass Boost", value: MusicModes.FILTERS.BASSBOOST, emoji: "🎵" },
   { name: "Nightcore", value: MusicModes.FILTERS.NIGHT_CORE, emoji: "🏎️" },
   { name: "Vaporwave", value: MusicModes.FILTERS.VAPORWAVE, emoji: "🌊" },
   { name: "8D Audio", value: MusicModes.FILTERS.EIGHT_D, emoji: "🎧" },
   { name: "Slow Motion", value: MusicModes.FILTERS.SLOWMO, emoji: "🐢" },
   { name: "Soft", value: MusicModes.FILTERS.SOFT, emoji: "🎻" },
   { name: "Treble", value: MusicModes.FILTERS.TREBLE, emoji: "🔔" },
-  { name: "Reset", value: MusicModes.FILTERS.NONE, emoji: "❌" },
+  { name: "Reset All", value: "none", emoji: "❌" },
 ];
 
-function buildButtons(currentFilter: string) {
+function formatActive(activeFilters: string[]): string {
+  if (!activeFilters.length) return "none";
+  return activeFilters.map((f) => FILTERS.find((x) => x.value === f)?.name || f).join(", ");
+}
+
+function buildButtons(activeFilters: string[]) {
   const rows: ActionRowBuilder<ButtonBuilder>[] = [];
   let row = new ActionRowBuilder<ButtonBuilder>();
   for (const f of FILTERS) {
-    const active = f.value === currentFilter;
+    const isActive = activeFilters.includes(f.value);
     row.addComponents(
       new ButtonBuilder()
         .setCustomId(`filter_${f.value}`)
         .setLabel(`${f.emoji} ${f.name}`)
-        .setStyle(active ? ButtonStyle.Success : ButtonStyle.Secondary)
-        .setDisabled(active),
+        .setStyle(isActive ? ButtonStyle.Success : ButtonStyle.Secondary)
+        .setDisabled(false),
     );
     if (row.components.length === 4) {
       rows.push(row);
@@ -47,14 +51,14 @@ export default {
     if (!await requireSameVoice(message)) return;
 
     const guildId = message.guildId!;
-    const activeFilters = state.filter.get(guildId);
+    const active: string[] = state.filter.get(guildId);
 
     const embed = new EmbedBuilder()
       .setTitle("Audio Filters")
-      .setDescription(`Active: **${formatActive(activeFilters)}**\n\nTap to toggle. Compatible filters stack.`)
+      .setDescription(`Active: **${formatActive(active)}**\n\nTap to toggle. Compatible filters stack.`)
       .setColor(Colors.INFO);
 
-    const rows = buildButtons(activeFilters);
+    const rows = buildButtons(active);
     const msg = await message.channel.send({ embeds: [embed], components: rows });
 
     const collector = msg.createMessageComponentCollector({
@@ -72,7 +76,7 @@ export default {
         await MusicService.toggleFilter(guildId, filterValue, message.author.id, message.member?.displayName || message.author.username);
         await setLastFilter(guildId, state.filter.get(guildId).join(",") || "none");
       }
-      const updated = state.filter.get(guildId);
+      const updated: string[] = state.filter.get(guildId);
       const newRows = buildButtons(updated);
       const newEmbed = new EmbedBuilder()
         .setTitle("Audio Filters")

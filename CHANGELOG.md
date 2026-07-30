@@ -2,6 +2,15 @@
 
 ## 2026-07-30 — v3.2.0
 
+### User Favorites & History Dashboard
+
+- **FavoritesService.ts** — in-memory per-user favorites: add (by identifier dedup), remove (by identifier or title), list, count. Follows same pattern as PlaylistService.
+- **Slash command** — `/favorite add` (adds current nowPlaying), `list` (shows up to 25), `remove <query>`.
+- **Prefix command** — `-favorite add|list|remove <query>`. Aliases: `fav`, `fave`.
+- **REST API** — `GET/POST /api/user/:userId/favorites`, `DELETE /api/user/:userId/favorites` (by identifier or title).
+- **History API** — `GET /api/user/:userId/history` — filters Activity history by userId, returns track title/artist/timestamp/source.
+- **FavoritesService.test.ts** — 9 tests: add (ok/duplicate/reject), list (empty/multiple), user isolation, remove (by identifier/title/not-found), count.
+
 ### Advanced Filter Chains
 
 - **FilterStore** — refactor dari single string (`string`) ke koleksi (`string[]`). Metode baru: `toggle()` add/remove filter, `isActive()`, `clear()`. `set()` terima array, dedup otomatis, filter "none".

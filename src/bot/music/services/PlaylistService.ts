@@ -108,16 +108,16 @@ export async function importPlaylist(guildId: string, tracks: PortableTrack[], u
       }
 
       // Fallback: search by title + author
-      if (!resolved) {
-        const query = `${pt.author} ${pt.title}`.trim();
+      const searchQuery = `${pt.author} ${pt.title}`.trim();
+      if (!resolved && searchQuery) {
         try {
-          const result = await player.search({ query: `ytmsearch:${query}` }, { id: userId });
+          const result = await player.search({ query: `ytmsearch:${searchQuery}` }, { id: userId });
           if (result?.tracks?.[0]) resolved = result.tracks[0];
         } catch {}
       }
-      if (!resolved) {
+      if (!resolved && searchQuery) {
         try {
-          const result = await player.search({ query: `ytsearch:${query}` }, { id: userId });
+          const result = await player.search({ query: `ytsearch:${searchQuery}` }, { id: userId });
           if (result?.tracks?.[0]) resolved = result.tracks[0];
         } catch {}
       }
