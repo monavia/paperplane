@@ -92,7 +92,10 @@ function getBestNode(manager: any, preferredRegion?: string): any {
     const regionNodes = connected.filter((n: any) => (n.options?.regions || []).includes(preferredRegion.toLowerCase()));
     if (regionNodes.length > 0) {
       regionNodes.sort(scoreSorter);
-      return regionNodes[0];
+      const best: any = regionNodes[0];
+      const penalty = getPenalty(best?.options?.id);
+      if (penalty < 300) return best;
+      Logger.warn(`[NodeLink] Region node ${best?.options?.id} for "${preferredRegion}" penalty ${penalty} >= 300 — fallback to global best`);
     }
   }
 
