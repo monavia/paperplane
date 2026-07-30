@@ -2,6 +2,7 @@ import { getPlayer, createPlayer } from "./PlayerManager.js";
 import { markManualAdvance } from "./musicEvents.js";
 import { withQueueLock } from "../../core/state/QueueLock.js";
 import state from "../../core/state/StateManager.js";
+import Logger from "../../core/utils/Logger.js";
 
 export class PlaybackEngine {
   guildId: string;
@@ -32,9 +33,24 @@ export class PlaybackEngine {
     if (!player) return null;
 
     return withQueueLock(this.guildId, async () => {
+      let nextTrack: any = null;
       const queue = state.queues.get(this.guildId) || [];
-      const nextTrack = queue.shift();
+      while (queue.length > 0) {
+        const candidate = queue.shift();
+        if (!candidate?.encoded && candidate?.info?.uri) {
+          try {
+            const res = await player.search({ query: candidate.info.uri, source: "ytsearch" }).catch(() => null);
+            if (res?.tracks?.[0]?.encoded) Object.assign(candidate, res.tracks[0]);
+          } catch { /* use as-is */ }
+        }
+        if (candidate?.encoded) {
+          nextTrack = candidate;
+          break;
+        }
+        Logger.warn(`[skip] guild=${this.guildId} skipping unplayable track: ${candidate?.info?.title || "?"}`);
+      }
       state.queues.set(this.guildId, queue);
+
       if (nextTrack) {
         state.nowPlaying.set(this.guildId, nextTrack);
         markManualAdvance(this.guildId);

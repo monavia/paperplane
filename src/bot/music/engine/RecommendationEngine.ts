@@ -165,7 +165,7 @@ class RecommendationEngine {
         !this._isPlayed(guildId, t) &&
         !isCover(t?.info?.title || "", t?.info?.author) &&
         !titleL.includes("instrumental") && !titleL.includes("karaoke") &&
-        !/session|#\w+|@\s+\w+|version|tribute\b/i.test(titleL) &&
+        !/session|#\w+|@\s+\w+|version|ver\.|tribute\b/i.test(titleL) &&
         (origDuration < 30000 || !t?.info?.duration || Math.abs(t.info.duration - origDuration) / origDuration < 0.4) &&
         (!genrePrefs.size || genrePrefs.has(ta.replace(/[^a-z0-9]/g, "").slice(0, 20))) &&
         hasOverlap;

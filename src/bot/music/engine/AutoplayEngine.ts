@@ -8,7 +8,9 @@ class AutoplayEngine {
   }
 
   async getNextTrack(player: any, currentTrack: any, _guildId: string): Promise<any> {
-    if (!currentTrack?.info) return null;
+    let track = currentTrack;
+    if (!track?.info) track = player.queue.previous?.[0] || null;
+    if (!track?.info) return null;
     try {
       const recs = await this.recEngine.getRecommendations(player, currentTrack, _guildId, 3);
       if (!recs.length) return null;

@@ -33,7 +33,7 @@ const retryTracks = new Map<string, Map<string, number>>();
 // because trackStart fires BEFORE queueEnd in Lavalink's event order, so clearing
 // there would remove the flag before queueEnd checks it.
 const manualAdvances = new Map<string, number>();
-const MANUAL_ADVANCE_WINDOW_MS = 5000;
+const MANUAL_ADVANCE_WINDOW_MS = 30000;
 const STUCK_TRACK_TIMEOUT_MS = 30000;
 const JITTER_BUFFER_MS = 500;
 const stuckTimers = new Map<string, any>();
@@ -413,8 +413,8 @@ const advancingFromTrackEnd = new Set<string>();
       if (!player.playing && !player.paused) {
       try {
         if (state.autoplay.get(player.guildId)) {
-          
-          const autoTrack = await autoplayInst.getNextTrack(player, track, player.guildId);
+          const sourceTrack = track?.info ? track : (state.nowPlaying.get(player.guildId) || player.queue.previous?.[0] || track);
+          const autoTrack = await autoplayInst.getNextTrack(player, sourceTrack, player.guildId);
           if (autoTrack) {
             state.nowPlaying.set(player.guildId, autoTrack);
             await player.play({ track: autoTrack, clientTrack: autoTrack }).catch((err: any) => Logger.warn(`[autoplay] Play failed: ${err.message}`));
