@@ -494,7 +494,9 @@ export async function init(client: any): Promise<boolean> {
     }
   }, 15000);
 
-  client.on("raw", (d: any) => l.sendRawData(d));
+  client.on("raw", (d: any) => {
+    try { l.sendRawData(d); } catch { /* node(s) not ready yet */ }
+  });
   return true;
 }
 

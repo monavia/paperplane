@@ -216,36 +216,41 @@ async function restoreGuildState(client: any, saved: any): Promise<boolean> {
     Logger.warn(`[StateRestore] Voice connection not ready for ${saved.guildId} after ${voiceRetries * 500}ms`);
   }
 
-  // Ensure player is on a healthy node (failover support)
+  // Ensure player is on the best available node (penalty-aware, never force saved.nodeId)
   const manager = lavalink.get();
   const allNodes = manager?.nodeManager?.nodes ? Array.from(manager.nodeManager.nodes.values()) : [];
   const healthyNodes = allNodes.filter((n: any) => n.connected);
-  const playerNodeHealthy = player.node?.connected;
+  const bestNodeId = lavalink.getLeastLoadedNode();
+  const playerNodeId = player.node?.id || "";
+  const playerOnBest = bestNodeId && playerNodeId === bestNodeId;
 
-  if (!playerNodeHealthy && healthyNodes.length) {
-    let target: any = saved.nodeId ? healthyNodes.find((n: any) => n.id === saved.nodeId) : null;
-    if (!target) target = healthyNodes[0];
-
-    try {
-      await player.changeNode(target.id);
-      Logger.info(`[StateRestore] Moved player ${saved.guildId} to healthy node ${target.id}`);
-    } catch {
-      Logger.warn(`[StateRestore] changeNode failed — recreating player on ${target.id}`);
+  if (!playerOnBest && healthyNodes.length) {
+    const targetId = bestNodeId && healthyNodes.some((n: any) => n.id === bestNodeId) ? bestNodeId : healthyNodes[0].id;
+    const alreadyOnTarget = playerNodeId === targetId;
+    if (alreadyOnTarget && player.node?.connected) {
+      // Already on best node and connected — nothing to do
+    } else {
       try {
-        await player.destroy().catch(Logger.safe("bot/music/services/StateService.ts"));
-        player = manager!.createPlayer({
-          guildId: saved.guildId,
-          voiceChannelId: saved.voiceChannelId,
-          textChannelId: saved.textChannelId || "",
-          selfDeaf: true,
-          selfMute: false,
-          node: target.id,
-        });
-        await lavalink.connectWithRetry(player, saved.guildId);
-        engine.player = player;
-        Logger.info(`[StateRestore] Recreated player ${saved.guildId} on ${target.id}`);
+        await player.changeNode(targetId);
+        Logger.info(`[StateRestore] Moved player ${saved.guildId} to node ${targetId} (penalty-aware)`);
       } catch {
-        return false;
+        Logger.warn(`[StateRestore] changeNode failed — recreating player on ${targetId}`);
+        try {
+          await player.destroy().catch(Logger.safe("bot/music/services/StateService.ts"));
+          player = manager!.createPlayer({
+            guildId: saved.guildId,
+            voiceChannelId: saved.voiceChannelId,
+            textChannelId: saved.textChannelId || "",
+            selfDeaf: true,
+            selfMute: false,
+            node: targetId,
+          });
+          await lavalink.connectWithRetry(player, saved.guildId);
+          engine.player = player;
+          Logger.info(`[StateRestore] Recreated player ${saved.guildId} on ${targetId}`);
+        } catch {
+          return false;
+        }
       }
     }
   }

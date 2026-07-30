@@ -28,6 +28,16 @@
 - **Position freeze** — 30s of unchanged `player.position` while `player.playing` is flagged as stuck.
 - **Metrics** — `EventBus.emit('metrics:watchdog', stats)` each cycle health summary.
 
+## 2026-07-30 — v3.2.4
+
+### Startup Crash Fix — Unguarded `sendRawData`
+
+- **`lavalink.ts:497`** — `client.on("raw")` handler now has try-catch. Previously, unguarded `l.sendRawData(d)` threw "Lavalink Node is either not ready or not up to date" when Discord sent voice events before any node connected → uncaught exception → process crash → PM2 restart loop.
+
+### StateRestore — Pick Available Node (Penalty-Aware)
+
+- **`StateService.ts:225-251`** — `restoreGuildState()` no longer prefers `saved.nodeId` for node selection. Uses `getLeastLoadedNode()` (penalty-aware) instead. Prevents restored players from being placed on a node that reports `connected` but is actually broken (HTML/proxy errors), and avoids crash when the saved node hasn't connected yet.
+
 ## 2026-07-30 — v3.2.2
 
 ### Autoplay Fix — Skip Race + Null Track Info
