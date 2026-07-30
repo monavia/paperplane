@@ -80,6 +80,7 @@ const COVER_PATTERNS = [
   /\([^)]*\blive\b[^)]*\bcover\b[^)]*\)/i,
   /\bcover\b/i,
   /\binstrumental\b/i,
+  /\b(?:keroncong|kroncong|akustik|acoustic|dangdut|remix|dj\s+remix)\b/i,
 ];
 
 export function isCover(title: string, author?: string): boolean {

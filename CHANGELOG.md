@@ -24,6 +24,13 @@ Two root causes found. The `node=?` in logs was a **red herring**.
 - **Fix**: `musicEvents.ts:trackError` — before pushing to queue, check if the errored track matches `state.nowPlaying`. If it's the currently-playing track (not a queued pending track), skip the push. `player.stopPlaying()` fires naturally, `queueEnd` handles autoplay if queue is empty, or advances to the next queued track if one exists.
 - **Impact**: errored currently-playing tracks are dropped cleanly instead of looping. Autoplay gets a new recommendation on the next cycle.
 
+### Autoplay Filter — Block Keroncong/Akustik Versions
+
+- **Keyword gap** — `COVER_PATTERNS` (`TitleResolver.ts`) and `RecommendationEngine.ts` strict filter's inline regex didn't include `keroncong`/`kroncong`/`akustik`/`acoustic`. These genre/style version tracks leaked through the recommendation pipeline.
+- **Lenient fallback gap** — when strict filter emptied all candidates (common for YouTube Mix results), the lenient fallback only checked `isSameTrack` + `isPlayed` — no `isCover`, no style/version check. Every non-duplicate track passed.
+- **Fix** — added `/\b(?:keroncong|kroncong|akustik|acoustic|dangdut|remix|dj\s+remix)\b/i` to `COVER_PATTERNS`. Added `keroncong|kroncong|akustik|acoustic` to both the strict inline regex and the lenient fallback filter. Lenient fallback now also checks `isCover` and blocks `version|ver\.|tribute|instrumental|karaoke|session`.
+- **Impact**: keroncong/akustik tracks still appear in candidates (YouTube Mix) but are filtered out before autoplay picks them. Lenient fallback no longer bypasses all quality filters.
+
 ## 2026-07-30 — v3.2.5
 
 ### Position Sync Optimization — 90% DB Writes Reduction

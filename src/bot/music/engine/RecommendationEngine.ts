@@ -165,14 +165,19 @@ class RecommendationEngine {
         !this._isPlayed(guildId, t) &&
         !isCover(t?.info?.title || "", t?.info?.author) &&
         !titleL.includes("instrumental") && !titleL.includes("karaoke") &&
-        !/session|#\w+|@\s+\w+|version|ver\.|tribute\b/i.test(titleL) &&
+        !/session|#\w+|@\s+\w+|version|ver\.|tribute|keroncong|kroncong|akustik|acoustic\b/i.test(titleL) &&
         (origDuration < 30000 || !t?.info?.duration || Math.abs(t.info.duration - origDuration) / origDuration < 0.4) &&
         (!genrePrefs.size || genrePrefs.has(ta.replace(/[^a-z0-9]/g, "").slice(0, 20))) &&
         hasOverlap;
       });
 
       if (!filtered.length) {
-        const fallback = candidates.filter((t: any) => !this._isSameTrack(t, track) && !this._isPlayed(guildId, t));
+        const fallback = candidates.filter((t: any) => {
+          const tl = (t?.info?.title || "").toLowerCase();
+          return !this._isSameTrack(t, track) && !this._isPlayed(guildId, t) &&
+            !isCover(t?.info?.title || "", t?.info?.author) &&
+            !/version|ver\.|tribute|keroncong|kroncong|akustik|acoustic|instrumental|karaoke|session\b/i.test(tl);
+        });
         for (const t of fallback) this._markPlayed(guildId, t);
         Logger.info(`[RecEngine] Strict filter empty, fallback to lenient (${fallback.length} tracks)`);
         return fallback.sort(() => Math.random() - 0.5).slice(0, count);
