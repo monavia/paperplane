@@ -35,6 +35,7 @@ vi.mock("../../cache/CacheAdapter.js", () => ({ getAdapter: vi.fn(() => ({ get: 
 vi.mock("../../cache/DeadTrackService.js", () => ({
   isDead: vi.fn(() => false), markDead: vi.fn(), deadFingerprint: vi.fn(() => ""), deadSpotifyFingerprint: vi.fn(() => ""),
 }));
+vi.mock("./TrackValidator.js", () => ({ validateTrack: vi.fn(async (_track: any, _player: any, _guildId: string) => ({ valid: true, track: _track })) }));
 vi.mock("./FailoverManager.js", () => ({ isFailoverGuild: vi.fn(() => false), clearFailoverGuild: vi.fn() }));
 vi.mock("./PlayerManager.js", () => ({ clearVoiceJoinTime: vi.fn() }));
 vi.mock("../../database/repositories/GuildRepository.js", () => ({ getPrefix: vi.fn(() => "-") }));

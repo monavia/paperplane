@@ -4,6 +4,7 @@ import { withQueueLock } from "../../core/state/QueueLock.js";
 import state from "../../core/state/StateManager.js";
 import AutoplayEngine from "./AutoplayEngine.js";
 import Logger from "../../core/utils/Logger.js";
+import { validateTrack } from "./TrackValidator.js";
 
 const autoplayInst = new AutoplayEngine();
 
@@ -40,14 +41,9 @@ export class PlaybackEngine {
       const queue = state.queues.get(this.guildId) || [];
       while (queue.length > 0) {
         const candidate = queue.shift();
-        if (!candidate?.encoded && candidate?.info?.uri) {
-          try {
-            const res = await player.search({ query: candidate.info.uri, source: "ytsearch" }).catch(() => null);
-            if (res?.tracks?.[0]?.encoded) Object.assign(candidate, res.tracks[0]);
-          } catch { /* use as-is */ }
-        }
-        if (candidate?.encoded) {
-          nextTrack = candidate;
+        const result = await validateTrack(candidate, player, this.guildId);
+        if (result.valid) {
+          nextTrack = result.track || candidate;
           break;
         }
         Logger.warn(`[skip] guild=${this.guildId} skipping unplayable track: ${candidate?.info?.title || "?"}`);
