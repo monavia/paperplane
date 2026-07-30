@@ -18,7 +18,8 @@ import * as EventBus from "../events/EventBus.js";
 import { cleanTitle, saveSpotifyMeta, applySpotifyMeta } from "../services/TitleResolver.js";
 import { findTrackWithDuration } from "../services/SearchService.js";
 import { getAdapter } from "../../cache/CacheAdapter.js";
-import { isDead, markDead, deadFingerprint, deadSpotifyFingerprint } from "../../cache/DeadTrackService.js";
+import { markDead, deadFingerprint } from "../../cache/DeadTrackService.js";
+import { validateTrack } from "./TrackValidator.js";
 import { isFailoverGuild as fmIsFailoverGuild, clearFailoverGuild as fmClearFailoverGuild } from "./FailoverManager.js";
 import AutoplayEngine from "./AutoplayEngine.js";
 
@@ -91,58 +92,9 @@ async function advanceQueue(player: any): Promise<any> {
       state.queues.set(guildId, queue);
 
       const fp = next.info?.title ? deadFingerprint(next.info.title, next.info.author) : null;
-      if (fp && await isDead(fp)) {
-        Logger.warn(`[advanceQueue] guild=${guildId} skipping dead track: ${next.info?.title || "?"}`);
-        continue;
-      }
 
-      if (next.info?.uri) {
-        const isSpotifyTrack = /^spotify:track:|open\.spotify\.com\/track\//.test(next.info.uri);
-        if (isSpotifyTrack) {
-          const m = next.info.uri.match(/([a-zA-Z0-9]+)$/);
-          if (m && await isDead(deadSpotifyFingerprint(m[1]))) {
-            Logger.warn(`[advanceQueue] guild=${guildId} skipping dead Spotify track: ${m[1]}`);
-            continue;
-          }
-        }
-      }
-
-      if (!next.encoded && next.info?.uri) {
-        const cacheKey = `prefetch:${next.info.uri}`;
-        const prefetched = await getAdapter().get<any>(cacheKey);
-        if (prefetched?.encoded) {
-          Object.assign(next, prefetched);
-          Logger.info(`[advanceQueue] Prefetch hit for ${guildId}`);
-        } else {
-          try {
-            const uri = next.info.uri;
-            const isSpotify = /^spotify:(track|album|playlist):/.test(uri) || /open\.spotify\.com/i.test(uri);
-            const savedMeta = saveSpotifyMeta(next);
-            if (isSpotify) {
-              const q = `${next.info.author || ""} ${next.info.title || ""}`.trim();
-              const found = await findTrackWithDuration(player, q, next, clientRef?.user);
-              if (found) {
-                Object.assign(next, found);
-                applySpotifyMeta(next, savedMeta);
-              }
-            } else {
-              const res = await player.search({ query: uri }, clientRef?.user).catch(() => null);
-              if (res?.tracks?.length) {
-                Object.assign(next, res.tracks[0]);
-              }
-            }
-          } catch {
-            Logger.warn(`[advanceQueue] Re-resolution failed for ${guildId}`);
-            if (fp) markDead(fp, "re_resolve_failed").catch(() => {});
-          }
-        }
-      }
-
-      if (!next.encoded) {
-        Logger.warn(`[advanceQueue] guild=${guildId} skipping track without encoded data`);
-        if (fp) markDead(fp, "no_encoded_data").catch(() => {});
-        continue;
-      }
+      const result = await validateTrack(next, player, guildId, clientRef?.user);
+      if (!result.valid) continue;
 
       state.nowPlaying.set(guildId, next);
       try {

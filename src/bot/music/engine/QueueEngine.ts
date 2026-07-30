@@ -1,4 +1,6 @@
 import state from "../../core/state/StateManager.js";
+import { isDead, deadFingerprint, deadSpotifyFingerprint } from "../../cache/DeadTrackService.js";
+import Logger from "../../core/utils/Logger.js";
 
 /**
  * QueueEngine — thin wrapper over state.queues for a single guild.
@@ -8,6 +10,16 @@ import state from "../../core/state/StateManager.js";
  * (add, addMultiple, next, remove, swap, shuffle, move, removeRange, clear)
  * to prevent races with advanceQueue / skip / trackError.
  */
+
+function _removeFromQueue(guildId: string, track: any): void {
+  const q = state.queues.get(guildId);
+  const idx = q.indexOf(track);
+  if (idx !== -1) {
+    q.splice(idx, 1);
+    state.queues.set(guildId, q);
+  }
+}
+
 class QueueEngine {
   guildId: string;
 
@@ -19,6 +31,32 @@ class QueueEngine {
     const q = state.queues.get(this.guildId);
     q.push(track);
     state.queues.set(this.guildId, q);
+    this._validateAddedTrack(track);
+  }
+
+  private _validateAddedTrack(track: any): void {
+    const fp = track.info?.title ? deadFingerprint(track.info.title, track.info.author) : null;
+    if (fp) {
+      isDead(fp).then(dead => {
+        if (!dead) return;
+        _removeFromQueue(this.guildId, track);
+        Logger.warn(`[QueueEngine] guild=${this.guildId} skipping dead track at add: ${track.info?.title || "?"}`);
+      });
+    }
+
+    if (track.info?.uri) {
+      const isSpotifyTrack = /^spotify:track:|open\.spotify\.com\/track\//.test(track.info.uri);
+      if (isSpotifyTrack) {
+        const m = track.info.uri.match(/([a-zA-Z0-9]+)$/);
+        if (m) {
+          isDead(deadSpotifyFingerprint(m[1])).then(dead => {
+            if (!dead) return;
+            _removeFromQueue(this.guildId, track);
+            Logger.warn(`[QueueEngine] guild=${this.guildId} skipping dead Spotify track at add: ${m[1]}`);
+          });
+        }
+      }
+    }
   }
 
   addMultiple(tracks: any[]): void {
