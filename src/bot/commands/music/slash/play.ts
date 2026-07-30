@@ -174,8 +174,8 @@ export default {
         result = await cachedSearch(player, dzFallback, interaction.user);
       }
 
-      // Handle playlist (YouTube, SoundCloud, etc.)
-      if (result?.loadType === "playlist" && result?.tracks?.length > 1) {
+      // Handle playlist — only for URL queries, not plain text search
+      if (query.startsWith("http") && result?.loadType === "playlist" && result?.tracks?.length > 1) {
         const playlistTracks = result.tracks;
         const playlistName = result.playlistInfo?.name || "Playlist";
         const q = state.queues.get(interaction.guildId) || [];
