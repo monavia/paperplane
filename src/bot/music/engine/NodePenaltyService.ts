@@ -152,5 +152,33 @@ function stopDecay(): void { if (decayTimer) { clearInterval(decayTimer); decayT
 
 export {
   recordFailedLoad, recordDisconnect, recordError, recordResponseTime, recordHtmlError, clearUnhealthy,
-  getPenalty, getBestNode, startDecay, stopDecay, isDraining, startDrain, stopDrain, getDrainingNodes, isUnhealthy,
+  getPenalty, getBestNode, getBestNodeForFailover, startDecay, stopDecay, isDraining, startDrain, stopDrain, getDrainingNodes, isUnhealthy,
 };
+
+function getBestNodeForFailover(manager: any, failedNodeId: string): any {
+  if (!manager?.nodeManager?.nodes) return null;
+  const connected = Array.from(manager.nodeManager.nodes.values())
+    .filter((n: any) => n.connected && !drainingNodes.has(n.options?.id) && !isUnhealthy(n.options?.id));
+  if (!connected.length) return null;
+
+  const failedNodePenalty = getPenalty(failedNodeId);
+
+  const candidates = connected
+    .filter((n: any) => {
+      const penalty = getPenalty(n.options?.id);
+      if (penalty > 200) return false;
+      if (n.options?.id === failedNodeId) return false;
+      return true;
+    })
+    .sort(scoreSorter) as any[];
+
+  if (!candidates.length) {
+    Logger.warn(`[NodeLink] Failover: no healthy candidates after penalty filter (failedNode=${failedNodeId}, failedPenalty=${failedNodePenalty})`);
+    return null;
+  }
+
+  const best: any = candidates[0];
+  const penalty = getPenalty(best.options?.id);
+  Logger.info(`[NodeLink] Failover: selected ${best.options?.id} (penalty=${penalty}, players=${best.stats?.players || 0}) over failed ${failedNodeId}`);
+  return best;
+}

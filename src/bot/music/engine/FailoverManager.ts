@@ -3,7 +3,7 @@ import state from "../../core/state/StateManager.js";
 import { saveSpotifyMeta, applySpotifyMeta } from "../services/TitleResolver.js";
 import { getTextChannelId } from "../services/TextChannelStore.js";
 import { getEngine } from "../services/PlayerService.js";
-import { getBestNode, getPenalty, isDraining, recordDisconnect, recordError } from "./NodePenaltyService.js";
+import { getBestNode, getBestNodeForFailover, getPenalty, isDraining, recordDisconnect, recordError } from "./NodePenaltyService.js";
 import { applyFilters, setFilter, setEqualizer } from "../services/PlayerService.js";
 import { searchWithRetry } from "../services/SearchService.js";
 import type { LavalinkManager } from "lavalink-client" with { "resolution-mode": "require" };
@@ -80,8 +80,8 @@ export async function failoverFromNode(nodeId: string) {
     recordDisconnect(nodeId);
     const nodeSnapshot = Array.from(lavalink.nodeManager.nodes.values()).filter((n: any) => n.connected).map((n: any) => `${n.id}:p=${getPenalty(n.options?.id)}:players=${n.stats?.players??"?"}:draining=${isDraining(n.options?.id)}:session=${!!n.sessionId}`).join(", ");
     Logger.info(`[Failover] nodes="${nodeSnapshot}" nodeId=${nodeId} guild=${guildId}`);
-    const target = getBestNode(lavalink);
-    if (!target || target.id === nodeId) {
+    const target = getBestNodeForFailover(lavalink, nodeId);
+    if (!target) {
       Logger.warn(`[NodeLink] Failover: no healthy nodes for guild ${guildId}`);
       continue;
     }
