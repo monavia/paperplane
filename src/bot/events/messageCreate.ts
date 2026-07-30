@@ -120,7 +120,7 @@ export function start(client: any): void {
           let firstTrack: any = null;
           for (let i = 0; i < queries.length; i++) {
             const q = queries[i];
-            const result = await player.search({ query: `ytsearch:${q}` }, message.author);
+            const result = await player.search({ query: `ytmsearch:${q}` }, message.author);
             const track = result?.tracks?.[0];
             if (!track) continue;
             if (i === 0) firstTrack = track;
@@ -240,7 +240,7 @@ export function start(client: any): void {
             }
             MusicService.getEngine(guildId).player = player;
             setTextChannelId(guildId, message.channelId);
-            const result = await player.search({ query: `ytsearch:${keyword}` }, message.author);
+            const result = await player.search({ query: `ytmsearch:${keyword}` }, message.author);
             const track = result?.tracks?.[0];
             if (!track) return message.channel.send({ embeds: [ErrorEmbed.build("No results found.")] });
             if (player.playing || player.paused) {

@@ -288,7 +288,7 @@ function register(client: any): void {
         if (!next?.info?.uri) return;
         const uri = next.info.uri;
         const isSpotify = /open\.spotify\.com/i.test(uri) || /^spotify:/.test(uri);
-        const search = await player.search({ query: isSpotify ? `ytsearch:${next.info.author || ""} ${next.info.title || ""}` : uri }, { id: "system" }).catch(() => null);
+        const search = await player.search({ query: isSpotify ? `ytmsearch:${next.info.author || ""} ${next.info.title || ""}` : uri }, { id: "system" }).catch(() => null);
         if (search?.tracks?.[0]?.encoded) {
           next.encoded = search.tracks[0].encoded;
           

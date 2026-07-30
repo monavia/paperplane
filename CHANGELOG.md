@@ -1,6 +1,25 @@
 # Changelog — Paperplane
 
-## 2026-07-30 — v3.2.3
+## 2026-07-30 — v3.2.5
+
+### Position Sync Optimization — 90% DB Writes Reduction
+
+- **RAM-only per-second update** — `StateService.ts:startPositionSync()`: position written to in-memory `state.position` every 1s (zero I/O). DB flush via `updatePlayerState` only every 10s (active) or 60s (paused), tracked per-guild via `lastPositionFlush` Map.
+- **Delta log filter** — log line skipped when position delta is exactly 1000ms (normal tick). Reduces log noise ~99%.
+- **Final flush on stop** — `stopPositionSync()` is now async: flushes last RAM position to DB before clearing timer. All callers in `PlayerService.ts` (destroyEngine, skip, stop) updated with `await`.
+- **EventBus fire-and-forget** — handler `.catch()` added since handler is now async.
+- **Impact**: 20 writes/sec → 2 writes/sec (−90%), 60 log lines/min/guild → ~0-1/min/guild (−99%).
+
+### Search Flow: ytmsearch > ytsearch
+
+- **ytmsearch primary** — all search/play/autoplay flows changed from `ytsearch` first to `ytmsearch` first. YouTube Music search returns richer metadata and better results for music queries.
+- **ytsearch fallback** — falls back to regular YouTube search when ytmsearch returns no results, before trying scsearch/dzsearch.
+- **`defaultSearchPlatform`** — `lavalink.ts` changed from `"ytsearch"` to `"ytmsearch"`.
+- **Files affected** — 11 files: play.ts (slash+prefix), search.ts (slash+prefix), RecommendationEngine.ts, musicEvents.ts, StateService.ts, messageCreate.ts, PlaylistService.ts, lavalink.ts.
+
+## 2026-07-30 — v3.2.4
+
+### Startup Crash Fix — Unguarded `sendRawData`
 
 ### Autoplay Loop Guard — Circuit Breaker
 

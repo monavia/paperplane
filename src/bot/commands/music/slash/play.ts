@@ -23,8 +23,8 @@ async function resolveSpotifyTrack(player: any, spotifyItem: any, user: any): Pr
   const q = spotifyItem.query || `${spotifyItem.artists?.join(" ") || ""} ${spotifyItem.name}`.trim();
   if (!q) return null;
   let result: any;
-  try { result = await searchWithRetry(player, { query: `ytsearch:${q}` }, user); } catch {}
-  if (!result?.tracks?.length) { try { result = await searchWithRetry(player, { query: `ytmsearch:${q}` }, user); } catch {} }
+  try { result = await searchWithRetry(player, { query: `ytmsearch:${q}` }, user); } catch {}
+  if (!result?.tracks?.length) { try { result = await searchWithRetry(player, { query: `ytsearch:${q}` }, user); } catch {} }
   if (result?.tracks?.length) {
     const track = pickBestTrack(result.tracks);
     if (!track.info) track.info = {};
@@ -151,15 +151,15 @@ export default {
       // Regular search
       if (!query.startsWith("http") && !query.includes(":")) {
         currentSource = 'youtube';
-        searchQuery = `ytsearch:${query}`;
+        searchQuery = `ytmsearch:${query}`;
       }
 
       let result = await cachedSearch(player, searchQuery, interaction.user);
 
-      if (!result?.tracks?.length && searchQuery.startsWith("ytsearch:")) {
-        currentSource = 'ytmsearch';
-        const ytmFallback = `ytmsearch:${query}`;
-        result = await cachedSearch(player, ytmFallback, interaction.user);
+      if (!result?.tracks?.length && searchQuery.startsWith("ytmsearch:")) {
+        currentSource = 'ytsearch';
+        const ytFallback = `ytsearch:${query}`;
+        result = await cachedSearch(player, ytFallback, interaction.user);
       }
 
       if (!result?.tracks?.length) {

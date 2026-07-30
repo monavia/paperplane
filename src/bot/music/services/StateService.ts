@@ -14,6 +14,10 @@ import { EmbedBuilder } from "discord.js";
 let restoreRetryTimer: NodeJS.Timeout | null = null;
 let uncachedRetries = 0;
 
+const POSITION_FLUSH_INTERVAL = 10_000;
+const PAUSED_FLUSH_INTERVAL = 60_000;
+const lastPositionFlush = new Map<string, number>();
+
 export function isRestoredGuild(guildId: string): boolean {
   return state.restored.has(guildId);
 }
@@ -90,34 +94,52 @@ export function startPositionSync(guildId: string): void {
       const engine = getEngine(guildId);
       const player = engine.player;
       if (!player) return;
+      if (!player.playing && !player.paused) return;
+
+      const now = Date.now();
+      const lastFlush = lastPositionFlush.get(guildId) || 0;
 
       if (player.paused) {
-        await updatePlayerState(guildId, { nodeId: player.node?.id || null, updatedAt: new Date() });
+        if (now - lastFlush >= PAUSED_FLUSH_INTERVAL) {
+          lastPositionFlush.set(guildId, now);
+          await updatePlayerState(guildId, { nodeId: player.node?.id || null, updatedAt: new Date() });
+        }
         return;
       }
-
-      if (!player.playing) return;
 
       const playerPos = player.position || 0;
       const pos = playerPos > 0 ? playerPos : (state.position.get(guildId) || 0);
 
+      state.position.set(guildId, pos);
+
       if (pos !== lastLoggedPos) {
-        Logger.info(`[PositionSync] guild=${guildId} pos=${pos} playerPos=${playerPos} delta=${pos - lastLoggedPos}`);
+        const delta = pos - lastLoggedPos;
+        if (delta !== 1000) {
+          Logger.info(`[PositionSync] guild=${guildId} pos=${pos} delta=${delta}`);
+        }
         lastLoggedPos = pos;
       }
 
-      await updatePlayerState(guildId, { position: pos, nodeId: player.node?.id || null, updatedAt: new Date() });
+      if (now - lastFlush >= POSITION_FLUSH_INTERVAL) {
+        lastPositionFlush.set(guildId, now);
+        await updatePlayerState(guildId, { position: pos, nodeId: player.node?.id || null, updatedAt: new Date() });
+      }
     } catch { Logger.warn(`[StateRestore] positionSync failed for ${guildId}`); }
   }, 1000);
   positionSyncTimers.set(guildId, timer);
 }
 
-export function stopPositionSync(guildId: string): void {
+export async function stopPositionSync(guildId: string): Promise<void> {
   const timer = positionSyncTimers.get(guildId);
   if (timer) {
     clearInterval(timer);
     positionSyncTimers.delete(guildId);
   }
+  const pos = state.position.get(guildId);
+  if (pos !== undefined) {
+    await updatePlayerState(guildId, { position: pos, updatedAt: new Date() }).catch(() => {});
+  }
+  lastPositionFlush.delete(guildId);
 }
 
 async function saveState(guildId: string) {
@@ -157,7 +179,7 @@ async function saveAllStates(): Promise<number> {
   let saved = 0;
   const guildIds = Array.from(manager.players.keys()) as string[];
   for (const guildId of guildIds) {
-    stopPositionSync(guildId);
+    await stopPositionSync(guildId);
     try { await saveState(guildId); saved++; }
     catch (err: any) { Logger.error(`Failed to save state for guild ${guildId}:`, err.message); }
   }
@@ -165,7 +187,7 @@ async function saveAllStates(): Promise<number> {
 }
 
 async function deleteState(guildId: string) {
-  stopPositionSync(guildId);
+  await stopPositionSync(guildId);
   await deletePlayerState(guildId);
   state.loop.delete(guildId);
   state.nowPlaying.delete(guildId);
@@ -318,7 +340,7 @@ async function restoreGuildState(client: any, saved: any): Promise<boolean> {
       const trackAuthor = first.info?.author || "";
       if (trackTitle || trackAuthor) {
         const q = `${trackAuthor} ${trackTitle}`.trim();
-        const search = await player.search({ query: `ytsearch:${q}` }, { id: "system" }).catch(() => null);
+        const search = await player.search({ query: `ytmsearch:${q}` }, { id: "system" }).catch(() => null);
         if (search?.tracks?.length) {
           const fresh = search.tracks[0];
           // Preserve original URI for display (e.g. Spotify URL)
@@ -468,7 +490,7 @@ async function restoreAllStates(client: any, retryCount = 0) {
 
 EventBus.on('state:save', (p: any) => { if (p?.guildId) saveState(p.guildId).catch(Logger.safe("bot/music/services/StateService.ts")); });
 EventBus.on('state:startPositionSync', (p: any) => { if (p?.guildId) startPositionSync(p.guildId); });
-EventBus.on('state:stopPositionSync', (p: any) => { if (p?.guildId) stopPositionSync(p.guildId); });
+EventBus.on('state:stopPositionSync', (p: any) => { if (p?.guildId) stopPositionSync(p.guildId).catch(() => {}); });
 EventBus.on('state:delete', (p: any) => { if (p?.guildId) deleteState(p.guildId).catch(Logger.safe("bot/music/services/StateService.ts")); });
 EventBus.on('state:clearRestored', (p: any) => { if (p?.guildId) clearRestoredGuild(p.guildId); });
 EventBus.on('state:addRestored', (p: any) => { if (p?.guildId) addRestoredGuild(p.guildId); });

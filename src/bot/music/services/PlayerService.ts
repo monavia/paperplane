@@ -83,7 +83,7 @@ export function getEngine(guildId: string): Engine {
 
 export async function destroyEngine(guildId: string): Promise<void> {
   
-  stopPositionSync(guildId);
+  await stopPositionSync(guildId);
   await deleteState(guildId).catch(Logger.safe("bot/music/services/PlayerService.ts"));
   const e = engines.get(guildId);
   if (e?.player) {
@@ -122,7 +122,7 @@ export async function skip(guildId: string, userId: string, userName: string): P
   } else if (!state.autoplay.get(guildId)) {
     if (!state.twentyFourSeven.isEnabled(guildId)) {
       await deleteState(guildId).catch(Logger.safe("bot/music/services/PlayerService.ts"));
-      stopPositionSync(guildId);
+      await stopPositionSync(guildId);
       if (player) {
         try { player.disconnect(); } catch { Logger.safe("PlayerService")(); }
         try { player.destroy(); } catch { Logger.safe("PlayerService")(); }
@@ -140,7 +140,7 @@ export async function stop(guildId: string, userId: string, userName: string): P
 
   await deleteState(guildId).catch(Logger.safe("bot/music/services/PlayerService.ts"));
   
-  stopPositionSync(guildId);
+  await stopPositionSync(guildId);
   
   if (!state.twentyFourSeven.isEnabled(guildId)) {
     state.autoplay.set(guildId, false);

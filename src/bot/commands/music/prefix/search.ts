@@ -30,7 +30,7 @@ export default {
         player = node;
       }
 
-      const result = await player.search({ query: `ytsearch:${query}` }, message.author);
+      const result = await player.search({ query: `ytmsearch:${query}` }, message.author);
       const tracks = result?.tracks?.slice(0, 10);
       if (!tracks?.length) return msg.edit({ embeds: [ErrorEmbed.build("No results found.")] });
 

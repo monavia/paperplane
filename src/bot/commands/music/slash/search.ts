@@ -31,7 +31,7 @@ export default {
         MusicService.getEngine(interaction.guildId!).player = player;
       }
 
-      const result = await player.search({ query: `ytsearch:${query}` }, interaction.user);
+      const result = await player.search({ query: `ytmsearch:${query}` }, interaction.user);
       const tracks = result?.tracks?.slice(0, 10);
       if (!tracks?.length) return interaction.editReply({ embeds: [ErrorEmbed.build("No results found.")] });
 
