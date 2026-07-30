@@ -4,6 +4,9 @@ import { failoverFromNode, connectWithRetry } from "./lavalink.js";
 import { markTrackStartSuppressed, advanceQueue } from "./musicEvents.js";
 import state from "../../core/state/StateManager.js";
 import * as EventBus from "../events/EventBus.js";
+import AutoplayEngine from "./AutoplayEngine.js";
+
+const autoplayInst = new AutoplayEngine();
 
 const STUCK_TIMEOUT_MS = 15000;
 const CHECK_INTERVAL_MS = 30000;
@@ -201,6 +204,48 @@ async function checkPlayer(guildId: string, player: any, clientRef: any): Promis
     } else if (lastChange > 0) {
       stuckCounts.delete(guildId);
       skipAttempted.delete(guildId);
+    }
+  }
+
+  // Idle player with pending tracks — advance queue
+  if (!player.playing && !player.paused) {
+    const qLen = state.queues.get(guildId)?.length || 0;
+    if (qLen > 0 || state.autoplay.get(guildId)) {
+      if (player.node?.connected) {
+        Logger.info(`[Watchdog] Player ${guildId} idle with ${qLen} queued — advancing`);
+        try {
+          const played = await advanceQueue(player);
+          if (!played && state.autoplay.get(guildId)) {
+            const source = state.nowPlaying.get(guildId) || player.queue.previous?.[0];
+            if (source?.info) {
+              const auto = await autoplayInst.getNextTrack(player, source, guildId);
+              if (auto) { state.nowPlaying.set(guildId, auto); await player.play({ track: auto, clientTrack: auto }); return; }
+            }
+          }
+          if (!played) { player.stopPlaying().catch(Logger.safe("bot/music/engine/PlayerWatchdog.ts")); }
+        } catch { player.stopPlaying().catch(Logger.safe("bot/music/engine/PlayerWatchdog.ts")); }
+      } else {
+        Logger.info(`[Watchdog] Player ${guildId} idle — node disconnected, recovering`);
+        try {
+          await connectWithRetry(player, guildId);
+          await new Promise(r => setTimeout(r, 2000));
+          if (player.node?.connected) {
+            const played = await advanceQueue(player);
+            if (!played && state.autoplay.get(guildId)) {
+              const source = state.nowPlaying.get(guildId) || player.queue.previous?.[0];
+              if (source?.info) {
+                const auto = await autoplayInst.getNextTrack(player, source, guildId);
+                if (auto) { state.nowPlaying.set(guildId, auto); await player.play({ track: auto, clientTrack: auto }); return; }
+              }
+            }
+            if (!played) { player.stopPlaying().catch(Logger.safe("bot/music/engine/PlayerWatchdog.ts")); }
+          } else {
+            Logger.warn(`[Watchdog] Player ${guildId} still has no connected node`);
+          }
+        } catch {
+          Logger.warn(`[Watchdog] Player ${guildId} recover failed — leaving for next cycle`);
+        }
+      }
     }
   }
 }

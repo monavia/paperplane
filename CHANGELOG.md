@@ -8,6 +8,12 @@
 - **Always re-search** — replaced stale-encoded-track playback with fresh `player.search()` from `state.nowPlaying` URI. Eliminates "Something broke when playing the track" errors caused by expired encoded tracks after node reconnect.
 - **Removed error embed** — `musicEvents.ts:trackError`: silent error handling; no more per-error embeds sent to the text channel.
 
+### Track Error Deadlock — `setImmediate` + Watchdog Recovery
+
+- **`setImmediate` advance on node disconnect** — `musicEvents.ts:trackError`: when `player.node?.connected` is false after a track error, schedules `advanceQueue(player)` via `setImmediate` instead of giving up. Prevents deadlock where error kills the player but no event fires to advance to the next track.
+- **Watchdog idle player detection** — `PlayerWatchdog.ts`: new check for players where `!player.playing && !player.paused` with pending queue tracks or autoplay enabled. If node is connected, calls `advanceQueue` directly; if node is disconnected, calls `connectWithRetry` + 2s wait then advances. Fixes the silent death after `-skip` + autoplay track error where `queueEnd` never fires.
+- **Autoplay fallback** — `PlayerWatchdog.ts`: when `advanceQueue` returns null (queue empty) and autoplay is on, triggers `autoplayInst.getNextTrack()` directly to keep playback going.
+
 ## 2026-07-30 — v3.2.5
 
 ### Position Sync Optimization — 90% DB Writes Reduction
