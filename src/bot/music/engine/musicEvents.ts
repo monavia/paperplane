@@ -400,8 +400,8 @@ function register(client: any): void {
       const voiceChannel = clientRef?.channels?.cache?.get(player.voiceChannelId);
       const members = voiceChannel?.members?.filter((m: any) => !m.user?.bot) || new Map();
       const humanCount = members.size;
-      const timeout = 60000;
-      const timeoutLabel = "60s";
+      const timeout = 180000;
+      const timeoutLabel = "3m";
 
       Logger.info(`[queueEnd] guild=${player.guildId}/${guildName} humans=${humanCount} total=${voiceChannel?.members?.size || 1} timeout=${timeoutLabel}`);
 
