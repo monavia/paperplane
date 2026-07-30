@@ -38,3 +38,55 @@ describe("CooldownManager", () => {
     assert.ok(!cooldown.check("u7", "play", 100)); assert.ok(cooldown.check("u7", "skip"));
   });
 });
+
+describe("CooldownManager edge cases", () => {
+  test("getUses returns 0 for unknown", () => {
+    assert.strictEqual(cooldown.getUses("ghost", "cmd"), 0);
+  });
+
+  test("getRemaining returns 0 when no cooldown", () => {
+    assert.strictEqual(cooldown.getRemaining("nonexistent", "cmd"), 0);
+  });
+
+  test("getRemaining returns 0 after expiry", { timeout: 500 }, async () => {
+    cooldown.set("expireUser", "cmd");
+    await new Promise(r => setTimeout(r, 50));
+    assert.strictEqual(cooldown.getRemaining("expireUser", "cmd", 10), 0);
+  });
+
+  test("reset non-existent user doesn't throw", () => {
+    cooldown.reset("noSuchUser");
+    cooldown.reset("noSuchUser", "someCmd");
+  });
+
+  test("size reflects total entries", () => {
+    cooldown.reset("sizeTestA");
+    cooldown.reset("sizeTestB");
+    cooldown.set("sizeTestA", "x");
+    cooldown.set("sizeTestB", "y");
+    assert.ok(cooldown.size() >= 2);
+  });
+
+  test("concurrent rapid set+check doesn't throw", () => {
+    for (let i = 0; i < 20; i++) {
+      cooldown.set(`rapid${i}`, "cmd");
+      cooldown.check(`rapid${i}`, "cmd");
+    }
+  });
+
+  test("set 50 entries then verify size", () => {
+    cooldown.reset("bulk");
+    for (let i = 0; i < 50; i++) {
+      cooldown.set("bulk", `cmd${i}`);
+    }
+    assert.strictEqual(cooldown.getUses("bulk", "cmd0"), 1);
+    assert.strictEqual(cooldown.getUses("bulk", "cmd49"), 1);
+  });
+
+  test("check after exact cooldown boundary", { timeout: 500 }, async () => {
+    cooldown.set("boundaryUser", "cmd");
+    await new Promise(r => setTimeout(r, 30));
+    assert.ok(cooldown.check("boundaryUser", "cmd", 20));
+    assert.ok(!cooldown.check("boundaryUser", "cmd", 100));
+  });
+});
