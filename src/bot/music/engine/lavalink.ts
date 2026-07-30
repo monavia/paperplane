@@ -396,7 +396,28 @@ export async function init(client: any): Promise<boolean> {
   l.on("trackStart", () => {});
   l.on("queueEnd", () => {});
 
+  // Pre-warm keepalive — ping nodes every 30s to maintain connection health
+  let keepaliveTimer: any = null;
+  function startKeepalive(): void {
+    if (keepaliveTimer) return;
+    keepaliveTimer = setInterval(async () => {
+      if (!lavalink?.nodeManager) return;
+      const nodes = Array.from(lavalink.nodeManager.nodes.values());
+      for (const node of nodes) {
+        if (node.connected) {
+          try {
+            const n = node as any;
+            if (typeof n.fetchPlayer === 'function') {
+              await n.fetchPlayer('__keepalive__').catch(() => {});
+            }
+          } catch {}
+        }
+      }
+    }, 30000);
+  }
+
   await l.init({ id: client.user?.id || "" }).catch(Logger.safe("bot/music/engine/lavalink.ts"));
+
   startKeepalive();
 
   // Periodic track cache prune (TTL cleanup)
@@ -472,26 +493,6 @@ export async function init(client: any): Promise<boolean> {
       }
     }
   }, 15000);
-
-  // Pre-warm keepalive — ping nodes every 30s to maintain connection health
-  let keepaliveTimer: any = null;
-  function startKeepalive(): void {
-    if (keepaliveTimer) return;
-    keepaliveTimer = setInterval(async () => {
-      if (!lavalink?.nodeManager) return;
-      const nodes = Array.from(lavalink.nodeManager.nodes.values());
-      for (const node of nodes) {
-        if (node.connected) {
-          try {
-            const n = node as any;
-            if (typeof n.fetchPlayer === 'function') {
-              await n.fetchPlayer('__keepalive__').catch(() => {});
-            }
-          } catch {}
-        }
-      }
-    }, 30000);
-  }
 
   client.on("raw", (d: any) => l.sendRawData(d));
   return true;
