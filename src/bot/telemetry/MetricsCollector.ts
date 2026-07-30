@@ -83,6 +83,10 @@ const eventLoopLag = new Gauge();
 const cacheHitCount = new Counter();
 const cacheMissCount = new Counter();
 const audioStartupLatency = new Gauge();
+const sourceResolveTime = new Gauge();
+const sourcePlayLatency = new Gauge();
+const sourceResolveCount = new Counter();
+const sourcePlayCount = new Counter();
 
 let lastLoopMeasure = Date.now();
 function measureEventLoopLag(): void {
@@ -160,6 +164,14 @@ export function incCacheHit(cache: string) {
 export function incCacheMiss(cache: string) {
   cacheMissCount.inc({ cache });
 }
+export function observeSourceResolveTime(source: string, ms: number) {
+  sourceResolveTime.set(ms, { source });
+  sourceResolveCount.inc({ source });
+}
+export function observeSourcePlayLatency(source: string, ms: number) {
+  sourcePlayLatency.set(ms, { source });
+  sourcePlayCount.inc({ source });
+}
 
 export function getMetrics() {
   const mem = process.memoryUsage();
@@ -195,6 +207,12 @@ export function getMetrics() {
     cacheHitByLabel: cacheHitCount.getAllLabels(),
     cacheMiss: cacheMissCount.get(),
     cacheMissByLabel: cacheMissCount.getAllLabels(),
+    sourceResolveTime: sourceResolveTime.getAllLabels(),
+    sourcePlayLatency: sourcePlayLatency.getAllLabels(),
+    sourceResolveCount: sourceResolveCount.get(),
+    sourceResolveCountByLabel: sourceResolveCount.getAllLabels(),
+    sourcePlayCount: sourcePlayCount.get(),
+    sourcePlayCountByLabel: sourcePlayCount.getAllLabels(),
   };
 }
 
@@ -206,6 +224,18 @@ EventBus.on('metrics:audioStartupLatency', (p: any) => {
   }
 });
 
+EventBus.on('metrics:sourceResolveTime', (p: any) => {
+  if (p?.ms && p?.source) {
+    sourceResolveTime.set(p.ms, { source: p.source });
+    sourceResolveCount.inc({ source: p.source });
+  }
+});
+EventBus.on('metrics:sourcePlayLatency', (p: any) => {
+  if (p?.ms && p?.source) {
+    sourcePlayLatency.set(p.ms, { source: p.source });
+    sourcePlayCount.inc({ source: p.source });
+  }
+});
 EventBus.on('metrics:trackPlayed', (p: any) => {
   if (p?.guildId) {
     tracksPlayed.inc({ guild: p.guildId, source: p.source || 'unknown' });
@@ -245,4 +275,8 @@ export default {
   cacheHitCount,
   cacheMissCount,
   audioStartupLatency,
+  sourceResolveTime,
+  sourcePlayLatency,
+  sourceResolveCount,
+  sourcePlayCount,
 };

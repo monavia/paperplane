@@ -12,10 +12,10 @@ import * as MusicService from "../../../../bot/music/services/MusicService.js";
 import Logger from "../../../../bot/core/utils/Logger.js";
 import state from "../../../core/state/StateManager.js";
 import { get } from "../../../music/engine/lavalink.js";
-import * as EventBus from "../../../music/events/EventBus.js";
 import { getPlayer, createPlayer } from "../../../music/engine/PlayerManager.js";
 import { setTextChannelId } from "../../../music/services/TextChannelStore.js";
 import { getEngine } from "../../../music/services/PlayerService.js";
+import * as EventBus from "../../../music/events/EventBus.js";
 
 const MAX_SPOTIFY = botConfig.maxSpotify;
 
@@ -77,6 +77,9 @@ export default {
     }
 
     try {
+      const playStartTime = Date.now();
+      let currentSource = 'unknown';
+
       const lavalink = get();
       if (!lavalink) throw new Error("Lavalink not connected");
 
@@ -86,12 +89,12 @@ export default {
         player = createPlayer(message.guildId, voice.id, message.channelId, voice.rtcRegion);
         connectPromise = player.connect();
       }
-      const playStartTime = Date.now();
       getEngine(message.guildId).player = player;
 
       setTextChannelId(message.guildId, message.channelId);
 
       // Spotify URL handling
+      currentSource = 'spotify';
       const spotifyParsed = parseSpotifyUrl(query);
       if (spotifyParsed) {
         const items = (await scrapeSpotify(query).catch((err: any) => {
@@ -120,9 +123,11 @@ export default {
           state.nowPlaying.set(message.guildId, firstResolved);
           markTrackStartSuppressed(message.guildId);
           if (connectPromise) await connectPromise;
+          EventBus.emit('metrics:sourceResolveTime', { guildId: message.guildId, ms: Date.now() - playStartTime, source: currentSource });
           await player.play({ track: firstResolved, clientTrack: firstResolved });
           const startupLatency = Date.now() - playStartTime;
           EventBus.emit('metrics:audioStartupLatency', { guildId: message.guildId, ms: startupLatency, source: firstResolved?.info?.source || 'unknown' });
+          EventBus.emit('metrics:sourcePlayLatency', { guildId: message.guildId, ms: startupLatency, source: currentSource });
           await MusicService.saveState(message.guildId);
         });
         await message.channel.send({ embeds: [NowPlayingEmbed.build(firstResolved, null)] });
@@ -143,17 +148,20 @@ export default {
       // Regular search
       let searchQuery = query;
       if (!query.startsWith("http") && !query.includes(":")) {
+        currentSource = 'ytmsearch';
         searchQuery = `ytmsearch:${query}`;
       }
 
       let result = await cachedSearch(player, searchQuery, message.author);
 
       if (!result?.tracks?.length && searchQuery.startsWith("ytmsearch:")) {
+        currentSource = 'youtube';
         const ytFallback = `ytsearch:${query}`;
         result = await cachedSearch(player, ytFallback, message.author);
       }
 
       if (!result?.tracks?.length) {
+        currentSource = 'soundcloud';
         const scFallback = query.startsWith("http") ? query : `scsearch:${query}`;
         result = await cachedSearch(player, scFallback, message.author);
       }
@@ -189,9 +197,11 @@ export default {
           state.nowPlaying.set(message.guildId, first);
           markTrackStartSuppressed(message.guildId);
           if (connectPromise) await connectPromise;
+          EventBus.emit('metrics:sourceResolveTime', { guildId: message.guildId, ms: Date.now() - playStartTime, source: currentSource });
           await player.play({ track: first, clientTrack: first });
           const startupLatency = Date.now() - playStartTime;
           EventBus.emit('metrics:audioStartupLatency', { guildId: message.guildId, ms: startupLatency, source: first?.info?.source || 'unknown' });
+          EventBus.emit('metrics:sourcePlayLatency', { guildId: message.guildId, ms: startupLatency, source: currentSource });
           await MusicService.saveState(message.guildId);
         });
         await message.channel.send({ embeds: [NowPlayingEmbed.build(first, null)] });
@@ -223,10 +233,12 @@ export default {
          const next = queue.shift() || track;
          state.nowPlaying.set(message.guildId, next);
          markTrackStartSuppressed(message.guildId);
-           if (connectPromise) await connectPromise;
+          if (connectPromise) await connectPromise;
+          EventBus.emit('metrics:sourceResolveTime', { guildId: message.guildId, ms: Date.now() - playStartTime, source: currentSource });
            await player.play({ track: next, clientTrack: next });
-           const startupLatency = Date.now() - playStartTime;
-           EventBus.emit('metrics:audioStartupLatency', { guildId: message.guildId, ms: startupLatency, source: next?.info?.source || 'unknown' });
+          const startupLatency = Date.now() - playStartTime;
+          EventBus.emit('metrics:audioStartupLatency', { guildId: message.guildId, ms: startupLatency, source: next?.info?.source || 'unknown' });
+          EventBus.emit('metrics:sourcePlayLatency', { guildId: message.guildId, ms: startupLatency, source: currentSource });
            await MusicService.saveState(message.guildId);
         });
        await message.channel.send({ embeds: [NowPlayingEmbed.build(track, null)] });

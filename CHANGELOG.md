@@ -1,5 +1,19 @@
 # Changelog — Paperplane
 
+## 2026-07-30 — v3.2.1
+
+### Audio Startup Latency Optimization
+
+- **Parallel connect+resolve** — voice `connect()` starts immediately without await, track resolution runs in parallel, then `connectPromise` awaited before `player.play()`. Cuts ~500ms from startup.
+- **Node keepalive** — periodic keepalive ping every 30s via `fetchPlayer()` to maintain connection health.
+- **Startup latency metric** — `audioStartupLatency` gauge emitted from `trackStart` handler.
+
+### Per-Source Latency Breakdown
+
+- **Source resolve time** — `sourceResolveTime` gauge tracks resolution duration per source (spotify/ytmsearch/youtube/soundcloud).
+- **Source play latency** — `sourcePlayLatency` gauge tracks total startup latency per source.
+- **Source counters** — `sourceResolveCount` and `sourcePlayCount` counters track volume per source.
+
 ## 2026-07-30 — v3.2.0
 
 ### User Favorites & History Dashboard
@@ -70,6 +84,11 @@
 - **Root cause**: `scrapePlaylist()` menggunakan embed endpoint (`open.spotify.com/embed/playlist/{id}?offset=N`) untuk pagination. Spotify tidak mendukung `?offset=` pada embed — setiap request return 50 tracks yang sama. Akibatnya playlist >50 track cuma discrape 50 item lalu di-cache.
 - **Fix**: Deteksi partial result (embed return tracks, offset pagination gagal) → fallthrough ke HTML scrape (`open.spotify.com/playlist/{id}`) yang render full track list di server-side `__NEXT_DATA__`. Prioritas: embed full > HTML scrape > embed partial > error.
 - **SpotifyScraper.test.ts** — 7 tests: parseUrl (playlist/track/album, reject non-spotify/invalid/wrong path format).
+
+### Test Rebuild — Lost Files Restored
+
+- Rebuilt 17 test files yang hilang saat repo lokal terhapus: bot config, AI config, MetricsCollector, api-base, connection, VoiceCheck, interactionCreate, messageCreate, PromptFilter (59 tests), AIDJ (11 tests), CommandInterpreter fuzz (6 tests), CommandInterpreter extended (36 tests), CooldownManager extended (17 tests), MusicModes (16 tests), embeds (10 tests), NowPlayingEmbed (8 tests), QueueEmbed (12 tests), benchmark (15 tests), musicEvents (21 tests).
+- **Total**: 398 tests, 25 test files, 0 failures. Build: clean (0 tsc errors).
 
 ### Docs & Planning Sync
 
