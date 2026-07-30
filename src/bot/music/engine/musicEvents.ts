@@ -424,7 +424,7 @@ function register(client: any): void {
           if (channel) {
             const embed = new EmbedBuilder()
               .setDescription(`Leaving voice channel due to inactivity.`)
-              .setColor(Colors.ERROR);
+              .setColor(Colors.SUCCESS);
             (channel as any).send({ embeds: [embed] }).catch(Logger.safe("bot/music/engine/musicEvents.ts"));
           }
         }
