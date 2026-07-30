@@ -257,6 +257,7 @@ function register(client: any): void {
     }
     lyricsMessages.delete(player.guildId);
     state.nowPlaying.set(player.guildId, track);
+    EventBus.emit('metrics:sourcePlayLatency', { guildId: player.guildId, ms: 0, source: track?.info?.source || 'unknown' });
     EventBus.emit('lavalink:cacheTrack', { guildId: player.guildId, track });
 
     

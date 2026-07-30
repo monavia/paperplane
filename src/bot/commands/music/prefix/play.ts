@@ -15,6 +15,7 @@ import { get } from "../../../music/engine/lavalink.js";
 import { getPlayer, createPlayer } from "../../../music/engine/PlayerManager.js";
 import { setTextChannelId } from "../../../music/services/TextChannelStore.js";
 import { getEngine } from "../../../music/services/PlayerService.js";
+import * as EventBus from "../../../music/events/EventBus.js";
 
 const MAX_SPOTIFY = botConfig.maxSpotify;
 
@@ -76,6 +77,9 @@ export default {
     }
 
     try {
+      const playStartTime = Date.now();
+      let currentSource = 'unknown';
+
       const lavalink = get();
       if (!lavalink) throw new Error("Lavalink not connected");
 
@@ -89,6 +93,7 @@ export default {
       setTextChannelId(message.guildId, message.channelId);
 
       // Spotify URL handling
+      currentSource = 'spotify';
       const spotifyParsed = parseSpotifyUrl(query);
       if (spotifyParsed) {
         const items = (await scrapeSpotify(query).catch((err: any) => {
@@ -116,7 +121,9 @@ export default {
         await withQueueLock(message.guildId, async () => {
           state.nowPlaying.set(message.guildId, firstResolved);
           markTrackStartSuppressed(message.guildId);
+          EventBus.emit('metrics:sourceResolveTime', { guildId: message.guildId, ms: Date.now() - playStartTime, source: currentSource });
           await player.play({ track: firstResolved, clientTrack: firstResolved });
+          EventBus.emit('metrics:sourcePlayLatency', { guildId: message.guildId, ms: Date.now() - playStartTime, source: currentSource });
           await MusicService.saveState(message.guildId);
         });
         await message.channel.send({ embeds: [NowPlayingEmbed.build(firstResolved, null)] });
@@ -137,17 +144,20 @@ export default {
       // Regular search
       let searchQuery = query;
       if (!query.startsWith("http") && !query.includes(":")) {
+        currentSource = 'ytmsearch';
         searchQuery = `ytmsearch:${query}`;
       }
 
       let result = await cachedSearch(player, searchQuery, message.author);
 
       if (!result?.tracks?.length && searchQuery.startsWith("ytmsearch:")) {
+        currentSource = 'youtube';
         const ytFallback = `ytsearch:${query}`;
         result = await cachedSearch(player, ytFallback, message.author);
       }
 
       if (!result?.tracks?.length) {
+        currentSource = 'soundcloud';
         const scFallback = query.startsWith("http") ? query : `scsearch:${query}`;
         result = await cachedSearch(player, scFallback, message.author);
       }
@@ -182,7 +192,9 @@ export default {
           state.queues.set(message.guildId, [...q2, ...addable]);
           state.nowPlaying.set(message.guildId, first);
           markTrackStartSuppressed(message.guildId);
+          EventBus.emit('metrics:sourceResolveTime', { guildId: message.guildId, ms: Date.now() - playStartTime, source: currentSource });
           await player.play({ track: first, clientTrack: first });
+          EventBus.emit('metrics:sourcePlayLatency', { guildId: message.guildId, ms: Date.now() - playStartTime, source: currentSource });
           await MusicService.saveState(message.guildId);
         });
         await message.channel.send({ embeds: [NowPlayingEmbed.build(first, null)] });
@@ -213,9 +225,11 @@ export default {
          state.queues.set(message.guildId, queue);
          const next = queue.shift() || track;
          state.nowPlaying.set(message.guildId, next);
-         markTrackStartSuppressed(message.guildId);
-          await player.play({ track: next, clientTrack: next });
-          await MusicService.saveState(message.guildId);
+          markTrackStartSuppressed(message.guildId);
+          EventBus.emit('metrics:sourceResolveTime', { guildId: message.guildId, ms: Date.now() - playStartTime, source: currentSource });
+           await player.play({ track: next, clientTrack: next });
+          EventBus.emit('metrics:sourcePlayLatency', { guildId: message.guildId, ms: Date.now() - playStartTime, source: currentSource });
+           await MusicService.saveState(message.guildId);
         });
        await message.channel.send({ embeds: [NowPlayingEmbed.build(track, null)] });
     } catch (err: any) {

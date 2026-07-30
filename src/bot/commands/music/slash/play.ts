@@ -1,4 +1,5 @@
 import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
+import * as EventBus from "../../../music/events/EventBus.js";
 import * as NowPlayingEmbed from "../../../../bot/ui/embeds/NowPlayingEmbed.js";
 import * as ErrorEmbed from "../../../../bot/ui/embeds/ErrorEmbed.js";
 import { pickBestTrack, searchWithRetry } from "../../../../bot/music/services/SearchService.js";
@@ -57,6 +58,8 @@ export default {
 
     const query = interaction.options.getString("query");
     await interaction.deferReply();
+    const playStartTime = Date.now();
+    let currentSource = 'unknown';
 
     try {
       const lavalink = get();
@@ -74,6 +77,7 @@ export default {
       let searchQuery = query;
 
       // Spotify URL handling
+      currentSource = 'spotify';
       const spotifyParsed = parseSpotifyUrl(query);
       if (spotifyParsed) {
         await interaction.editReply({
@@ -132,24 +136,29 @@ export default {
         await interaction.editReply({
           embeds: [new EmbedBuilder().setDescription(`Added ${addedCount} tracks from Spotify.`).setColor(Colors.SUCCESS)],
         });
+        EventBus.emit('metrics:sourceResolveTime', { guildId: interaction.guildId, ms: Date.now() - playStartTime, source: currentSource });
         await player.play({ track: first, clientTrack: first }).catch(() => {});
+        EventBus.emit('metrics:sourcePlayLatency', { guildId: interaction.guildId, ms: Date.now() - playStartTime, source: currentSource });
         await interaction.followUp({ embeds: [NowPlayingEmbed.build(first, null)] });
         return;
       }
 
       // Regular search
       if (!query.startsWith("http") && !query.includes(":")) {
+        currentSource = 'ytmsearch';
         searchQuery = `ytmsearch:${query}`;
       }
 
       let result = await cachedSearch(player, searchQuery, interaction.user);
 
       if (!result?.tracks?.length && searchQuery.startsWith("ytmsearch:")) {
+        currentSource = 'youtube';
         const ytFallback = `ytsearch:${query}`;
         result = await cachedSearch(player, ytFallback, interaction.user);
       }
 
       if (!result?.tracks?.length) {
+        currentSource = 'soundcloud';
         const scFallback = query.startsWith("http") ? query : `scsearch:${query}`;
         result = await cachedSearch(player, scFallback, interaction.user);
       }
@@ -183,7 +192,9 @@ export default {
           state.queues.set(interaction.guildId, [...q2, ...addable]);
           state.nowPlaying.set(interaction.guildId, first);
           markTrackStartSuppressed(interaction.guildId);
+          EventBus.emit('metrics:sourceResolveTime', { guildId: interaction.guildId, ms: Date.now() - playStartTime, source: currentSource });
           await player.play({ track: first, clientTrack: first });
+          EventBus.emit('metrics:sourcePlayLatency', { guildId: interaction.guildId, ms: Date.now() - playStartTime, source: currentSource });
           await MusicService.saveState(interaction.guildId);
         });
         return interaction.editReply({
@@ -218,7 +229,9 @@ export default {
         const next = queue.shift() || track;
         state.nowPlaying.set(interaction.guildId, next);
         markTrackStartSuppressed(interaction.guildId);
+        EventBus.emit('metrics:sourceResolveTime', { guildId: interaction.guildId, ms: Date.now() - playStartTime, source: currentSource });
         await player.play({ track: next, clientTrack: next });
+        EventBus.emit('metrics:sourcePlayLatency', { guildId: interaction.guildId, ms: Date.now() - playStartTime, source: currentSource });
         await MusicService.saveState(interaction.guildId);
       });
       await interaction.editReply({
