@@ -218,20 +218,27 @@ export async function init(client: any): Promise<boolean> {
     // Enable session resume per lavalink-client docs — restores <360s outage instantly from Lavalink data
     try { node.updateSession?.(true, 300_000); } catch { Logger.warn(`[NodeLink] updateSession failed for ${node.id}`); }
 
-    // Destroy stale players for this node — node reconnected but voice WS wasn't restored
+    // Destroy stale/orphaned players — node reconnected but voice WS wasn't restored
     // (session resume can't restore what a fresh NodeLink never had)
     if (lavalink) {
       const staleGuilds: string[] = [];
       for (const [guildId, p] of lavalink.players) {
         if (p.node?.id === node.id && !p.connected) staleGuilds.push(guildId);
+        else if (!p.node && !recoveringGuilds.has(guildId)) staleGuilds.push(guildId);
       }
       if (staleGuilds.length) {
         // Brief wait for resumed event to process any successful session restores first
         await new Promise(r => setTimeout(r, 2000));
         for (const guildId of staleGuilds) {
-          try { const p = lavalink.players.get(guildId); if (p && p.node?.id === node.id && !p.connected) await p.destroy().catch(Logger.safe("bot/music/engine/lavalink.ts")); } catch { Logger.safe("lavalink")(); }
+          try {
+            const p = lavalink.players.get(guildId);
+            if (p) {
+              const stillStale = (!p.node || (p.node?.id === node.id && !p.connected));
+              if (stillStale) await p.destroy().catch(Logger.safe("bot/music/engine/lavalink.ts"));
+            }
+          } catch { Logger.safe("lavalink")(); }
         }
-        Logger.info(`[NodeLink] Destroyed ${staleGuilds.length} stale player(s), attempting recovery from RAM/DB`);
+        Logger.info(`[NodeLink] Destroyed ${staleGuilds.length} stale/orphaned player(s), attempting recovery from RAM/DB`);
       }
     }
 
@@ -510,6 +517,30 @@ export function cleanup(): void {
 
 export function get(): LavalinkManager | null {
   return lavalink;
+}
+
+export async function recoverPlayer(guildId: string): Promise<any> {
+  const l: any = lavalink;
+  if (!l) return null;
+  const oldPlayer = l.players.get(guildId);
+  if (!oldPlayer) return null;
+  if (oldPlayer.node?.connected) return oldPlayer;
+  const nodeId = getLeastLoadedNode();
+  if (!nodeId) return null;
+  const voiceChannelId = oldPlayer.voiceChannelId;
+  if (!voiceChannelId) return null;
+  const textChannelId = getTextChannelId(guildId);
+  await oldPlayer.destroy().catch(() => {});
+  const newPlayer = l.createPlayer({
+    guildId,
+    voiceChannelId,
+    textChannelId: textChannelId || "",
+    selfDeaf: true,
+    selfMute: false,
+    node: nodeId,
+  });
+  await connectWithRetry(newPlayer, guildId);
+  return newPlayer;
 }
 
 export function getClient(): any {

@@ -557,8 +557,13 @@ function register(client: any): void {
         if (player.node?.connected) {
           player.stopPlaying().catch(Logger.safe("bot/music/engine/musicEvents.ts"));
         } else {
-          Logger.info(`[trackError] guild=${player.guildId} node disconnected — scheduling queue advance`);
-          setImmediate(() => advanceQueue(player).catch((err: any) => Logger.error(`[trackError] advanceQueue failed: ${err.message}`)));
+          Logger.info(`[trackError] guild=${player.guildId} node disconnected — recovering player`);
+          setImmediate(async () => {
+            const p = await lavalink.recoverPlayer(player.guildId);
+            if (p?.node?.connected) {
+              await advanceQueue(p);
+            }
+          });
         }
       });
     } catch (err: any) {
