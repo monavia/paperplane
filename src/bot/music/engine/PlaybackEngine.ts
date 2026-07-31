@@ -65,7 +65,7 @@ export class PlaybackEngine {
         const sourceTrack = state.nowPlaying.get(this.guildId) || player.queue.previous?.[0];
         if (sourceTrack?.info) {
           if ((player.lastPosition || 0) < 15000) {
-            EventBus.emit('recommendation:markBad', { guildId: this.guildId, track: sourceTrack });
+            EventBus.emit('recommendation:markBad', { guildId: this.guildId, track: sourceTrack, source: "skip" });
             Logger.info(`[skip] guild=${this.guildId} autoplay track skipped early (<15s) — marked bad`);
           }
           const autoTrack = await autoplayInst.getNextTrack(player, sourceTrack, this.guildId);

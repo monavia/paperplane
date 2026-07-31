@@ -301,6 +301,9 @@ function register(client: any): void {
   l.on("trackEnd", (player: any, _track: any, reason: any) => {
     clearStuckTimer(player.guildId);
     const reasonStr = typeof reason === "object" ? reason?.reason : reason;
+    if (reasonStr === "finished" && _track?.info) {
+      EventBus.emit('recommendation:markGood', { guildId: player.guildId, track: _track });
+    }
     const queueLen = state.queues.get(player.guildId)?.length || 0;
     Logger.info(`[trackEnd] guild=${player.guildId}/${getGuildName(player.guildId)} reason=${reasonStr} queue=${queueLen} playing=${player.playing} node=${player.node?.id || "?"} restored=${state.restored.has(player.guildId)}`);
     if (reasonStr === "finished" && queueLen > 0 && player.node?.connected) {

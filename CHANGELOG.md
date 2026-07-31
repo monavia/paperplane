@@ -89,6 +89,40 @@ Two root causes found. The `node=?` in logs was a **red herring**.
 
 - New `JunkKeywords.ts`: clickbait/event/re-upload/style regex lists moved out of code. Tuning without touching logic.
 
+### Adaptive Filter Optimization — 6-Layer Smart Filter
+
+Rule-based adaptive learning — zero AI, zero network, zero delay. Learns from playback behavior instead of static heuristics.
+
+#### Layer 1 — Positive feedback loop
+
+- `trackEnd reason=finished` → `recommendation:markGood` event → `markGoodTrack()`: bumps positive author reputation, feeds genre taste, decays junk signal weights, records combo verdict. Bot now learns what users LIKE, not just what they skip.
+
+#### Layer 2 — Adaptive signal weights
+
+- `getTriggeredSignals(title, author)` returns triggered signals (emoji, openParen, dblSeparator, pipeSuffix, capsTitle, capsAuthor, clickbait, event, postOfficial, authorOfficial, multiDash, reupload, bangQuest) with per-pattern match counts.
+- `signalWeights` Map (default = previous static points): skipped tracks bump triggered weights +0.5 (clamp max 4), fully-played tracks decay them −0.3 (clamp min 0.5). Score = Σ(weight × count).
+- Persisted to cache adapter (`autoplay:signalWeights`, TTL 7d, debounced 10s save) — survives restart.
+
+#### Layer 3 — Near-duplicate detection
+
+- `_isNearDuplicate(a, b)`: token Jaccard similarity ≥ 0.8 (title) AND ≥ 0.5 (author). Catches variants ("Wirang (Official MV)" vs "Wirang") that exact-match dedup missed. Applied in strict + lenient filters.
+
+#### Layer 4 — Grey-zone combo history
+
+- `comboHistory`: per-signal-combination verdict counts (bad/good). Combo with ≥5 total marks and ≥70% bad → `isComboBad()` → filtered. Decision from history, not just threshold. Cap 200 entries.
+
+#### Layer 5 — Anti rapid-skip
+
+- Skip-source `markBad` events tracked per guild (60s window). 2 rapid skips → `strictBoost` 60s: junk threshold +1, Mix source weight −1 → −3. Autoplay tightens after repeated dislikes.
+
+#### Layer 6 — Co-occurrence collaborative filter
+
+- Global cross-guild `cooccur` map built from consecutive `history:addEntry` (3-min window): "users who played X also played Y". `_candidateScore` boosts candidates with co-occurrence (min(count,10) × 1.5). Cap 2000 edges. Cold-start safe — zero boost until data accumulates.
+
+#### Files
+
+- `RecommendationEngine.ts` (layers 2-6), `musicEvents.ts` (layer 1 emit), `PlaybackEngine.ts` (skip source flag), `RecommendationEngine.test.ts` (20 tests, all 6 layers covered).
+
 ## 2026-07-30 — v3.2.5
 
 ### Position Sync Optimization — 90% DB Writes Reduction
