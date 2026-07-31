@@ -550,6 +550,7 @@ function register(client: any): void {
         if (currentAttempts >= 3) {
           Logger.warn(`[trackError] Track "${track?.info?.title}" failed ${currentAttempts}x — dropping permanently`);
           retried.delete(trackId);
+          EventBus.emit('recommendation:markBad', { guildId: player.guildId, track });
         } else if (track?.info?.title) {
           // Skip push if this track is the currently-playing one (not a queued track).
           // Pushing a currently-playing errored track back to queue causes it to be

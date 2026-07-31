@@ -5,6 +5,7 @@ import state from "../../core/state/StateManager.js";
 import AutoplayEngine from "./AutoplayEngine.js";
 import Logger from "../../core/utils/Logger.js";
 import { validateTrack } from "./TrackValidator.js";
+import * as EventBus from "../events/EventBus.js";
 
 const autoplayInst = new AutoplayEngine();
 
@@ -63,6 +64,10 @@ export class PlaybackEngine {
         clearQueueEndGuard(this.guildId);
         const sourceTrack = state.nowPlaying.get(this.guildId) || player.queue.previous?.[0];
         if (sourceTrack?.info) {
+          if ((player.lastPosition || 0) < 15000) {
+            EventBus.emit('recommendation:markBad', { guildId: this.guildId, track: sourceTrack });
+            Logger.info(`[skip] guild=${this.guildId} autoplay track skipped early (<15s) — marked bad`);
+          }
           const autoTrack = await autoplayInst.getNextTrack(player, sourceTrack, this.guildId);
           if (autoTrack?.info) {
             state.nowPlaying.set(this.guildId, autoTrack);

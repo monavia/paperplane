@@ -2,6 +2,7 @@ import Logger from "../../core/utils/Logger.js";
 import { cleanTitle, isCover } from "./TitleResolver.js";
 import { getBestNode, getPenalty, recordError, recordHtmlError, isDraining, isUnhealthy } from "../engine/NodePenaltyService.js";
 import { get } from "../engine/lavalink.js";
+import { isJunkTrack } from "../engine/RecommendationEngine.js";
 
 const BAD_KEYWORDS = [
   "remix", "cover", "live", "karaoke", "nightcore", "slowed", "sped up",
@@ -42,8 +43,8 @@ export function pickBestTrack(tracks: any[]): any {
   const firstTitle = (first.info?.title || "").toLowerCase();
 
   let best = first;
-  if (hasBadKeyword(firstTitle, first.info?.author)) {
-    const filtered = tracks.filter((t) => !hasBadKeyword((t.info?.title || "").toLowerCase(), t.info?.author));
+  if (hasBadKeyword(firstTitle, first.info?.author) || isJunkTrack(first.info?.title || "", first.info?.author)) {
+    const filtered = tracks.filter((t) => !hasBadKeyword((t.info?.title || "").toLowerCase(), t.info?.author) && !isJunkTrack(t.info?.title || "", t.info?.author));
     if (filtered.length) {
       const scored = filtered.map((t: any) => ({ track: t, score: scoreTrack(t) }));
       scored.sort((a, b) => b.score - a.score);

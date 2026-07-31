@@ -62,6 +62,33 @@ Two root causes found. The `node=?` in logs was a **red herring**.
 - **Legit titles preserved** — verified by tests: `DENNY CAKNAN - WIDODARI` (0), `DINDA TERATU - KALAH WETON (Official Live Music)` (0), `Crito Mustahil ( Mung ) | #albumkalihwelasku` (0).
 - **New test suite** — `RecommendationEngine.test.ts`: 12 cases covering junk flags + legit passes.
 
+### Autoplay Optimization — Ranking, Feedback Loop, Reputation
+
+#### A. Score-based ranking (was random shuffle)
+
+- **Before**: `filtered.sort(() => Math.random() - 0.5)` — random pick from surviving candidates. Quality ignored.
+- **After**: `_candidateScore()` ranks each candidate then picks top-N. Points: source weight (mix −1, title search 0, similar-artist search +1), duration closeness (+3 if <10% off, +1 if <25%), genre-pref match (+2), keyword overlap (+1 each), resolved `encoded` (+1), minus junk score and reputation penalties.
+
+#### B. Error feedback loop
+
+- Track dropped permanently (3× error) → `recommendation:markBad` event → `markBadTrack(guildId, track)` → removed from all future autoplay candidates. RAM-only, capped 100 tracks/guild.
+
+#### C. Skip feedback
+
+- `PlaybackEngine.skip()`: autoplay track skipped within 15s of playback → marked bad (dislike signal). Authors accumulate reputation.
+
+#### D. Author reputation
+
+- `authorRep` per guild: each bad track bumps its author's penalty. `_candidateScore` subtracts `rep × 3`. Catches repeat offenders (Kembar Campursari / SHAUN THE SHEEP pattern) generically, no hardcoded channel names.
+
+#### E. Play flow unified
+
+- `SearchService.pickBestTrack()` now also applies `isJunkTrack()` — first search result that's junk gets re-picked from non-junk candidates (user request still respected, just better result selection).
+
+#### F. Keyword config
+
+- New `JunkKeywords.ts`: clickbait/event/re-upload/style regex lists moved out of code. Tuning without touching logic.
+
 ## 2026-07-30 — v3.2.5
 
 ### Position Sync Optimization — 90% DB Writes Reduction

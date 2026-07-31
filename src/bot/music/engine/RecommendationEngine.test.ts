@@ -1,5 +1,5 @@
 import { describe, it, assert } from "vitest";
-import { isJunkTitle, isJunkTrack } from "./RecommendationEngine.js";
+import { isJunkTitle, isJunkTrack, markBadTrack } from "./RecommendationEngine.js";
 
 describe("isJunkTitle", () => {
   it("flags emoji + clickbait + separator title", () => {
@@ -50,5 +50,14 @@ describe("isJunkTrack", () => {
 
   it("passes legit title with single pipe tag", () => {
     assert.ok(!isJunkTrack("Crito Mustahil ( Mung ) | #albumkalihwelasku", "Denny Caknan"));
+  });
+});
+
+describe("markBadTrack", () => {
+  it("is idempotent", () => {
+    const track = { info: { title: "Wirang", author: "Denny Caknan" } };
+    markBadTrack("g1", track);
+    markBadTrack("g1", track);
+    markBadTrack("g2", track);
   });
 });

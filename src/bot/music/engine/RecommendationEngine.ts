@@ -2,10 +2,54 @@ import * as EventBus from "../events/EventBus.js";
 import { isCover } from "../services/TitleResolver.js";
 import { getAdapter } from "../../cache/CacheAdapter.js";
 import Logger from "../../core/utils/Logger.js";
+import { CLICKBAIT_PATTERNS, EVENT_PATTERNS, REUPLOAD_RE, POST_OFFICIAL_RE, AUTHOR_OFFICIAL_RE, STYLE_RE } from "./JunkKeywords.js";
 
 const GENRE_PREFIX = "taste:";
 const TASTE_TTL = 7 * 86400000;
 const JUNK_TITLE_THRESHOLD = 3;
+const BAD_TRACK_CAP = 100;
+const AUTHOR_REP_CAP = 20;
+
+const badTracks = new Map<string, Set<string>>();
+const authorRep = new Map<string, Map<string, number>>();
+
+function trackKeyOf(track: any): string {
+  const norm = (s: any) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const a = norm(track?.info?.author || "");
+  const t = norm(track?.info?.title || "");
+  return a ? `${a}-${t}` : t;
+}
+
+export function markBadTrack(guildId: string, track: any): void {
+  const key = trackKeyOf(track);
+  if (!key) return;
+  if (!badTracks.has(guildId)) badTracks.set(guildId, new Set());
+  const set = badTracks.get(guildId)!;
+  set.add(key);
+  if (set.size > BAD_TRACK_CAP) { const first = set.values().next().value; if (first) set.delete(first); }
+  const author = (track?.info?.author || "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 20);
+  if (author) {
+    if (!authorRep.has(guildId)) authorRep.set(guildId, new Map());
+    const rep = authorRep.get(guildId)!;
+    rep.set(author, (rep.get(author) || 0) + 1);
+    if (rep.size > AUTHOR_REP_CAP) { const first = rep.keys().next().value; if (first) rep.delete(first); }
+  }
+}
+
+function clearBadTrack(guildId: string): void {
+  badTracks.delete(guildId);
+  authorRep.delete(guildId);
+}
+
+function isBadTrack(guildId: string, track: any): boolean {
+  return badTracks.get(guildId)?.has(trackKeyOf(track)) || false;
+}
+
+function authorPenalty(guildId: string, author: string): number {
+  if (!author) return 0;
+  const k = author.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 20);
+  return authorRep.get(guildId)?.get(k) || 0;
+}
 
 function junkScore(title: string, author?: string): number {
   const t = title || "";
@@ -17,41 +61,12 @@ function junkScore(title: string, author?: string): number {
   if (/\|\s*[a-z]{3,}/i.test(t)) score += 1;
   if (/\b[A-Z][A-Z\s-]{14,}\b/.test(t)) score += 2;
   if (/\b[A-Z][A-Z\s-]{14,}\b/.test(a)) score += 2;
-  const clickbait = [
-    /jangan\s+(di\s+)?(play|nonton|skip|putar)/i,
-    /mau\s+menangis/i,
-    /bikin\s+(nangis|menangis)/i,
-    /don'?t\s+(cry|watch|skip)/i,
-    /warning/i,
-    /galau/i,
-    /sakit\s+hati/i,
-    /sedih\s+banget/i,
-    /\bshaun\s+the\s+sheep\b/i,
-  ];
-  for (const re of clickbait) if (re.test(t) || re.test(a)) score += 2;
-  const event = [
-    /wedding/i,
-    /anniversary/i,
-    /dies\s*natalis/i,
-    /happy\s*party/i,
-    /paguron/i,
-    /brothehood/i,
-    /community/i,
-    /generation/i,
-    /senenan/i,
-    /pernikahan/i,
-    /khitanan/i,
-    /syukuran/i,
-    /panaga/i,
-    /\bsmk\s*n\b/i,
-    /\bsmp\s*n\b/i,
-    /\bsma\s*n\b/i,
-  ];
-  for (const re of event) if (re.test(t) || re.test(a)) score += 2;
-  if (/\(\s*official\s*(?:music\s*video|mv|live\s*music)\s*\)\s*[)\s-]*[a-z]{3,}/i.test(t)) score += 2;
-  if (/official\s*(?:mv|music\s*video)/i.test(a)) score += 2;
+  for (const re of CLICKBAIT_PATTERNS) if (re.test(t) || re.test(a)) score += 2;
+  for (const re of EVENT_PATTERNS) if (re.test(t) || re.test(a)) score += 2;
+  if (POST_OFFICIAL_RE.test(t)) score += 2;
+  if (AUTHOR_OFFICIAL_RE.test(a)) score += 2;
   if ((a.match(/(?:^|\s)-\s/g) || []).length >= 2) score += 2;
-  if (/kembar\s+campursari|mp3\s+download|full\s+album|lagu\s+galau\s+terbaru/i.test(t)) score += 2;
+  if (REUPLOAD_RE.test(t)) score += 2;
   if (/!{2,}|\?{2,}/.test(t)) score += 1;
   return score;
 }
@@ -145,7 +160,29 @@ class RecommendationEngine {
     if (played.size > 100) { const first = played.values().next().value; if (first) played.delete(first); }
   }
 
-  clearPlayed(guildId: string): void { this.playedTracks.delete(guildId); }
+  clearPlayed(guildId: string): void {
+    this.playedTracks.delete(guildId);
+    clearBadTrack(guildId);
+  }
+
+  _candidateScore(t: any, track: any, genrePrefs: Set<string>, origDuration: number, origKeywords: Set<string>, sourceW: number, guildId: string): number {
+    let s = sourceW;
+    const d = t?.info?.duration || 0;
+    if (origDuration && d) {
+      const ratio = Math.abs(d - origDuration) / origDuration;
+      if (ratio < 0.1) s += 3;
+      else if (ratio < 0.25) s += 1;
+    }
+    const ta = (t?.info?.author || "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 20);
+    if (genrePrefs.has(ta)) s += 2;
+    const candKw = this._extractKeywords(t);
+    for (const k of origKeywords) if (candKw.has(k)) s += 1;
+    s -= junkScore(t?.info?.title || "", t?.info?.author);
+    if (isBadTrack(guildId, t)) s -= 100;
+    s -= authorPenalty(guildId, t?.info?.author) * 3;
+    if (t?.encoded) s += 1;
+    return s;
+  }
 
   async _incrementGenre(guildId: string, author: string): Promise<void> {
     if (!author) return;
@@ -172,25 +209,26 @@ class RecommendationEngine {
     try {
       this._incrementGenre(guildId, track.info.author).catch(() => {});
 
-      const candidates: any[] = [];
+      const candidates: { t: any; w: number }[] = [];
       const seen = new Set<string>();
 
-      // 1. Primary: YouTube Mix (radio) — cap at top N to avoid garbage flooding
+      // 1. Primary: YouTube Mix (radio) — cap at top N to avoid garbage flooding.
+      //    Mix is the biggest junk source — rank its candidates low.
       const MAX_MIX = 15;
       const mixTracks = await this._getYouTubeMix(player, track);
       for (const t of mixTracks.slice(0, MAX_MIX)) {
         const k = this._trackKey(t);
-        if (!seen.has(k)) { seen.add(k); candidates.push(t); }
+        if (!seen.has(k)) { seen.add(k); candidates.push({ t, w: -1 }); }
       }
 
-      // 2. Similar artist search — diverse recommendations
+      // 2. Similar artist search — diverse recommendations, highest priority
       const author = (track.info.author || "").replace(/^Various\s*$/i, "").trim();
       if (author && author !== "Unknown Artist") {
         const r = await this._searchWithRetry(player, { query: `ytmsearch:${author}` }).catch(() => null);
         if (r?.tracks?.length) {
           for (const t of r.tracks) {
             const k = this._trackKey(t);
-            if (!seen.has(k)) { seen.add(k); candidates.push(t); }
+            if (!seen.has(k)) { seen.add(k); candidates.push({ t, w: 1 }); }
           }
         }
       }
@@ -203,17 +241,18 @@ class RecommendationEngine {
           if (r?.tracks?.length) {
             for (const t of r.tracks) {
               const k = this._trackKey(t);
-              if (!seen.has(k)) { seen.add(k); candidates.push(t); }
+              if (!seen.has(k)) { seen.add(k); candidates.push({ t, w: 0 }); }
             }
           }
         }
       }
 
-      // 4. Try genre-boost: boost tracks from preferred genres
       const genrePrefs = await this._getGenrePrefs(guildId);
       const origDuration = track?.info?.duration || 0;
       const origKeywords = this._extractKeywords(track);
-      const filtered = candidates.filter((t: any) => {
+      const score = (t: any, w: number) => this._candidateScore(t, track, genrePrefs, origDuration, origKeywords, w, guildId);
+
+      const filtered = candidates.filter(({ t }) => {
         const titleL = (t?.info?.title || "").toLowerCase();
         const ta = (t?.info?.author || "").toLowerCase();
         const candKeywords = this._extractKeywords(t);
@@ -221,34 +260,46 @@ class RecommendationEngine {
           [...origKeywords].some(k => candKeywords.has(k));
         return !this._isSameTrack(t, track) &&
         !this._isPlayed(guildId, t) &&
+        !isBadTrack(guildId, t) &&
         !isCover(t?.info?.title || "", t?.info?.author) &&
         !isJunkTrack(t?.info?.title || "", t?.info?.author) &&
         !titleL.includes("instrumental") && !titleL.includes("karaoke") &&
-        !/session|#\w+|@\s+\w+|version|ver\.|tribute|keroncong|kroncong|akustik|acoustic\b/i.test(titleL) &&
+        !STYLE_RE.test(titleL) &&
         (origDuration < 30000 || !t?.info?.duration || Math.abs(t.info.duration - origDuration) / origDuration < 0.4) &&
         (!genrePrefs.size || genrePrefs.has(ta.replace(/[^a-z0-9]/g, "").slice(0, 20))) &&
         hasOverlap;
       });
 
       if (!filtered.length) {
-        const fallback = candidates.filter((t: any) => {
+        const fallback = candidates.filter(({ t }) => {
           const tl = (t?.info?.title || "").toLowerCase();
           return !this._isSameTrack(t, track) && !this._isPlayed(guildId, t) &&
+            !isBadTrack(guildId, t) &&
             !isCover(t?.info?.title || "", t?.info?.author) &&
             !isJunkTrack(t?.info?.title || "", t?.info?.author) &&
-            !/version|ver\.|tribute|keroncong|kroncong|akustik|acoustic|instrumental|karaoke|session\b/i.test(tl);
+            !STYLE_RE.test(tl);
         });
-        for (const t of fallback) this._markPlayed(guildId, t);
+        for (const { t } of fallback) this._markPlayed(guildId, t);
         Logger.info(`[RecEngine] Strict filter empty, fallback to lenient (${fallback.length} tracks)`);
-        return fallback.sort(() => Math.random() - 0.5).slice(0, count);
+        return fallback
+          .map(({ t, w }) => ({ t, s: score(t, w) }))
+          .sort((a, b) => b.s - a.s)
+          .slice(0, count)
+          .map(({ t }) => t);
       }
 
-      for (const t of filtered) this._markPlayed(guildId, t);
-      return filtered.sort(() => Math.random() - 0.5).slice(0, count);
+      for (const { t } of filtered) this._markPlayed(guildId, t);
+      return filtered
+        .map(({ t, w }) => ({ t, s: score(t, w) }))
+        .sort((a, b) => b.s - a.s)
+        .slice(0, count)
+        .map(({ t }) => t);
     } catch { return []; }
   }
 }
 
 EventBus.on('recommendation:clearPlayed', (p: any) => { if (p?.guildId) new RecommendationEngine().clearPlayed(p.guildId); });
+EventBus.on('recommendation:markBad', (p: any) => { if (p?.guildId && p?.track) markBadTrack(p.guildId, p.track); });
 
+export { markBadTrack as markBad };
 export default RecommendationEngine;
