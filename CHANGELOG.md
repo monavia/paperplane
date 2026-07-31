@@ -37,6 +37,31 @@ Two root causes found. The `node=?` in logs was a **red herring**.
 - **Fix**: `musicEvents.ts:trackError` — `manualAdvances.delete(guildId)` before `player.stopPlaying()`. This lets `queueEnd` run its full flow (advanceQueue → autoplay) immediately instead of returning early.
 - **Impact**: autoplay continues seamlessly after skip + error instead of 30s silent gap.
 
+### Autoplay Junk Title Detection — Heuristic Scoring
+
+- **Problem**: junk/clickbait titles kept entering autoplay — emoji titles, event videos, re-upload channels, meme channels. Caps-lock alone couldn't be filtered (legit official uploads like `DENNY CAKNAN - WIDODARI` are also all-caps).
+- **`junkScore(title, author)`** — `RecommendationEngine.ts`: per-signal point system, filtered when score ≥ 3:
+
+| Signal | Points |
+|---|---|
+| Emoji in title | +2 |
+| Title starts with `(` / `[` | +1 |
+| `//` or `\|\|` separators | +1 |
+| Single pipe + lowercase lyric suffix (`\| koyo ngene...`) | +1 |
+| ALL-CAPS segment 15+ chars (title) | +2 |
+| ALL-CAPS author 15+ chars (meme channels like `SHAUN THE SHEEP`) | +2 |
+| Clickbait keywords per match (`jangan di play`, `mau menangis`, `warning`, `galau`, `sedih banget`, `shaun the sheep`) | +2 |
+| Event keywords per match (`wedding`, `anniversary`, `dies natalis`, `happy party`, `paguron`, `senenan`, `smkn`, `panaga`) | +2 |
+| Text after `( Official Music Video )` marker | +2 |
+| Author containing `Official MV` | +2 |
+| Author with 2+ ` - ` segments | +2 |
+| Re-upload channel (`kembar campursari`, `mp3 download`, `full album`) | +2 |
+| `!!` / `??` | +1 |
+
+- **Applied in both** strict filter and lenient fallback via `isJunkTrack(title, author)`.
+- **Legit titles preserved** — verified by tests: `DENNY CAKNAN - WIDODARI` (0), `DINDA TERATU - KALAH WETON (Official Live Music)` (0), `Crito Mustahil ( Mung ) | #albumkalihwelasku` (0).
+- **New test suite** — `RecommendationEngine.test.ts`: 12 cases covering junk flags + legit passes.
+
 ## 2026-07-30 — v3.2.5
 
 ### Position Sync Optimization — 90% DB Writes Reduction
