@@ -135,6 +135,13 @@ Rule-based adaptive learning — zero AI, zero network, zero delay. Learns from 
 
 - `RecommendationEngine.ts` (layers 2-6), `musicEvents.ts` (layer 1 emit), `PlaybackEngine.ts` (skip source flag), `RecommendationEngine.test.ts` (20 tests, all 6 layers covered).
 
+### Stability & UX Fixes
+
+- **Queue-end disconnect timeout 60s → 3m** — bot no longer leaves voice after just 1 minute of idle queue; waits up to 3 minutes before disconnecting.
+- **Leave embed color ERROR → SUCCESS** — leaving voice was styled as an error; now shows success color.
+- **Track error deadlock fix** — `setImmediate` advance after track errors so `advanceQueue` runs even mid-error-event; watchdog now also recovers idle players with a non-empty queue instead of just logging every 30s.
+- **`recoverPlayer`** — orphaned players (node=null, e.g. after Lavalink node restart) are destroyed and recreated instead of silently failing `connectWithRetry`.
+
 ## 2026-07-30 — v3.2.5
 
 ### Position Sync Optimization — 90% DB Writes Reduction
