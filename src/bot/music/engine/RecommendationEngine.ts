@@ -7,13 +7,16 @@ const GENRE_PREFIX = "taste:";
 const TASTE_TTL = 7 * 86400000;
 const JUNK_TITLE_THRESHOLD = 3;
 
-function junkScore(title: string): number {
+function junkScore(title: string, author?: string): number {
   const t = title || "";
+  const a = author || "";
   let score = 0;
   if (/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u.test(t)) score += 2;
   if (/^\s*[(\[]/.test(t) && /[)\]]/.test(t)) score += 1;
   if (/\/\/|\|\||\|[^|]*\|/.test(t)) score += 1;
+  if (/\|\s*[a-z]{3,}/i.test(t)) score += 1;
   if (/\b[A-Z][A-Z\s-]{14,}\b/.test(t)) score += 2;
+  if (/\b[A-Z][A-Z\s-]{14,}\b/.test(a)) score += 2;
   const clickbait = [
     /jangan\s+(di\s+)?(play|nonton|skip|putar)/i,
     /mau\s+menangis/i,
@@ -23,14 +26,42 @@ function junkScore(title: string): number {
     /galau/i,
     /sakit\s+hati/i,
     /sedih\s+banget/i,
+    /\bshaun\s+the\s+sheep\b/i,
   ];
-  for (const re of clickbait) if (re.test(t)) score += 2;
+  for (const re of clickbait) if (re.test(t) || re.test(a)) score += 2;
+  const event = [
+    /wedding/i,
+    /anniversary/i,
+    /dies\s*natalis/i,
+    /happy\s*party/i,
+    /paguron/i,
+    /brothehood/i,
+    /community/i,
+    /generation/i,
+    /senenan/i,
+    /pernikahan/i,
+    /khitanan/i,
+    /syukuran/i,
+    /panaga/i,
+    /\bsmk\s*n\b/i,
+    /\bsmp\s*n\b/i,
+    /\bsma\s*n\b/i,
+  ];
+  for (const re of event) if (re.test(t) || re.test(a)) score += 2;
+  if (/\(\s*official\s*(?:music\s*video|mv|live\s*music)\s*\)\s*[)\s-]*[a-z]{3,}/i.test(t)) score += 2;
+  if (/official\s*(?:mv|music\s*video)/i.test(a)) score += 2;
+  if ((a.match(/(?:^|\s)-\s/g) || []).length >= 2) score += 2;
+  if (/kembar\s+campursari|mp3\s+download|full\s+album|lagu\s+galau\s+terbaru/i.test(t)) score += 2;
   if (/!{2,}|\?{2,}/.test(t)) score += 1;
   return score;
 }
 
+export function isJunkTrack(title: string, author?: string): boolean {
+  return junkScore(title, author) >= JUNK_TITLE_THRESHOLD;
+}
+
 export function isJunkTitle(title: string): boolean {
-  return junkScore(title) >= JUNK_TITLE_THRESHOLD;
+  return isJunkTrack(title);
 }
 
 class RecommendationEngine {
@@ -191,7 +222,7 @@ class RecommendationEngine {
         return !this._isSameTrack(t, track) &&
         !this._isPlayed(guildId, t) &&
         !isCover(t?.info?.title || "", t?.info?.author) &&
-        !isJunkTitle(t?.info?.title || "") &&
+        !isJunkTrack(t?.info?.title || "", t?.info?.author) &&
         !titleL.includes("instrumental") && !titleL.includes("karaoke") &&
         !/session|#\w+|@\s+\w+|version|ver\.|tribute|keroncong|kroncong|akustik|acoustic\b/i.test(titleL) &&
         (origDuration < 30000 || !t?.info?.duration || Math.abs(t.info.duration - origDuration) / origDuration < 0.4) &&
@@ -204,7 +235,7 @@ class RecommendationEngine {
           const tl = (t?.info?.title || "").toLowerCase();
           return !this._isSameTrack(t, track) && !this._isPlayed(guildId, t) &&
             !isCover(t?.info?.title || "", t?.info?.author) &&
-            !isJunkTitle(t?.info?.title || "") &&
+            !isJunkTrack(t?.info?.title || "", t?.info?.author) &&
             !/version|ver\.|tribute|keroncong|kroncong|akustik|acoustic|instrumental|karaoke|session\b/i.test(tl);
         });
         for (const t of fallback) this._markPlayed(guildId, t);
