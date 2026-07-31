@@ -2,6 +2,18 @@
 
 ## 2026-07-30 — v3.2.6
 
+### AI Humanize — Persona, Per-User Memory, Reply-to-Trigger
+
+- **Fix amnesia bug (root cause of stiff replies)** — `AIDJ.interpret` hardcoded userId `"aidj"` and called `clearMemory` on every message, deleting ALL conversation history from the DB each time. The bot never remembered anything → every reply started from zero context.
+  - `runAIInterpret(userId, prompt)` now threads the real Discord user id through `AIDJ.interpret(userId, input)` → `AIEngine.ask(userId, ...)`.
+  - `clearMemory("aidj")` removed — conversation history now persists per-user.
+- **Long-term memory wired in** — `MemoryService.saveMemory` (summarizes user preferences → DB) was built but never called. Now runs fire-and-forget after every successful chat reply. `PromptBuilder` injects remembered facts as a system message before history.
+- **Persona** — new `src/bot/ai/config/persona.ts`: Paperplane is warm, casual, replies 100% in the user's language, greets by name occasionally, concise but not robotic. Replaces the stiff "Answer concisely" default.
+- **Live context in chat** — chat system prompt now includes user display name, server name, and the currently-playing track title, so replies feel personal ("lagi dengerin X ya?").
+- **Reply-to-trigger** — replying to any bot message (Discord native reply) now triggers the AI with no prefix/mention/trigger word needed. Uses `message.referencedMessage` (free, from cache) with `message.fetchReference()` fallback when uncached. Replies to non-bot messages do nothing.
+- **UI polish** — chat replies use `AIEmbed` with a "Paperplane" author (dropped the ugly "Prompt: ..." footer); AI cooldown message is now casual ("Jangan spam dulu ya — tunggu X detik lagi.").
+- **Tests** — `AIDJ.test.ts` updated to per-user signatures (9 tests), 4 new reply-trigger tests in `messageCreate.test.ts`, new `PromptBuilder.test.ts` (5 tests), `embeds.test.ts` AIEmbed updated.
+
 ### Node Resume Stability — Delay + Fresh Search
 
 - **2.5s stabilisation delay** — `lavalink.ts:resumed` handler: waits 2.5s after voice reconnect before attempting playback, giving the Lavalink node time to stabilise.

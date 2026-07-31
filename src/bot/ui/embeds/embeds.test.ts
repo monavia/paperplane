@@ -46,26 +46,19 @@ describe("PingEmbed", () => {
 
 describe("AIEmbed", () => {
   test("build has answer in description", () => {
-    const embed = aiBuild("hello", "This is a response");
+    const embed = aiBuild("This is a response");
     assert.strictEqual(embed.data.description, "This is a response");
   });
 
-  test("build has AI Assistant author", () => {
-    const embed = aiBuild("hello", "response");
-    assert.strictEqual(embed.data.author!.name, "AI Assistant");
+  test("build has Paperplane author", () => {
+    const embed = aiBuild("response");
+    assert.strictEqual(embed.data.author!.name, "Paperplane");
   });
 
   test("truncates answer at 2000 chars", () => {
     const long = "x".repeat(2500);
-    const embed = aiBuild("short", long);
+    const embed = aiBuild(long);
     assert.strictEqual(embed.data.description!.length, 2000);
     assert.ok(embed.data.description!.endsWith("..."));
-  });
-
-  test("truncates prompt in footer to 80 chars", () => {
-    const longPrompt = "a".repeat(100);
-    const embed = aiBuild(longPrompt, "ok");
-    assert.strictEqual(embed.data.footer!.text.length, "Prompt: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".length);
-    assert.strictEqual(embed.data.footer!.text, `Prompt: ${"a".repeat(80)}`);
   });
 });

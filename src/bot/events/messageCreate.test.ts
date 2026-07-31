@@ -5,8 +5,9 @@ const mockEmbedBuilder = vi.fn().mockReturnValue({
   setDescription: vi.fn().mockReturnThis(),
   setColor: vi.fn().mockReturnThis(),
   setTitle: vi.fn().mockReturnThis(),
+  setAuthor: vi.fn().mockReturnThis(),
 });
-vi.mock("discord.js", () => ({ EmbedBuilder: mockEmbedBuilder }));
+vi.mock("discord.js", () => ({ EmbedBuilder: mockEmbedBuilder, MessageType: { Reply: 18 } }));
 
 const mockConfigTrigger = "mona";
 vi.mock("../config/bot.js", () => ({ default: { trigger: mockConfigTrigger, token: "", prefix: "-" } }));
@@ -17,6 +18,12 @@ vi.mock("../ai/services/AITaskQueue.js", () => ({ runAIAsk: mockRunAIAsk, runAII
 
 const mockCheckPrompt = vi.fn();
 vi.mock("../ai/services/PromptFilter.js", () => ({ checkPrompt: mockCheckPrompt }));
+
+const mockSaveMemory = vi.fn().mockResolvedValue(undefined);
+const mockGetMemoryContext = vi.fn().mockResolvedValue("");
+vi.mock("../ai/services/MemoryService.js", () => ({
+  default: { saveMemory: mockSaveMemory, getMemoryContext: mockGetMemoryContext },
+}));
 
 vi.mock("../core/utils/Logger.js", () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), safe: vi.fn().mockReturnValue(vi.fn()) },
@@ -175,5 +182,55 @@ describe("messageCreate", () => {
     const msg = makeMessage({ content: "<@12345> bad thing" });
     await handler(msg);
     assert.strictEqual(msg.channel.send.mock.calls[0][0], "Filtered content.");
+  });
+
+  test("triggers AI on reply to bot message", async () => {
+    mockRunAIInterpret.mockResolvedValue({ type: "chat", reply: "Hello!" });
+    const msg = makeMessage({
+      type: 18,
+      reference: { messageId: "m1" },
+      referencedMessage: { author: { id: "12345" } },
+      content: "how are you",
+    });
+    await handler(msg);
+    assert.strictEqual(mockRunAIInterpret.mock.calls.length, 1);
+    assert.strictEqual(msg.channel.send.mock.calls.length, 1);
+  });
+
+  test("does not trigger AI on reply to non-bot message", async () => {
+    const msg = makeMessage({
+      type: 18,
+      reference: { messageId: "m1" },
+      referencedMessage: { author: { id: "other-user" } },
+      content: "hi",
+    });
+    await handler(msg);
+    assert.strictEqual(mockRunAIInterpret.mock.calls.length, 0);
+    assert.strictEqual(msg.channel.send.mock.calls.length, 0);
+  });
+
+  test("reply falls back to fetchReference when not cached", async () => {
+    mockRunAIInterpret.mockResolvedValue({ type: "chat", reply: "Hello!" });
+    const fetchRef = vi.fn().mockResolvedValue({ author: { id: "12345" } });
+    const msg = makeMessage({
+      type: 18,
+      reference: { messageId: "m1" },
+      fetchReference: fetchRef,
+      content: "hey bot",
+    });
+    await handler(msg);
+    assert.strictEqual(fetchRef.mock.calls.length, 1);
+    assert.strictEqual(mockRunAIInterpret.mock.calls.length, 1);
+  });
+
+  test("reply to bot with empty content is ignored", async () => {
+    const msg = makeMessage({
+      type: 18,
+      reference: { messageId: "m1" },
+      referencedMessage: { author: { id: "12345" } },
+      content: "",
+    });
+    await handler(msg);
+    assert.strictEqual(mockRunAIInterpret.mock.calls.length, 0);
   });
 });

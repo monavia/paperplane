@@ -1,5 +1,6 @@
 import AIEngine from "../engine/AIEngine.js";
 import CommandInterpreter from "./CommandInterpreter.js";
+import { PERSONA } from "../config/persona.js";
 
 class AIDJ {
   private interpreter: CommandInterpreter;
@@ -8,13 +9,13 @@ class AIDJ {
     this.interpreter = new CommandInterpreter();
   }
 
-  async interpret(input: any) {
+  async interpret(userId: string, input: any) {
     const result = await this.interpreter.interpret(input);
     if (result.type !== "chat") return result;
 
     const systemPrompt =
-      "You are a Discord music bot. You understand ALL languages.\n" +
-      "If the user wants music control, reply with EXACTLY ONE of these formats (single line, no extra text):\n" +
+      PERSONA + "\n\n" +
+      "You also act as a music command parser. If the user wants music control, reply with EXACTLY ONE of these formats (single line, no extra text):\n" +
       "PLAY: <song name>\n" +
       "PLAYLIST: <song1> by <artist1>, <song2> by <artist2>, ...\n" +
       "CORRECT: <corrected keyword>\n" +
@@ -28,8 +29,7 @@ class AIDJ {
       'User: ulang terus\nYou: LOOP\n' +
       'User: info bot\nYou: INFO';
 
-    AIEngine.clearMemory("aidj");
-    const reply = await AIEngine.ask("aidj", input, systemPrompt);
+    const reply = await AIEngine.ask(userId, input, systemPrompt);
     const firstLine = reply.split("\n")[0].trim();
 
     const playlistMatch = firstLine.match(/^PLAYLIST:\s*(.+)/i);

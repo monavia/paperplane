@@ -1,11 +1,14 @@
-import { EmbedBuilder } from "discord.js";
+import { EmbedBuilder, MessageType } from "discord.js";
 import Config from "../config/bot.js";
 import { runAIAsk, runAIInterpret } from "../ai/services/AITaskQueue.js";
 import { checkPrompt } from "../ai/services/PromptFilter.js";
+import MemoryService from "../ai/services/MemoryService.js";
+import { buildPersona } from "../ai/config/persona.js";
 import Logger from "../core/utils/Logger.js";
 import { incCommandsExecuted, observeCommandLatency } from "../telemetry/MetricsCollector.js";
 import Colors from "../core/constants/Colors.js";
 import * as ErrorEmbed from "../ui/embeds/ErrorEmbed.js";
+import * as AIEmbed from "../ui/embeds/AIEmbed.js";
 import { getPrefix, setPrefix } from "../database/repositories/GuildRepository.js";
 import * as MusicService from "../music/services/MusicService.js";
 import { getQueue } from "../music/services/QueueService.js";
@@ -70,10 +73,17 @@ export function start(client: any): void {
       const startB = Date.now(); try { const r = await cmd.execute(message, args); incCommandsExecuted({ command: cmd.name, status: "success" }); observeCommandLatency(cmd.name, Date.now() - startB); return r; } catch (e: any) { incCommandsExecuted({ command: cmd.name, status: "failure" }); Logger.error(`Prefix command "${commandName}" error:`, e); return message.channel.send("Command error.").catch(Logger.safe("bot/events/messageCreate.ts")); }
     }
 
-    // AI trigger: bot mention or trigger word
+    // AI trigger: bot mention, trigger word, or reply to a bot message
     const trigger = Config.trigger;
     const text = isMention ? content.replace(botMention, "").replace(botMentionNick, "").trim() : content;
-    const isAI = isMention || text.toLowerCase().startsWith(trigger);
+    let isReplyToBot = false;
+    if (message.type === MessageType.Reply && message.reference?.messageId) {
+      try {
+        const ref = message.referencedMessage ?? (await message.fetchReference());
+        isReplyToBot = ref?.author?.id === client.user.id;
+      } catch {}
+    }
+    const isAI = isMention || text.toLowerCase().startsWith(trigger) || isReplyToBot;
 
     if (!isAI) return;
 
@@ -90,7 +100,7 @@ export function start(client: any): void {
     // Cooldown for AI — 10s per user
     if (!CooldownManager.check(message.author.id, "ai", 10000)) {
       const remain = CooldownManager.getRemaining(message.author.id, "ai", 10000);
-      return message.channel.send({ embeds: [ErrorEmbed.build(`Please wait ${Math.ceil(remain / 1000)}s before using AI again.`)] });
+      return message.channel.send({ embeds: [ErrorEmbed.build(`Jangan spam dulu ya — tunggu ${Math.ceil(remain / 1000)} detik lagi.`)] });
     }
     CooldownManager.set(message.author.id, "ai");
 
@@ -98,7 +108,7 @@ export function start(client: any): void {
     await message.channel.sendTyping().catch(Logger.safe("bot/events/messageCreate.ts"));
 
     try {
-      const interpreted = await runAIInterpret(prompt);
+      const interpreted = await runAIInterpret(message.author.id, prompt);
       if (interpreted.type !== "chat") {
         const guildId = message.guildId;
         const voice = message.member?.voice?.channel;
@@ -304,9 +314,13 @@ export function start(client: any): void {
         reply = interpreted.reply;
       } else {
         const prefix = await getPrefix(message.guildId);
-        const sysPrompt = `Current bot prefix for this server is: "${prefix}". ` +
-          `User can type "${prefix}help" or "/help" to see commands. ` +
-          `To change prefix, reply with: PREFIX: <new prefix> (e.g., "PREFIX: !") — I will execute it.`;
+        const userName = message.member?.displayName || message.author.username;
+        const sysPrompt = buildPersona({
+          userName,
+          guildName: message.guild?.name,
+          nowPlaying: state.nowPlaying.get(message.guildId)?.info?.title,
+          prefix,
+        }) + "\nTo change prefix, reply with: PREFIX: <new prefix> (e.g., \"PREFIX: !\") — I will execute it.";
         reply = await runAIAsk(message.author.id, prompt, sysPrompt);
       }
       const prefixExec = reply.match(/^PREFIX:\s*(\S+)/im);
@@ -318,8 +332,9 @@ export function start(client: any): void {
         await setPrefix(message.guildId, newP);
         return message.channel.send({ embeds: [new EmbedBuilder().setDescription(`Prefix changed to \`${newP}\``).setColor(Colors.INFO)] });
       }
+      MemoryService.saveMemory(message.author.id, prompt, reply).catch(() => {});
       const chunks = reply.match(/[\s\S]{1,3800}/g) || [reply];
-      const embeds = chunks.map((text: string) => new EmbedBuilder().setDescription(text).setColor(Colors.INFO));
+      const embeds = chunks.map((text: string) => AIEmbed.build(text));
       for (let i = 0; i < embeds.length; i++) {
         await message.channel.send({ embeds: [embeds[i]] });
         if (i < embeds.length - 1) await new Promise(r => setTimeout(r, 500));
