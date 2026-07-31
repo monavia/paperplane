@@ -5,6 +5,33 @@ import Logger from "../../core/utils/Logger.js";
 
 const GENRE_PREFIX = "taste:";
 const TASTE_TTL = 7 * 86400000;
+const JUNK_TITLE_THRESHOLD = 3;
+
+function junkScore(title: string): number {
+  const t = title || "";
+  let score = 0;
+  if (/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u.test(t)) score += 2;
+  if (/^\s*[(\[]/.test(t) && /[)\]]/.test(t)) score += 1;
+  if (/\/\/|\|\||\|[^|]*\|/.test(t)) score += 1;
+  if (/\b[A-Z][A-Z\s-]{14,}\b/.test(t)) score += 2;
+  const clickbait = [
+    /jangan\s+(di\s+)?(play|nonton|skip|putar)/i,
+    /mau\s+menangis/i,
+    /bikin\s+(nangis|menangis)/i,
+    /don'?t\s+(cry|watch|skip)/i,
+    /warning/i,
+    /galau/i,
+    /sakit\s+hati/i,
+    /sedih\s+banget/i,
+  ];
+  for (const re of clickbait) if (re.test(t)) score += 2;
+  if (/!{2,}|\?{2,}/.test(t)) score += 1;
+  return score;
+}
+
+export function isJunkTitle(title: string): boolean {
+  return junkScore(title) >= JUNK_TITLE_THRESHOLD;
+}
 
 class RecommendationEngine {
   private playedTracks: Map<string, Set<string>> = new Map();
@@ -164,6 +191,7 @@ class RecommendationEngine {
         return !this._isSameTrack(t, track) &&
         !this._isPlayed(guildId, t) &&
         !isCover(t?.info?.title || "", t?.info?.author) &&
+        !isJunkTitle(t?.info?.title || "") &&
         !titleL.includes("instrumental") && !titleL.includes("karaoke") &&
         !/session|#\w+|@\s+\w+|version|ver\.|tribute|keroncong|kroncong|akustik|acoustic\b/i.test(titleL) &&
         (origDuration < 30000 || !t?.info?.duration || Math.abs(t.info.duration - origDuration) / origDuration < 0.4) &&
@@ -176,6 +204,7 @@ class RecommendationEngine {
           const tl = (t?.info?.title || "").toLowerCase();
           return !this._isSameTrack(t, track) && !this._isPlayed(guildId, t) &&
             !isCover(t?.info?.title || "", t?.info?.author) &&
+            !isJunkTitle(t?.info?.title || "") &&
             !/version|ver\.|tribute|keroncong|kroncong|akustik|acoustic|instrumental|karaoke|session\b/i.test(tl);
         });
         for (const t of fallback) this._markPlayed(guildId, t);
