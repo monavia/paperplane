@@ -45,6 +45,7 @@ const JITTER_BUFFER_MS = 500;
 const stuckTimers = new Map<string, any>();
 const idleDisconnects = new Set<string>();
 const stopDisconnects = new Set<string>();
+const permanentRetried = new Set<string>(); // `${guildId}:${trackId}` — sudah retry 1x setelah klasifikasi permanent
 const deferredQueueGuilds = new Map<string, number>();
 const DEFERRED_QUEUE_MAX = 5;
 let startupPhase = true;
@@ -233,10 +234,20 @@ async function jitterBuffer(guildId: string, track: any): Promise<boolean> {
   const posBefore = state.position.get(guildId) || 0;
   await new Promise(r => setTimeout(r, JITTER_BUFFER_MS));
   const current = state.nowPlaying.get(guildId);
-  if (!current || current.info?.uri !== track?.info?.uri || current.info?.title !== track?.info?.title) {
-    Logger.info(`[JitterBuffer] guild=${guildId} player already moved on — cancel error handling`);
-    return true; // cancelled
+  if (current) {
+    if (current.info?.uri !== track?.info?.uri || current.info?.title !== track?.info?.title) {
+      Logger.info(`[JitterBuffer] guild=${guildId} player already moved on — cancel error handling`);
+      return true; // player recovered / advanced to a different track
+    }
+    return false; // same track still current — error is real
   }
+  // nowPlaying empty: either a deliberate stop, or the errored track was the
+  // last one and queueEnd already ran. Only cancel on deliberate stop.
+  if (isStopDisconnect(guildId)) {
+    Logger.info(`[JitterBuffer] guild=${guildId} deliberate stop — cancel error handling`);
+    return true;
+  }
+  Logger.info(`[JitterBuffer] guild=${guildId} queue ended by this error — proceeding with retry/fallback`);
   return false;
 }
 
@@ -249,6 +260,11 @@ function register(client: any): void {
 
   l.on("trackStart", (player: any, track: any) => {
     deferredQueueGuilds.delete(player.guildId);
+    clearStopDisconnect(player.guildId);
+    const prefix = `${player.guildId}:`;
+    for (const k of permanentRetried) {
+      if (k.startsWith(prefix)) permanentRetried.delete(k);
+    }
     EventBus.emit('metrics:trackPlayed', { guildId: player.guildId, source: track?.info?.source || 'unknown' });
     const prevLyrics = lyricsMessages.get(player.guildId);
     if (prevLyrics && clientRef) {
@@ -628,8 +644,32 @@ function register(client: any): void {
         }
 
         if (isPermanent) {
+          const permKey = `${player.guildId}:${trackId}`;
+          if (!permanentRetried.has(permKey) && player.node?.connected) {
+            permanentRetried.add(permKey);
+            Logger.warn(`[trackError] Permanent-classified — single retry of original: "${track?.info?.title?.slice(0, 30) || "?"}"`);
+            try {
+              await player.play({ track, clientTrack: track });
+            } catch {
+              permanentRetried.delete(permKey);
+              manualAdvances.delete(player.guildId);
+              player.stopPlaying().catch(Logger.safe("bot/music/engine/musicEvents.ts"));
+            }
+            return;
+          }
+          permanentRetried.delete(permKey);
           EventBus.emit('recommendation:markBad', { guildId: player.guildId, track, source: "error" });
           if (player.node?.connected) {
+            const tcId = getTextChannelId(player.guildId);
+            if (tcId) {
+              const ch = clientRef?.channels?.cache?.get(tcId);
+              if (ch) {
+                const embed = new EmbedBuilder()
+                  .setDescription("Track failed to play after retry — skipping it.")
+                  .setColor(Colors.ERROR);
+                (ch as any).send({ embeds: [embed] }).catch(Logger.safe("bot/music/engine/musicEvents.ts"));
+              }
+            }
             manualAdvances.delete(player.guildId);
             player.stopPlaying().catch(Logger.safe("bot/music/engine/musicEvents.ts"));
           } else {
