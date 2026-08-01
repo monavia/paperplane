@@ -6,6 +6,7 @@ import MemoryService from "../ai/services/MemoryService.js";
 import { buildPersona } from "../ai/config/persona.js";
 import { CONFIRMATION_MODE, fallbackPhrase, isRegurgitation, normalizeConfirmation, withTimeout } from "../ai/config/confirmationPrompts.js";
 import Logger from "../core/utils/Logger.js";
+import { requireSameVoice } from "../core/utils/VoiceCheck.js";
 import { incCommandsExecuted, observeCommandLatency } from "../telemetry/MetricsCollector.js";
 import Colors from "../core/constants/Colors.js";
 import * as ErrorEmbed from "../ui/embeds/ErrorEmbed.js";
@@ -205,7 +206,13 @@ export function start(client: any): void {
           return message.channel.send({ embeds: [new EmbedBuilder().setDescription(`🏓 Pong! WS Ping: **${wsPing}ms**`).setColor(Colors.INFO)] });
         }
 
-        if (!voice) return message.channel.send({ embeds: [ErrorEmbed.build("You must be in a voice channel.")] });
+        if (interpreted.type === "queue" || interpreted.type === "nowplaying") {
+          if (!voice) return message.channel.send({ embeds: [ErrorEmbed.build("You must be in a voice channel.")] });
+        } else if (interpreted.type === "correct_playlist") {
+          if (MusicService.getEngine(guildId)?.player && !(await requireSameVoice(message))) return;
+        } else {
+          if (!(await requireSameVoice(message))) return;
+        }
 
         switch (interpreted.type) {
           case "skip": {

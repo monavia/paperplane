@@ -49,6 +49,13 @@
   - **Retry-once** for permanent errors (`permanentRetried`, key `${guildId}:${trackId}`) — `isFirstAttempt` pattern, no delay, bounded to 1x: if the retry succeeds the track plays without user intervention; fails again → `markBad` + `stopPlaying()` + error embed "Track failed to play after retry — skipping it." (no more silence).
 - **Tests** — `isPermanentTrackError` (regex unchanged) still covers the user's exact log string. **516/516 pass**, typecheck clean.
 
+### AI Voice Gate — Control Commands Require Bot in the Same Voice Channel
+
+- **Problem (user report)** — user in voice, bot NOT in voice, told the AI "autoplay nyalain dong" → AI replied "Oke, autoplay nyala 🔁" and silently toggled the setting. The AI-interpreted path in `messageCreate.ts` had a single weak guard (`if (!voice)` — user-in-VC only) before the command switch: it never checked the bot's connection or channel match, unlike prefix commands which use `requireSameVoice()`. Affected: `autoplay`, `shuffle`, `loop`, `247`, `clear`, `recommend` (no player check at all) and `skip`/`stop`/`pause`/`resume`/`volume` (player check only — could control another session in a different VC). Confirmed: `-ap` correctly replied "Bot is not connected to a voice channel."
+- **Fix** — `messageCreate.ts` AI path now gates the command switch with `requireSameVoice()` (single source of truth, same UX as prefix): bot not connected → "Bot is not connected to a voice channel."; different VC → "You must be in the same voice channel as the bot."; `queue`/`nowplaying` stay informational (user-in-VC only, matching prefix versions); `correct_playlist` joins voice when no player exists, same-voice check only when a player is already active.
+- **Scope note** — `filter`/`equalizer` are NOT reachable via AI (no interpreter mapping, no LLM format token) — they fall back to a chat reply; no bypass exists. Follow-up (out of scope): `play`/`correct_playlist` with an existing player in another VC can still overwrite that session — same-voice check there is a candidate for later.
+- **Tests** — `messageCreate.test.ts` +3: autoplay blocked when bot not connected (state not toggled), blocked on different VC, blocked when user not in voice; existing control-command mocks now carry `voiceChannelId`. **519/519 pass**, typecheck clean.
+
 ## 2026-08-01 — v3.3.3
 
 ### AI-Driven Confirmations — Bot Feels Alive (Chat Flow)

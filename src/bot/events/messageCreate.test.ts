@@ -41,7 +41,8 @@ vi.mock("../telemetry/MetricsCollector.js", () => ({
 
 vi.mock("../core/constants/Colors.js", () => ({ default: { SUCCESS: 0, ERROR: 0, INFO: 0 } }));
 
-vi.mock("../ui/embeds/ErrorEmbed.js", () => ({ build: vi.fn().mockReturnValue({ description: "" }) }));
+const mockErrorBuild = vi.fn().mockReturnValue({ description: "" });
+vi.mock("../ui/embeds/ErrorEmbed.js", () => ({ build: mockErrorBuild }));
 
 const mockGetPrefix = vi.fn();
 const mockSetPrefix = vi.fn();
@@ -65,11 +66,12 @@ vi.mock("../music/services/MusicService.js", () => ({
 const mockGetQueue = vi.fn();
 vi.mock("../music/services/QueueService.js", () => ({ getQueue: mockGetQueue }));
 
+const mockStateAutoplaySet = vi.fn();
 vi.mock("../core/state/StateManager.js", () => ({
   default: {
     queues: { get: vi.fn(), set: vi.fn(), clear: vi.fn() },
     nowPlaying: { get: vi.fn(), set: vi.fn() },
-    autoplay: { get: vi.fn(), set: vi.fn() },
+    autoplay: { get: vi.fn(), set: mockStateAutoplaySet },
     shuffle: { get: vi.fn(), set: vi.fn() },
     loop: { get: vi.fn(), set: vi.fn() },
     twentyFourSeven: { isEnabled: vi.fn(), set: vi.fn() },
@@ -308,7 +310,7 @@ describe("messageCreate", () => {
   test("pause confirmation is AI-generated without memory path", async () => {
     mockRunAIInterpret.mockResolvedValue({ type: "pause" });
     mockRunAIAskFresh.mockResolvedValue("Dipause dulu ya ⏸️");
-    mockGetEngineM.mockReturnValue({ player: { volume: 80 } });
+    mockGetEngineM.mockReturnValue({ player: { volume: 80, voiceChannelId: "vc1" } });
     mockPause.mockResolvedValue(true);
     const msg = makeVoiceMsg({ content: "<@12345> pause" });
     await handler(msg);
@@ -324,7 +326,7 @@ describe("messageCreate", () => {
   test("pause confirmation only uses first line of AI reply", async () => {
     mockRunAIInterpret.mockResolvedValue({ type: "pause" });
     mockRunAIAskFresh.mockResolvedValue("Oke deh, santai dulu.\n\nPenjelasan panjang yang tidak boleh ikut terkirim...");
-    mockGetEngineM.mockReturnValue({ player: { volume: 80 } });
+    mockGetEngineM.mockReturnValue({ player: { volume: 80, voiceChannelId: "vc1" } });
     mockPause.mockResolvedValue(true);
     const msg = makeVoiceMsg({ content: "<@12345> pause" });
     await handler(msg);
@@ -335,7 +337,7 @@ describe("messageCreate", () => {
   test("pause confirmation falls back to pool phrase when AI fails", async () => {
     mockRunAIInterpret.mockResolvedValue({ type: "pause" });
     mockRunAIAskFresh.mockRejectedValue(new Error("timeout"));
-    mockGetEngineM.mockReturnValue({ player: { volume: 80 } });
+    mockGetEngineM.mockReturnValue({ player: { volume: 80, voiceChannelId: "vc1" } });
     mockPause.mockResolvedValue(true);
     const msg = makeVoiceMsg({ content: "<@12345> pause" });
     await handler(msg);
@@ -347,7 +349,7 @@ describe("messageCreate", () => {
   test("resume while already playing replies humanely without calling resume", async () => {
     mockRunAIInterpret.mockResolvedValue({ type: "resume" });
     mockRunAIAskFresh.mockResolvedValue("Lagi jalan kok!");
-    mockGetEngineM.mockReturnValue({ player: { playing: true, paused: false } });
+    mockGetEngineM.mockReturnValue({ player: { playing: true, paused: false, voiceChannelId: "vc1" } });
     const msg = makeVoiceMsg({ content: "<@12345> resume" });
     await handler(msg);
     assert.strictEqual(mockResume.mock.calls.length, 0);
@@ -358,7 +360,7 @@ describe("messageCreate", () => {
   test("resume with nothing paused replies humanely instead of Failed to resume", async () => {
     mockRunAIInterpret.mockResolvedValue({ type: "resume" });
     mockRunAIAskFresh.mockResolvedValue("Nggak ada yang di-pause.");
-    mockGetEngineM.mockReturnValue({ player: { playing: false, paused: false } });
+    mockGetEngineM.mockReturnValue({ player: { playing: false, paused: false, voiceChannelId: "vc1" } });
     mockResume.mockResolvedValue(false);
     const msg = makeVoiceMsg({ content: "<@12345> resume" });
     await handler(msg);
@@ -371,7 +373,7 @@ describe("messageCreate", () => {
   test("pause while already paused replies humanely without calling pause", async () => {
     mockRunAIInterpret.mockResolvedValue({ type: "pause" });
     mockRunAIAskFresh.mockResolvedValue("Udah di-pause kok ⏸️");
-    mockGetEngineM.mockReturnValue({ player: { paused: true } });
+    mockGetEngineM.mockReturnValue({ player: { paused: true, voiceChannelId: "vc1" } });
     const msg = makeVoiceMsg({ content: "<@12345> pause" });
     await handler(msg);
     assert.strictEqual(mockPause.mock.calls.length, 0);
@@ -381,7 +383,7 @@ describe("messageCreate", () => {
   test("stop confirmation uses natural summary", async () => {
     mockRunAIInterpret.mockResolvedValue({ type: "stop" });
     mockRunAIAskFresh.mockResolvedValue("Udah, beres! 👋");
-    mockGetEngineM.mockReturnValue({ player: { playing: true, paused: false } });
+    mockGetEngineM.mockReturnValue({ player: { playing: true, paused: false, voiceChannelId: "vc1" } });
     const msg = makeVoiceMsg({ content: "<@12345> stop" });
     await handler(msg);
     assert.strictEqual(mockStop.mock.calls.length, 1);
@@ -413,7 +415,7 @@ describe("messageCreate", () => {
   test("confirmReply falls back to template when AI regurgitates instructions", async () => {
     mockRunAIInterpret.mockResolvedValue({ type: "stop" });
     mockRunAIAskFresh.mockResolvedValue('The user wants me to respond as Paperplane, a friendly Discord music bot. The context says the music was paused ("Kartonyono Medot Janji"...');
-    mockGetEngineM.mockReturnValue({ player: { playing: true, paused: false } });
+    mockGetEngineM.mockReturnValue({ player: { playing: true, paused: false, voiceChannelId: "vc1" } });
     const msg = makeVoiceMsg({ content: "<@12345> stop" });
     await handler(msg);
     const desc = (msg.channel.send.mock.calls[0][0].embeds[0] as any).setDescription.mock.calls[0][0];
@@ -428,7 +430,7 @@ describe("messageCreate", () => {
   test("lanjut while paused resumes instead of skipping/disconnecting", async () => {
     mockRunAIInterpret.mockResolvedValue({ type: "skip" });
     mockRunAIAskFresh.mockResolvedValue("Lanjut! 🔊");
-    mockGetEngineM.mockReturnValue({ player: { paused: true, playing: false } });
+    mockGetEngineM.mockReturnValue({ player: { paused: true, playing: false, voiceChannelId: "vc1" } });
     mockResume.mockResolvedValue(true);
     const msg = makeVoiceMsg({ content: "<@12345> lanjut" });
     await handler(msg);
@@ -440,7 +442,7 @@ describe("messageCreate", () => {
   test("lanjut while paused with failed resume replies nothingToResume", async () => {
     mockRunAIInterpret.mockResolvedValue({ type: "skip" });
     mockRunAIAskFresh.mockResolvedValue("Lagi kosong nih.");
-    mockGetEngineM.mockReturnValue({ player: { paused: true, playing: false } });
+    mockGetEngineM.mockReturnValue({ player: { paused: true, playing: false, voiceChannelId: "vc1" } });
     mockResume.mockResolvedValue(false);
     const msg = makeVoiceMsg({ content: "<@12345> lanjut" });
     await handler(msg);
@@ -450,13 +452,40 @@ describe("messageCreate", () => {
 
   test("lanjut while playing still skips to next track", async () => {
     mockRunAIInterpret.mockResolvedValue({ type: "skip" });
-    mockGetEngineM.mockReturnValue({ player: { paused: false, playing: true } });
+    mockGetEngineM.mockReturnValue({ player: { paused: false, playing: true, voiceChannelId: "vc1" } });
     mockSkip.mockResolvedValue({ info: { title: "Next Song" } });
     const msg = makeVoiceMsg({ content: "<@12345> lanjut" });
     await handler(msg);
     assert.strictEqual(mockSkip.mock.calls.length, 1);
     assert.strictEqual(mockResume.mock.calls.length, 0);
     assert.strictEqual(msg.channel.send.mock.calls.length, 1);
+  });
+
+  test("AI autoplay blocked when bot not connected to voice", async () => {
+    mockRunAIInterpret.mockResolvedValue({ type: "autoplay" });
+    mockGetEngineM.mockReturnValue({ player: null });
+    const msg = makeVoiceMsg({ content: "<@12345> autoplay nyalain dong" });
+    await handler(msg);
+    assert.strictEqual(mockErrorBuild.mock.calls[0][0], "Bot is not connected to a voice channel.");
+    assert.strictEqual(mockStateAutoplaySet.mock.calls.length, 0);
+  });
+
+  test("AI autoplay blocked when user in different voice channel than bot", async () => {
+    mockRunAIInterpret.mockResolvedValue({ type: "autoplay" });
+    mockGetEngineM.mockReturnValue({ player: { voiceChannelId: "vc2" } });
+    const msg = makeVoiceMsg({ content: "<@12345> autoplay" });
+    await handler(msg);
+    assert.strictEqual(mockErrorBuild.mock.calls[0][0], "You must be in the same voice channel as the bot.");
+    assert.strictEqual(mockStateAutoplaySet.mock.calls.length, 0);
+  });
+
+  test("AI autoplay blocked when user not in voice", async () => {
+    mockRunAIInterpret.mockResolvedValue({ type: "autoplay" });
+    mockGetEngineM.mockReturnValue({ player: null });
+    const msg = makeMessage({ content: "<@12345> autoplay" });
+    await handler(msg);
+    assert.strictEqual(mockErrorBuild.mock.calls[0][0], "You must be in a voice channel.");
+    assert.strictEqual(mockStateAutoplaySet.mock.calls.length, 0);
   });
 
   test("playlist confirmation is AI-generated with track context", async () => {
