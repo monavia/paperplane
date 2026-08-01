@@ -26,6 +26,33 @@ describe("pickBestTrack", () => {
     assert.strictEqual(pickBestTrack(tracks).info.title, "Cyka");
   });
 
+  test("trusts YTM order when top result is non-latin but query is latin (script mismatch)", () => {
+    const cjk = [
+      { info: { title: "葉桜", author: "北乃きい", sourceName: "youtube", length: 318_000 } },
+      { info: { title: "Hazakura", author: "Deebu", sourceName: "youtube", length: 153_000 } },
+    ];
+    const best = pickBestTrack(cjk, "kie kitano hazakura");
+    assert.strictEqual(best.info.title, "葉桜");
+  });
+
+  test("trusts YTM order for single latin keyword vs non-latin top result", () => {
+    const list = [
+      { info: { title: "葉桜", author: "北乃きい", sourceName: "youtube", length: 318_000 } },
+      { info: { title: "Hazakura", author: "Deebu", sourceName: "youtube", length: 153_000 } },
+    ];
+    const best = pickBestTrack(list, "hazakura");
+    assert.strictEqual(best.info.title, "葉桜");
+  });
+
+  test("still reranks when top result contains latin text", () => {
+    const t = [
+      mk("Never Cry", "kitano kii"),
+      mk("Hazakura", "kitano kii"),
+    ];
+    const best = pickBestTrack(t, "kitano kii hazakura");
+    assert.strictEqual(best.info.title, "Hazakura");
+  });
+
   test("ignores keyword scoring for URLs", () => {
     const best = pickBestTrack(tracks, "https://www.youtube.com/watch?v=zy97UHdoQKk");
     assert.strictEqual(best.info.title, "Cyka");

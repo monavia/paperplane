@@ -95,7 +95,7 @@ async function searchWithFallback(player: any, item: any, user: any) {
       return best;
     }
   }
-  for (const prefix of ["ytsearch", "scsearch", "dzsearch"]) {
+  for (const prefix of ["ytmsearch", "ytsearch", "scsearch", "dzsearch"]) {
     const result = await searchWithRetry(player, { query: `${prefix}:${item.query}` }, user, 0);
     if (result?.tracks?.length) {
       const best = pickBestMatch(result.tracks, item.duration, item.query);

@@ -1,5 +1,26 @@
 # Changelog — Paperplane
 
+## 2026-08-01 — v3.3.1
+
+### Search Platform — Kembali ke `ytmsearch` (VPS sudah mendukung MUSIC client)
+
+- **Reversal** — v3.2.8/v3.2.9 menurunkan `ytmsearch` karena VPS Lavalink tanpa client MUSIC → hasil selalu kosong. Log Lavalink VPS 2026-08-01 membuktikan kondisi berubah: `ytmsearch:hazakura` & `ytmsearch:kie kitano hazakura` dua-duanya `"Loaded playlist Search music results for: ..."` (hasil ADA), `YoutubeAccessTokenTracker` update visitor id sukses. `ytmsearch` dipulihkan sebagai platform utama di 13 file (play prefix+slash, search, RecommendationEngine autoplay, musicEvents, StateService, messageCreate, PlaylistService, FailoverManager, `lavalink.ts` `defaultSearchPlatform: "ytmsearch"`); chain fallback ytsearch → scsearch → dzsearch tetap di belakangnya.
+
+### Track Picker — Fix Query Latin vs Hasil Kanji/Kana (script mismatch)
+
+- **Problem (bukti curl `trace=true`)** — `-p kie kitano hazakura` memutar Deebu - Hazakura, padahal hasil #1 YTM adalah 北乃きい (Kitano Kii) - 葉桜 (Hazakura). `pickBestTrack` menskor keyword query (`kie`, `kitano`, `hazakura`) via substring match terhadap title/author: track kanji (葉桜/北乃きい) tak bisa match keyword romaji → kena penalty −8 → skor +2, kalah dari Deebu yang title-nya romaji "Hazakura" (+15). Durasi bukan penyebab (keduanya lolos filter 120–480s).
+- **Fix** — `SearchService.pickBestTrack`: jika query punya keyword latin (romaji) tapi hasil teratas murni non-latin (tak ada satu pun `[a-z]` di title+author), substring match mustahil → percaya urutan node (`candidates[0]`) alih-alih men-skors semua kandidat. Query latin normal & query non-latin (Thai/Korea) tetap lewat scoring — tidak ada regresi (test non-latin existing tetap hijau).
+- **Tests** — `SearchService.test.ts` +3: script mismatch multi-keyword (`kie kitano hazakura` → 葉桜), single keyword latin vs top non-latin (`hazakura` → 葉桜), regresi rerank latin (`kitano kii hazakura` → Hazakura). **472/472 pass**, typecheck clean.
+
+### Double Embed — Skip Lagu Tunggal Mengirim 2 Embed Identik
+
+- **Problem** — skip lagu (queue 1) mengirim embed skip DAN embed "Started playing" identik untuk lagu berikutnya. Root cause: `player.play()` → node kirim `trackEnd(reason="replaced")` → jalur ghost `musicEvents.ts` (`queueLen === 0 && player.playing`) terpicu → `handleQueueEnd` menghapus flag `manualAdvances` (dipakai skip) → `trackStart` lagu baru tidak tersupresi → embed natural dikirim ganda.
+- **Fix** — `musicEvents.ts`: (1) jalur ghost kini guard `reasonStr !== "replaced"` (skip-replace tidak boleh memicu queue-end manual); (2) `trackStart` menghapus flag `manualAdvances` setelah dibaca (semantik sekali-pakai, konsisten dengan `suppressTrackStart`).
+
+### Ops — VPS: Hapus SponsorBlock Plugin
+
+- **sponsorblock-plugin-3.0.1** error di SETIAP track start: `MissingFieldException: Field 'horizontalCardListRenderer' is required ... ExpandedContent` (schema innertube YouTube berubah, plugin outdated) — crash hanya di event handler (playback tidak terganggu), dan `Categories are: []` (kosong) berarti plugin tidak mem-skip apa pun. Dihapus dari `plugins/` di VPS.
+
 ## 2026-08-01 — v3.3.0
 
 ### Non-Latin Support — Junk Filter & Recommendation (KR/CN/JP/AR/TH)

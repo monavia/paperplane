@@ -87,9 +87,18 @@ export function pickBestTrack(tracks: any[], query?: string): any {
       best = scored[0].track;
     }
   } else if (keywords.length) {
-    const scored = candidates.map((t: any) => ({ track: t, score: scoreTrack(t) + scoreQuery(t, keywords) }));
-    scored.sort((a, b) => b.score - a.score);
-    best = scored[0].track;
+    const firstLowerAuthor = (first.info?.author || "").toLowerCase();
+    const queryHasAscii = keywords.some((kw) => /[a-z]/.test(kw));
+    const firstHasAscii = /[a-z]/.test(firstTitle + firstLowerAuthor);
+    if (queryHasAscii && !firstHasAscii) {
+      // Query latin (romaji) tapi hasil teratas murni non-latin (kanji/kana) —
+      // substring match tak bisa mencocokkan; percaya urutan node (YTM).
+      best = candidates[0];
+    } else {
+      const scored = candidates.map((t: any) => ({ track: t, score: scoreTrack(t) + scoreQuery(t, keywords) }));
+      scored.sort((a, b) => b.score - a.score);
+      best = scored[0].track;
+    }
   }
 
   const cleaned = cleanTitle(best.info?.title || "", best.info?.author || "");
@@ -154,12 +163,12 @@ export async function findTrackWithDuration(
   const origDur = origTrack.info?.length || origTrack.info?.durationMs || 0;
   const n = player.node?.id || "?";
   if (isDraining(n) || isUnhealthy(n) || getPenalty(n) > 100) {
-    const fallback = await searchViaHealthyNode({ query: `ytsearch:${query}` }, clientRef, 0);
+    const fallback = await searchViaHealthyNode({ query: `ytmsearch:${query}` }, clientRef, 0);
     if (fallback?.tracks?.length) {
       return fallback.tracks.find((t: any) => !t.info?.sourceName?.includes("deezer")) || fallback.tracks[0];
     }
   }
-  for (const prefix of ["ytsearch", "scsearch", "dzsearch"]) {
+  for (const prefix of ["ytmsearch", "ytsearch", "scsearch", "dzsearch"]) {
     let res = null;
     try {
       res = await player.search({ query: `${prefix}:${query}` }, clientRef);

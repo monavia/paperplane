@@ -205,6 +205,7 @@ async function findMultiSourceFallback(player: any, track: any, user: any): Prom
   if (!title) return null;
   const q = author ? `${author} ${title}` : title;
   const candidates = [
+    { query: `ytmsearch:${q}`, label: "ytmsearch" },
     { query: `ytsearch:${q}`, label: "ytsearch" },
     { query: `scsearch:${q}`, label: "soundcloud" },
     { query: `dzsearch:${q}`, label: "deezer" },
@@ -295,6 +296,7 @@ function register(client: any): void {
       EventBus.emit('state:clearRestored', { guildId: player.guildId });
     }
     const isManualAdvance = manualAdvances.has(player.guildId);
+    if (isManualAdvance) manualAdvances.delete(player.guildId);
     const suppress = suppressTrackStart.has(player.guildId);
     if (suppress) suppressTrackStart.delete(player.guildId);
     const isFailover = fmIsFailoverGuild(player.guildId);
@@ -335,7 +337,7 @@ function register(client: any): void {
         if (!next?.info?.uri) return;
         const uri = next.info.uri;
         const isSpotify = /open\.spotify\.com/i.test(uri) || /^spotify:/.test(uri);
-        const search = await player.search({ query: isSpotify ? `ytsearch:${next.info.author || ""} ${next.info.title || ""}` : uri }, { id: "system" }).catch(() => null);
+        const search = await player.search({ query: isSpotify ? `ytmsearch:${next.info.author || ""} ${next.info.title || ""}` : uri }, { id: "system" }).catch(() => null);
         if (search?.tracks?.[0]?.encoded) {
           next.encoded = search.tracks[0].encoded;
           
@@ -368,7 +370,7 @@ function register(client: any): void {
       advancingFromTrackEnd.add(player.guildId);
       advanceQueue(player).catch(err => Logger.error(`[trackEnd] advanceQueue failed for ${player.guildId}: ${err.message}`))
         .finally(() => advancingFromTrackEnd.delete(player.guildId));
-    } else if (queueLen === 0 && player.playing) {
+    } else if (reasonStr !== "replaced" && queueLen === 0 && player.playing) {
       // Ghost track di player.queue (mirror tak sinkron dgn RAM) — internal queueEnd tak akan
       // pernah fire, jadi autoplay/cleanup mati (zombie ~30s sampai Watchdog silent voice loss).
       // Reset mirror + paksa jalur queue-end manual supaya autoplay jalan instan.

@@ -340,7 +340,7 @@ async function restoreGuildState(client: any, saved: any): Promise<boolean> {
       const trackAuthor = first.info?.author || "";
       if (trackTitle || trackAuthor) {
         const q = `${trackAuthor} ${trackTitle}`.trim();
-        const search = await player.search({ query: `ytsearch:${q}` }, { id: "system" }).catch(() => null);
+        const search = await player.search({ query: `ytmsearch:${q}` }, { id: "system" }).catch(() => null);
         if (search?.tracks?.length) {
           const fresh = search.tracks[0];
           // Preserve original URI for display (e.g. Spotify URL)

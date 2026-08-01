@@ -23,7 +23,7 @@ async function resolveSpotifyTrack(player: any, spotifyItem: any, user: any): Pr
   const q = spotifyItem.query || `${spotifyItem.artists?.join(" ") || ""} ${spotifyItem.name}`.trim();
   if (!q) return null;
   let result: any;
-  try { result = await searchWithRetry(player, { query: `ytsearch:${q}` }, user); } catch {}
+  try { result = await searchWithRetry(player, { query: `ytmsearch:${q}` }, user); } catch {}
   if (result?.tracks?.length) {
     const track = pickBestTrack(result.tracks, q);
     if (!track.info) track.info = {};
@@ -155,12 +155,15 @@ export default {
       // Regular search
       if (!query.startsWith("http") && !query.includes(":")) {
         currentSource = 'youtube';
-        // ytmsearch needs a MUSIC client on Lavalink; plain ytsearch until one is configured
-        searchQuery = `ytsearch:${query}`;
+        searchQuery = `ytmsearch:${query}`;
       }
 
       let result = await cachedSearch(player, searchQuery, interaction.user);
 
+      if (!result?.tracks?.length && !query.startsWith("http")) {
+        currentSource = 'youtube';
+        result = await cachedSearch(player, `ytsearch:${query}`, interaction.user);
+      }
 
       if (!result?.tracks?.length) {
         currentSource = 'soundcloud';

@@ -104,7 +104,7 @@ export async function failoverFromNode(nodeId: string) {
           const isSpotify = /^spotify:(track|album|playlist):/.test(uri) || /open\.spotify\.com/i.test(uri);
           if (isSpotify) {
             const q = `${curTrack.info.author || ""} ${curTrack.info.title || ""}`.trim();
-            for (const prefix of ["ytsearch", "scsearch", "dzsearch"]) {
+            for (const prefix of ["ytmsearch", "ytsearch", "scsearch", "dzsearch"]) {
               const search = await searchWithRetry(player, { query: `${prefix}:${q}` }, { id: "system" }).catch(() => null);
               if (search?.tracks?.length) { resolved = search.tracks.find((t: any) => t.info?.sourceName !== "deezer") || search.tracks[0]; if (resolved) break; }
             }
@@ -164,7 +164,7 @@ export async function failoverFromNode(nodeId: string) {
             const isSpotify = /^spotify:(track|album|playlist):/.test(uri) || /open\.spotify\.com/i.test(uri);
             if (isSpotify) {
               const q = `${track.info.author || ""} ${track.info.title || ""}`.trim();
-              for (const prefix of ["ytsearch", "scsearch", "dzsearch"]) {
+              for (const prefix of ["ytmsearch", "ytsearch", "scsearch", "dzsearch"]) {
                 const search = await searchWithRetry(newPlayer, { query: `${prefix}:${q}` }, { id: "system" }).catch(() => null);
                 if (search?.tracks?.length) { resolved = search.tracks.find((t: any) => t.info?.sourceName !== "deezer") || search.tracks[0]; if (resolved) break; }
               }
