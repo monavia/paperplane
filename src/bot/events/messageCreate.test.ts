@@ -425,6 +425,40 @@ describe("messageCreate", () => {
     assert.ok(stoppedPool.includes(desc), `expected pool phrase, got: ${desc}`);
   });
 
+  test("lanjut while paused resumes instead of skipping/disconnecting", async () => {
+    mockRunAIInterpret.mockResolvedValue({ type: "skip" });
+    mockRunAIAskFresh.mockResolvedValue("Lanjut! 🔊");
+    mockGetEngineM.mockReturnValue({ player: { paused: true, playing: false } });
+    mockResume.mockResolvedValue(true);
+    const msg = makeVoiceMsg({ content: "<@12345> lanjut" });
+    await handler(msg);
+    assert.strictEqual(mockResume.mock.calls.length, 1);
+    assert.strictEqual(mockSkip.mock.calls.length, 0);
+    assert.strictEqual(mockRunAIAskFresh.mock.calls[0][1], "Resumed the music.");
+  });
+
+  test("lanjut while paused with failed resume replies nothingToResume", async () => {
+    mockRunAIInterpret.mockResolvedValue({ type: "skip" });
+    mockRunAIAskFresh.mockResolvedValue("Lagi kosong nih.");
+    mockGetEngineM.mockReturnValue({ player: { paused: true, playing: false } });
+    mockResume.mockResolvedValue(false);
+    const msg = makeVoiceMsg({ content: "<@12345> lanjut" });
+    await handler(msg);
+    assert.strictEqual(mockSkip.mock.calls.length, 0);
+    assert.ok(mockRunAIAskFresh.mock.calls[0][1].includes("Nothing is paused"));
+  });
+
+  test("lanjut while playing still skips to next track", async () => {
+    mockRunAIInterpret.mockResolvedValue({ type: "skip" });
+    mockGetEngineM.mockReturnValue({ player: { paused: false, playing: true } });
+    mockSkip.mockResolvedValue({ info: { title: "Next Song" } });
+    const msg = makeVoiceMsg({ content: "<@12345> lanjut" });
+    await handler(msg);
+    assert.strictEqual(mockSkip.mock.calls.length, 1);
+    assert.strictEqual(mockResume.mock.calls.length, 0);
+    assert.strictEqual(msg.channel.send.mock.calls.length, 1);
+  });
+
   test("playlist confirmation is AI-generated with track context", async () => {
     mockRunAIInterpret.mockResolvedValue({ type: "playlist", songs: ["lagu a", "lagu b"] });
     const player = makePlayer({ search: vi.fn().mockResolvedValue({ tracks: [{ info: { title: "Lagu A", uri: "https://x/1" } }] }) });

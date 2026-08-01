@@ -211,6 +211,10 @@ export function start(client: any): void {
           case "skip": {
             const player = MusicService.getEngine(guildId).player;
             if (!player) return message.channel.send({ embeds: [ErrorEmbed.build("No track playing.")] });
+            if (player.paused) {
+              const resumed = await MusicService.resume(guildId, message.author.id, name);
+              return confirmReply(message, resumed ? { summary: "Resumed the music.", poolKey: "resumed" } : { summary: "Nothing is paused.", poolKey: "nothingToResume" });
+            }
             const nextTrack = await MusicService.skip(guildId, message.author.id, name);
             if (nextTrack) return message.channel.send({ embeds: [NowPlayingEmbed.build(nextTrack, null)] });
             return confirmReply(message, { summary: "Skipped — queue is empty.", poolKey: "queueEmpty" });
