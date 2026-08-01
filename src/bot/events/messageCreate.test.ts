@@ -314,7 +314,7 @@ describe("messageCreate", () => {
     await handler(msg);
     assert.strictEqual(mockRunAIAskFresh.mock.calls.length, 1);
     assert.strictEqual(mockRunAIAsk.mock.calls.length, 0);
-    assert.ok(mockRunAIAskFresh.mock.calls[0][1].includes("paused"));
+    assert.ok(mockRunAIAskFresh.mock.calls[0][1].toLowerCase().includes("paused"));
     assert.strictEqual(mockRunAIAskFresh.mock.calls[0][3].maxTokens, 48);
     const desc = (msg.channel.send.mock.calls[0][0].embeds[0] as any).setDescription.mock.calls[0][0];
     assert.strictEqual(desc, "Dipause dulu ya ⏸️");
@@ -341,6 +341,72 @@ describe("messageCreate", () => {
     const pool = ["Dipause dulu ya ⏸️", "Oke, dijeda dulu. Lanjut kapan-kapan!", "Paused — lagunya stay di situ."];
     const desc = (msg.channel.send.mock.calls[0][0].embeds[0] as any).setDescription.mock.calls[0][0];
     assert.ok(pool.includes(desc), `unexpected fallback: ${desc}`);
+  });
+
+  test("resume while already playing replies humanely without calling resume", async () => {
+    mockRunAIInterpret.mockResolvedValue({ type: "resume" });
+    mockRunAIAskFresh.mockResolvedValue("Lagi jalan kok!");
+    mockGetEngineM.mockReturnValue({ player: { playing: true, paused: false } });
+    const msg = makeVoiceMsg({ content: "<@12345> resume" });
+    await handler(msg);
+    assert.strictEqual(mockResume.mock.calls.length, 0);
+    assert.strictEqual(mockRunAIAskFresh.mock.calls.length, 1);
+    assert.ok(mockRunAIAskFresh.mock.calls[0][1].includes("Already playing"));
+  });
+
+  test("resume with nothing paused replies humanely instead of Failed to resume", async () => {
+    mockRunAIInterpret.mockResolvedValue({ type: "resume" });
+    mockRunAIAskFresh.mockResolvedValue("Nggak ada yang di-pause.");
+    mockGetEngineM.mockReturnValue({ player: { playing: false, paused: false } });
+    mockResume.mockResolvedValue(false);
+    const msg = makeVoiceMsg({ content: "<@12345> resume" });
+    await handler(msg);
+    assert.strictEqual(mockRunAIAskFresh.mock.calls.length, 1);
+    assert.ok(mockRunAIAskFresh.mock.calls[0][1].includes("Nothing is paused"));
+    const desc = (msg.channel.send.mock.calls[0][0].embeds[0] as any).setDescription.mock.calls[0][0];
+    assert.strictEqual(desc, "Nggak ada yang di-pause.");
+  });
+
+  test("pause while already paused replies humanely without calling pause", async () => {
+    mockRunAIInterpret.mockResolvedValue({ type: "pause" });
+    mockRunAIAskFresh.mockResolvedValue("Udah di-pause kok ⏸️");
+    mockGetEngineM.mockReturnValue({ player: { paused: true } });
+    const msg = makeVoiceMsg({ content: "<@12345> pause" });
+    await handler(msg);
+    assert.strictEqual(mockPause.mock.calls.length, 0);
+    assert.ok(mockRunAIAskFresh.mock.calls[0][1].includes("Already paused"));
+  });
+
+  test("stop confirmation uses natural summary", async () => {
+    mockRunAIInterpret.mockResolvedValue({ type: "stop" });
+    mockRunAIAskFresh.mockResolvedValue("Udah, beres! 👋");
+    mockGetEngineM.mockReturnValue({ player: { playing: true, paused: false } });
+    const msg = makeVoiceMsg({ content: "<@12345> stop" });
+    await handler(msg);
+    assert.strictEqual(mockStop.mock.calls.length, 1);
+    assert.strictEqual(mockRunAIAskFresh.mock.calls[0][1], "Stopped the music.");
+  });
+
+  test("chat path persona knows playback state", async () => {
+    mockRunAIInterpret.mockResolvedValue({ type: "chat" });
+    mockRunAIAsk.mockResolvedValue("Sip!");
+    mockGetEngineM.mockReturnValue({ player: { playing: true, paused: true } });
+    const msg = makeVoiceMsg({ content: "<@12345> lagunya dipause ya?" });
+    await handler(msg);
+    assert.strictEqual(mockRunAIAsk.mock.calls.length, 1);
+    const sysPrompt = mockRunAIAsk.mock.calls[0][2];
+    assert.ok(sysPrompt.includes("PAUSED"), `persona missing paused state: ${sysPrompt}`);
+  });
+
+  test("chat path persona knows nothing playing", async () => {
+    mockRunAIInterpret.mockResolvedValue({ type: "chat" });
+    mockRunAIAsk.mockResolvedValue("Sip!");
+    mockGetEngineM.mockReturnValue({ player: null });
+    const msg = makeVoiceMsg({ content: "<@12345> lagi ada lagu?" });
+    await handler(msg);
+    assert.strictEqual(mockRunAIAsk.mock.calls.length, 1);
+    const sysPrompt = mockRunAIAsk.mock.calls[0][2];
+    assert.ok(sysPrompt.includes("Nothing is playing"), `persona missing stopped state: ${sysPrompt}`);
   });
 
   test("playlist confirmation is AI-generated with track context", async () => {

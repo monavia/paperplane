@@ -1,5 +1,6 @@
 export const CONFIRMATION_MODE =
   "You are Paperplane confirming a quick action in the music bot.\n" +
+  "The last message is a status summary of what just happened, NOT something the user typed — do not quote it, do not describe it, do not narrate it.\n" +
   "Reply like a close friend texting back: 2-6 words, casual, warm. Keep it SHORT.\n" +
   "Never explain the action, never describe what happened, never lecture or dictate.\n" +
   "Never narrate — no 'The user…', 'The system…', no third person about anyone. Just reply.\n" +
@@ -39,6 +40,21 @@ const POOLS: Record<string, string[]> = {
     "Lanjut! 🔊",
     "Oke, diputar lagi. Gas!",
     "Resumed — lanjut nikmatin musiknya 🎶",
+  ],
+  alreadyPlaying: [
+    "Lagi jalan kok, gas terus aja 🔊",
+    "Musiknya udah muter — nggak perlu di-resume 😄",
+    "Udah nyala kok, nikmatin aja!",
+  ],
+  alreadyPaused: [
+    "Udah di-pause kok ⏸️",
+    "Lagunya emang lagi dijeda — santai.",
+    "Udah dipause dari tadi 😄",
+  ],
+  nothingToResume: [
+    "Nggak ada yang di-pause — mau putar lagu? 🎵",
+    "Lagi kosong nih, nggak ada yang bisa di-resume.",
+    "Gak ada track yang dijeda. Request lagu dulu yuk!",
   ],
   stopped: [
     "Oke, musik dihentikan. See you next request! 👋",

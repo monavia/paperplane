@@ -5,10 +5,10 @@ class CommandInterpreter {
     if (/^(?:help|bantuan)\b/i.test(lower)) return { type: "help" };
     if (/^(?:info)\b/i.test(lower)) return { type: "info" };
     if (/^(?:nowplaying|np|lagu sekarang|lagu ini)\b/i.test(lower)) return { type: "nowplaying" };
-    if (/^(?:skip|lewati|lompati|lanjut|تخطي|قفز)(?:\b|$)/i.test(lower)) return { type: "skip" };
-    if (/^(?:stop|berhenti|matikan|setop|إيقاف|قف)(?:\b|$)/i.test(lower)) return { type: "stop" };
-    if (/^(?:pause|jeda|tahan|مؤقت|وقف)(?:\b|$)/i.test(lower)) return { type: "pause" };
-    if (/^(?:resume|unpause|lanjutkan|mainkan lagi|استئناف|واصل)(?:\b|$)/i.test(lower)) return { type: "resume" };
+    if (/^(?:skip|skipped|lewati|lewatin|lompati|lanjut|تخطي|قفز)(?:\b|$)/i.test(lower)) return { type: "skip" };
+    if (/^(?:stop|stopped|stoping|berhenti|matikan|setop|إيقاف|قف)(?:\b|$)/i.test(lower)) return { type: "stop" };
+    if (/^(?:pause|paused|pausing|pausein|jeda|tahan|مؤقت|وقف)(?:\b|$)/i.test(lower)) return { type: "pause" };
+    if (/^(?:resume|resumed|resuming|unpause|lanjutin|lanjutkan|mainkan lagi|استئناف|واصل)(?:\b|$)/i.test(lower)) return { type: "resume" };
     if (/^(?:queue|q|antrian|lagu apa|isinya apa|apa isinya|apa saja isinya|isi (?:antrian|queue)|daftar (?:lagu|antrian|queue)|list (?:lagu|queue)|lihat (?:antrian|queue)|طابور)(?:\b|$)/i.test(lower)) return { type: "queue" };
     if (/^(?:autoplay|auto.?play|putar otomatis)\b/i.test(lower)) return { type: "autoplay" };
     if (/^(?:shuffle|acak)\b/i.test(lower)) return { type: "shuffle" };

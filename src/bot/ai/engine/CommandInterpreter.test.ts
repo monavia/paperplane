@@ -111,16 +111,29 @@ describe("edge cases", () => {
     assert.deepStrictEqual(ci.interpret("stop"), { type: "stop" });
     assert.deepStrictEqual(ci.interpret("setop"), { type: "stop" });
     assert.deepStrictEqual(ci.interpret("قف"), { type: "stop" });
+    assert.deepStrictEqual(ci.interpret("stopped"), { type: "stop" });
+    assert.deepStrictEqual(ci.interpret("stop dulu"), { type: "stop" });
   });
   test("pause variations", () => {
     assert.deepStrictEqual(ci.interpret("pause"), { type: "pause" });
     assert.deepStrictEqual(ci.interpret("tahan"), { type: "pause" });
     assert.deepStrictEqual(ci.interpret("مؤقت"), { type: "pause" });
+    assert.deepStrictEqual(ci.interpret("paused"), { type: "pause" });
+    assert.deepStrictEqual(ci.interpret("pausein"), { type: "pause" });
+    assert.deepStrictEqual(ci.interpret("pause dulu"), { type: "pause" });
   });
   test("resume variations", () => {
     assert.deepStrictEqual(ci.interpret("resume"), { type: "resume" });
     assert.deepStrictEqual(ci.interpret("lanjutkan"), { type: "resume" });
     assert.deepStrictEqual(ci.interpret("واصل"), { type: "resume" });
+    assert.deepStrictEqual(ci.interpret("resumed"), { type: "resume" });
+    assert.deepStrictEqual(ci.interpret("lanjutin"), { type: "resume" });
+    assert.deepStrictEqual(ci.interpret("resume lagu"), { type: "resume" });
+  });
+  test("skip variations", () => {
+    assert.deepStrictEqual(ci.interpret("skipped"), { type: "skip" });
+    assert.deepStrictEqual(ci.interpret("lewatin"), { type: "skip" });
+    assert.deepStrictEqual(ci.interpret("lanjut"), { type: "skip" });
   });
   test("nowplaying variations", () => {
     assert.deepStrictEqual(ci.interpret("nowplaying"), { type: "nowplaying" });

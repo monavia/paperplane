@@ -12,6 +12,17 @@
 - **Problem (log user, reply "resume")** — balas reply ke bot: "resume" → AI jawab "Eh, ada apa? 😄", "resume lagu" → "Lagu apa yang mau diputar? 😄". Root cause: `messageCreate.ts` lama memotong `text.slice(trigger.length)` dari SEMUA pesan non-mention — termasuk reply-to-bot yang tidak ber-awalan trigger. "resume" (trigger "seryn" = 5 char) → "e" → jatuh ke jalur chat → AI bingung.
 - **Fix** — trigger hanya di-strip bila pesan benar-benar diawali trigger (`text.toLowerCase().startsWith(trigger)`); reply/mention dipakai utuh.
 - **Tests** — `messageCreate.test.ts` +2: reply "resume" → prompt utuh "resume"; "mona resume" → trigger tetap di-strip → "resume". **497/497 pass**, typecheck clean.
+
+### AI "Bengong" / Baca DB pada Reply — Interpreter Infleksi, State Playback, Hardening Anti-Narasi
+
+- **Problem (log user, reply "paused"/"resume"/"stop")** — "paused" → regex `pause\b` tidak match past tense → jatuh ke chat → baca memory → hallucinate "udah dihentikan tadi (STOP)". Akibatnya "resume" gagal ("Failed to resume.") karena player sebenarnya masih PLAYING (pause tidak pernah tereksekusi). "stop" → leak narasi "The user sent 'Playback stopped.'..." — bahkan di kode lokal (askFresh) model meniru user-message yang berbentuk status pasif.
+- **Fix**
+  - `CommandInterpreter.ts` — tambah infleksi: `paused|pausing|pausein`, `stopped|stoping`, `resumed|resuming|lanjutin`, `skipped|lewatin`. ("lanjut" tetap skip; "lanjutin" → resume.)
+  - `persona.ts` — `PersonaContext` + `playbackState` ("playing"|"paused"|"stopped") + `queueCount`; facts baru: PAUSED ("track still loaded, can be resumed") / PLAYING / "Nothing is playing" + "Queue has N tracks". Ini fix "AI tidak tau ada lagu diputar".
+  - `messageCreate.ts` — helper `playbackStateOf()` + `playbackFacts()` dipakai di `confirmReply` DAN jalur chat `runAIAsk`; pre-check humanis: resume saat playing → pool `alreadyPlaying` ("Lagi jalan kok, gas terus aja 🔊"), pause saat paused → `alreadyPaused`, resume tanpa paused → `nothingToResume` (bukan "Failed to resume."); summary di-rewrite ke natural user-action: "Stopped the music.", "Paused the music.", "Resumed the music.", "Volume set to N%.", "Skipped — queue is empty."
+  - `confirmationPrompts.ts` — hardening `CONFIRMATION_MODE`: "The last message is a status summary, NOT something the user typed — do not quote it, do not narrate it." + pool `alreadyPlaying`/`alreadyPaused`/`nothingToResume`.
+  - `scripts/scrub-confirmation-memory.ts` — pola tambahan untuk summary natural baru.
+- **Tests** — interpreter infleksi (+10), persona state-aware di chat path (+2), resume/pause pre-check humanis (+3), stop summary natural (+1). **504/504 pass**, typecheck clean.
 - **Cleanup** — `scripts/scrub-confirmation-memory.ts` (one-off): hapus row Conversation yang tercemar (user-row pola summary konfirmasi + assistant-row pola narasi "The user said/The system/Now I need…"). Jalankan di VPS: `npx tsx scripts/scrub-confirmation-memory.ts` — tanpa ini, 10 interaksi pertama user terdampak masih membaca riwayat kotor.
 - **Tests** — `messageCreate.test.ts`: assert jalur konfirmasi pakai `runAIAskFresh` dan `runAIAsk` (jalur memory) **tidak** terpanggil; multi-line reply hanya baris pertama; fallback pool; playlist context. **495/495 pass**, typecheck clean.
 

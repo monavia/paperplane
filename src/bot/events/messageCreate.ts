@@ -28,10 +28,25 @@ import { classifyError } from "../core/errors/ErrorClassifier.js";
 
 const AI_CONFIRM_TIMEOUT = parseInt(process.env.AI_CONFIRM_TIMEOUT || "4000", 10);
 
+function playbackStateOf(guildId: string): "playing" | "paused" | "stopped" {
+  const player = MusicService.getEngine(guildId).player;
+  if (player?.paused) return "paused";
+  if (player?.playing) return "playing";
+  return "stopped";
+}
+
+function playbackFacts(guildId: string) {
+  return {
+    playbackState: playbackStateOf(guildId),
+    nowPlaying: state.nowPlaying.get(guildId)?.info?.title,
+    queueCount: state.queues.get(guildId)?.length || 0,
+  };
+}
+
 async function confirmReply(message: any, opts: { summary: string; poolKey: string; poolVars?: Record<string, string | number>; color?: number }): Promise<void> {
   await message.channel.sendTyping().catch(Logger.safe("bot/events/messageCreate.ts"));
   const userName = message.member?.displayName || message.author.username;
-  const sysPrompt = buildPersona({ userName, nowPlaying: state.nowPlaying.get(message.guildId)?.info?.title }) + "\n\n" + CONFIRMATION_MODE;
+  const sysPrompt = buildPersona({ userName, ...playbackFacts(message.guildId) }) + "\n\n" + CONFIRMATION_MODE;
   const aiText = await withTimeout(runAIAskFresh(message.author.id, opts.summary, sysPrompt, { maxTokens: 48, temperature: 1.0 }), AI_CONFIRM_TIMEOUT);
   const text = aiText ? normalizeConfirmation(aiText) || fallbackPhrase(opts.poolKey, opts.poolVars) : fallbackPhrase(opts.poolKey, opts.poolVars);
   return message.channel.send({ embeds: [new EmbedBuilder().setDescription(text).setColor(opts.color ?? Colors.SUCCESS)] });
@@ -199,26 +214,30 @@ export function start(client: any): void {
             if (!player) return message.channel.send({ embeds: [ErrorEmbed.build("No track playing.")] });
             const nextTrack = await MusicService.skip(guildId, message.author.id, name);
             if (nextTrack) return message.channel.send({ embeds: [NowPlayingEmbed.build(nextTrack, null)] });
-            return confirmReply(message, { summary: "Queue is empty after skip.", poolKey: "queueEmpty" });
+            return confirmReply(message, { summary: "Skipped — queue is empty.", poolKey: "queueEmpty" });
           }
           case "stop": {
             const engine = MusicService.getEngine(guildId);
             if (!engine.player) return message.channel.send({ embeds: [ErrorEmbed.build("Nothing to stop.")] });
             markStopDisconnect(guildId);
             await MusicService.stop(guildId, message.author.id, name);
-            return confirmReply(message, { summary: "Playback stopped.", poolKey: "stopped" });
+            return confirmReply(message, { summary: "Stopped the music.", poolKey: "stopped" });
           }
           case "pause": {
-            if (!MusicService.getEngine(guildId).player) return message.channel.send({ embeds: [ErrorEmbed.build("No track playing.")] });
+            const player = MusicService.getEngine(guildId).player;
+            if (!player) return message.channel.send({ embeds: [ErrorEmbed.build("No track playing.")] });
+            if (player.paused) return confirmReply(message, { summary: "Already paused.", poolKey: "alreadyPaused" });
             const paused = await MusicService.pause(guildId, message.author.id, name);
             if (!paused) return message.channel.send({ embeds: [ErrorEmbed.build("Failed to pause.")] });
-            return confirmReply(message, { summary: "Playback paused.", poolKey: "paused" });
+            return confirmReply(message, { summary: "Paused the music.", poolKey: "paused" });
           }
           case "resume": {
-            if (!MusicService.getEngine(guildId).player) return message.channel.send({ embeds: [ErrorEmbed.build("No track playing.")] });
+            const player = MusicService.getEngine(guildId).player;
+            if (!player) return message.channel.send({ embeds: [ErrorEmbed.build("No track playing.")] });
+            if (!player.paused && player.playing) return confirmReply(message, { summary: "Already playing.", poolKey: "alreadyPlaying" });
             const resumed = await MusicService.resume(guildId, message.author.id, name);
-            if (!resumed) return message.channel.send({ embeds: [ErrorEmbed.build("Failed to resume.")] });
-            return confirmReply(message, { summary: "Playback resumed.", poolKey: "resumed" });
+            if (!resumed) return confirmReply(message, { summary: "Nothing is paused.", poolKey: "nothingToResume" });
+            return confirmReply(message, { summary: "Resumed the music.", poolKey: "resumed" });
           }
           case "autoplay": {
             const newState = !state.autoplay.get(guildId);
@@ -312,7 +331,7 @@ export function start(client: any): void {
             const player = MusicService.getEngine(guildId).player;
             if (!player) return message.channel.send({ embeds: [new EmbedBuilder().setDescription("No track playing.").setColor(Colors.INFO)] });
             const vol = player.volume ?? 80;
-            return confirmReply(message, { summary: `Volume is ${vol}%.`, poolKey: "volume", poolVars: { vol } });
+            return confirmReply(message, { summary: `Volume set to ${vol}%.`, poolKey: "volume", poolVars: { vol } });
           }
           case "help":
             return message.channel.send({
@@ -344,8 +363,8 @@ export function start(client: any): void {
         const sysPrompt = buildPersona({
           userName,
           guildName: message.guild?.name,
-          nowPlaying: state.nowPlaying.get(message.guildId)?.info?.title,
           prefix,
+          ...playbackFacts(message.guildId),
         }) + "\nTo change prefix, reply with: PREFIX: <new prefix> (e.g., \"PREFIX: !\") — I will execute it.";
         reply = await runAIAsk(message.author.id, prompt, sysPrompt);
       }
