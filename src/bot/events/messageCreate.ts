@@ -102,7 +102,9 @@ export function start(client: any): void {
     if (!isAI) return;
 
     const MAX_AI_LENGTH = 1500;
-    const prompt = (isMention ? text : text.slice(trigger.length).trim()).slice(0, MAX_AI_LENGTH);
+    let prompt = text;
+    if (!isMention && text.toLowerCase().startsWith(trigger)) prompt = text.slice(trigger.length);
+    prompt = prompt.trim().slice(0, MAX_AI_LENGTH);
     if (!prompt) return;
 
     // Check filter

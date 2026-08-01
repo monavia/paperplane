@@ -6,6 +6,12 @@
 
 - **Problem (log user)** — (1) konfirmasi "pause" membalas dengan teks dari interaksi SEBELUMNYA: *"The user said 'stio' which was a typo for 'stop'... Now the system is saying..."*. Root cause: `AIEngine.ask()` menulis SEMUA percakapan (termasuk konfirmasi) ke `ConversationMemory` yang **persisten di DB** (Mongo/Prisma) — lalu `PromptBuilder` menyuntik 10 entri terakhir ke setiap ask berikutnya → teks lama ikut "nyangkut" di balasan baru. (2) summary prompt naratif ("The user paused the music playback.") bikin model meniru gaya narasi.
 - **Fix** — jalur baru `AIEngine.askFresh()` + `AITaskQueue.runAIAskFresh()` (`ai:ask-fresh`): pesan murni [system, user], **tanpa baca & tanpa tulis memory** — konfirmasi tidak lagi menodai riwayat percakapan maupun tercemar riwayat lama. `confirmReply` beralih ke `askFresh`. Summary di-rewrite ke bentuk terse non-naratif ("Playback paused.", "Queued 3 tracks, first: \"...\"", "Loop mode: track."). `CONFIRMATION_MODE` + larangan narasi eksplisit ("Never narrate — no 'The user…', 'The system…'"). maxTokens 48 tetap.
+
+### Reply-to-Bot — Prompt Terpotong Karakter Trigger (AI "Tidak Tau" Ada Lagu Diputar)
+
+- **Problem (log user, reply "resume")** — balas reply ke bot: "resume" → AI jawab "Eh, ada apa? 😄", "resume lagu" → "Lagu apa yang mau diputar? 😄". Root cause: `messageCreate.ts` lama memotong `text.slice(trigger.length)` dari SEMUA pesan non-mention — termasuk reply-to-bot yang tidak ber-awalan trigger. "resume" (trigger "seryn" = 5 char) → "e" → jatuh ke jalur chat → AI bingung.
+- **Fix** — trigger hanya di-strip bila pesan benar-benar diawali trigger (`text.toLowerCase().startsWith(trigger)`); reply/mention dipakai utuh.
+- **Tests** — `messageCreate.test.ts` +2: reply "resume" → prompt utuh "resume"; "mona resume" → trigger tetap di-strip → "resume". **497/497 pass**, typecheck clean.
 - **Cleanup** — `scripts/scrub-confirmation-memory.ts` (one-off): hapus row Conversation yang tercemar (user-row pola summary konfirmasi + assistant-row pola narasi "The user said/The system/Now I need…"). Jalankan di VPS: `npx tsx scripts/scrub-confirmation-memory.ts` — tanpa ini, 10 interaksi pertama user terdampak masih membaca riwayat kotor.
 - **Tests** — `messageCreate.test.ts`: assert jalur konfirmasi pakai `runAIAskFresh` dan `runAIAsk` (jalur memory) **tidak** terpanggil; multi-line reply hanya baris pertama; fallback pool; playlist context. **495/495 pass**, typecheck clean.
 

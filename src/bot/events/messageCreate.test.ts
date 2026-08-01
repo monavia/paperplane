@@ -246,6 +246,27 @@ describe("messageCreate", () => {
     assert.strictEqual(mockRunAIInterpret.mock.calls.length, 0);
   });
 
+  test("reply to bot keeps full prompt (no trigger-chopping)", async () => {
+    mockRunAIInterpret.mockResolvedValue({ type: "chat", reply: "Lanjut!" });
+    const msg = makeMessage({
+      type: 18,
+      reference: { messageId: "m1" },
+      referencedMessage: { author: { id: "12345" } },
+      content: "resume",
+    });
+    await handler(msg);
+    assert.strictEqual(mockRunAIInterpret.mock.calls.length, 1);
+    assert.strictEqual(mockRunAIInterpret.mock.calls[0][1], "resume");
+  });
+
+  test("trigger word still stripped from prompt", async () => {
+    mockRunAIInterpret.mockResolvedValue({ type: "chat", reply: "Lanjut!" });
+    const msg = makeMessage({ content: "mona resume" });
+    await handler(msg);
+    assert.strictEqual(mockRunAIInterpret.mock.calls.length, 1);
+    assert.strictEqual(mockRunAIInterpret.mock.calls[0][1], "resume");
+  });
+
   function makeVoiceMsg(overrides: any = {}) {
     return makeMessage({ member: { displayName: "User", voice: { channel: { id: "vc1", rtcRegion: null } } }, ...overrides });
   }
