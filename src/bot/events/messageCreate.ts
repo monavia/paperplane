@@ -1,10 +1,10 @@
 import { EmbedBuilder, MessageType } from "discord.js";
 import Config from "../config/bot.js";
-import { runAIAsk, runAIInterpret } from "../ai/services/AITaskQueue.js";
+import { runAIAsk, runAIAskFresh, runAIInterpret } from "../ai/services/AITaskQueue.js";
 import { checkPrompt } from "../ai/services/PromptFilter.js";
 import MemoryService from "../ai/services/MemoryService.js";
 import { buildPersona } from "../ai/config/persona.js";
-import { CONFIRMATION_MODE, fallbackPhrase, withTimeout } from "../ai/config/confirmationPrompts.js";
+import { CONFIRMATION_MODE, fallbackPhrase, normalizeConfirmation, withTimeout } from "../ai/config/confirmationPrompts.js";
 import Logger from "../core/utils/Logger.js";
 import { incCommandsExecuted, observeCommandLatency } from "../telemetry/MetricsCollector.js";
 import Colors from "../core/constants/Colors.js";
@@ -32,8 +32,8 @@ async function confirmReply(message: any, opts: { summary: string; poolKey: stri
   await message.channel.sendTyping().catch(Logger.safe("bot/events/messageCreate.ts"));
   const userName = message.member?.displayName || message.author.username;
   const sysPrompt = buildPersona({ userName, nowPlaying: state.nowPlaying.get(message.guildId)?.info?.title }) + "\n\n" + CONFIRMATION_MODE;
-  const aiText = await withTimeout(runAIAsk(message.author.id, opts.summary, sysPrompt, { maxTokens: 80, temperature: 1.0 }), AI_CONFIRM_TIMEOUT);
-  const text = aiText?.trim() ? aiText.trim() : fallbackPhrase(opts.poolKey, opts.poolVars);
+  const aiText = await withTimeout(runAIAskFresh(message.author.id, opts.summary, sysPrompt, { maxTokens: 48, temperature: 1.0 }), AI_CONFIRM_TIMEOUT);
+  const text = aiText ? normalizeConfirmation(aiText) || fallbackPhrase(opts.poolKey, opts.poolVars) : fallbackPhrase(opts.poolKey, opts.poolVars);
   return message.channel.send({ embeds: [new EmbedBuilder().setDescription(text).setColor(opts.color ?? Colors.SUCCESS)] });
 }
 
@@ -166,7 +166,7 @@ export function start(client: any): void {
           if (queries.length > 1) {
             const firstTitle = firstTrack?.info?.title;
             return confirmReply(message, {
-              summary: `User queued ${queries.length} tracks from their request${firstTitle ? `. First track: "${firstTitle}"` : ""}.`,
+              summary: `Queued ${queries.length} tracks${firstTitle ? `, first: "${firstTitle}"` : ""}.`,
               poolKey: "queued",
               poolVars: { n: queries.length },
             });
@@ -197,31 +197,31 @@ export function start(client: any): void {
             if (!player) return message.channel.send({ embeds: [ErrorEmbed.build("No track playing.")] });
             const nextTrack = await MusicService.skip(guildId, message.author.id, name);
             if (nextTrack) return message.channel.send({ embeds: [NowPlayingEmbed.build(nextTrack, null)] });
-            return confirmReply(message, { summary: "The user skipped; the queue is now empty.", poolKey: "queueEmpty" });
+            return confirmReply(message, { summary: "Queue is empty after skip.", poolKey: "queueEmpty" });
           }
           case "stop": {
             const engine = MusicService.getEngine(guildId);
             if (!engine.player) return message.channel.send({ embeds: [ErrorEmbed.build("Nothing to stop.")] });
             markStopDisconnect(guildId);
             await MusicService.stop(guildId, message.author.id, name);
-            return confirmReply(message, { summary: "The user stopped the music playback.", poolKey: "stopped" });
+            return confirmReply(message, { summary: "Playback stopped.", poolKey: "stopped" });
           }
           case "pause": {
             if (!MusicService.getEngine(guildId).player) return message.channel.send({ embeds: [ErrorEmbed.build("No track playing.")] });
             const paused = await MusicService.pause(guildId, message.author.id, name);
             if (!paused) return message.channel.send({ embeds: [ErrorEmbed.build("Failed to pause.")] });
-            return confirmReply(message, { summary: "The user paused the music playback.", poolKey: "paused" });
+            return confirmReply(message, { summary: "Playback paused.", poolKey: "paused" });
           }
           case "resume": {
             if (!MusicService.getEngine(guildId).player) return message.channel.send({ embeds: [ErrorEmbed.build("No track playing.")] });
             const resumed = await MusicService.resume(guildId, message.author.id, name);
             if (!resumed) return message.channel.send({ embeds: [ErrorEmbed.build("Failed to resume.")] });
-            return confirmReply(message, { summary: "The user resumed the music playback.", poolKey: "resumed" });
+            return confirmReply(message, { summary: "Playback resumed.", poolKey: "resumed" });
           }
           case "autoplay": {
             const newState = !state.autoplay.get(guildId);
             state.autoplay.set(guildId, newState);
-            return confirmReply(message, { summary: `The user turned autoplay ${newState ? "on" : "off"}.`, poolKey: newState ? "autoplayOn" : "autoplayOff" });
+            return confirmReply(message, { summary: `Autoplay ${newState ? "on" : "off"}.`, poolKey: newState ? "autoplayOn" : "autoplayOff" });
           }
           case "shuffle": {
             const newState = !state.shuffle.get(guildId);
@@ -236,7 +236,7 @@ export function start(client: any): void {
                 state.queues.set(guildId, tracks);
               }
             }
-            return confirmReply(message, { summary: `The user turned shuffle ${newState ? "on" : "off"}.`, poolKey: newState ? "shuffleOn" : "shuffleOff" });
+            return confirmReply(message, { summary: `Shuffle ${newState ? "on" : "off"}.`, poolKey: newState ? "shuffleOn" : "shuffleOff" });
           }
           case "loop": {
             const modes = ["off", "track", "playlist"] as const;
@@ -244,20 +244,20 @@ export function start(client: any): void {
             const idx = modes.indexOf(cur);
             const next = modes[(idx + 1) % modes.length];
             state.loop.set(guildId, next);
-            return confirmReply(message, { summary: `The user set the loop mode to ${next}.`, poolKey: "loop", poolVars: { mode: next } });
+            return confirmReply(message, { summary: `Loop mode: ${next}.`, poolKey: "loop", poolVars: { mode: next } });
           }
           case "247": {
             const newState = !state.twentyFourSeven.isEnabled(guildId);
             state.twentyFourSeven.set(guildId, newState);
-            return confirmReply(message, { summary: `The user turned 24/7 mode ${newState ? "on" : "off"}.`, poolKey: newState ? "stayOn" : "stayOff" });
+            return confirmReply(message, { summary: `24/7 mode ${newState ? "on" : "off"}.`, poolKey: newState ? "stayOn" : "stayOff" });
           }
           case "clear": {
             state.queues.clear(guildId);
-            return confirmReply(message, { summary: "The user cleared the queue.", poolKey: "cleared" });
+            return confirmReply(message, { summary: "Queue cleared.", poolKey: "cleared" });
           }
           case "recommend": {
             state.autoplay.set(guildId, true);
-            return confirmReply(message, { summary: "The user enabled recommendations via autoplay.", poolKey: "recommend" });
+            return confirmReply(message, { summary: "Recommendations enabled (autoplay).", poolKey: "recommend" });
           }
           case "correct_playlist": {
             const keyword = interpreted.keyword;
@@ -297,20 +297,20 @@ export function start(client: any): void {
           }
           case "queue": {
             const tracks = getQueue(guildId);
-            if (!tracks?.length) return confirmReply(message, { summary: "The user asked for the queue, but it is empty.", poolKey: "queueEmpty" });
+            if (!tracks?.length) return confirmReply(message, { summary: "Queue is empty.", poolKey: "queueEmpty" });
             const { embed } = buildQueueEmbed(tracks, 1);
             return message.channel.send({ embeds: [embed] });
           }
           case "nowplaying": {
             const nowPlaying = state.nowPlaying.get(guildId);
-            if (!nowPlaying) return confirmReply(message, { summary: "The user asked what is playing, but nothing is playing.", poolKey: "nothingPlaying" });
+            if (!nowPlaying) return confirmReply(message, { summary: "Nothing is playing.", poolKey: "nothingPlaying" });
             return message.channel.send({ embeds: [NowPlayingEmbed.build(nowPlaying, null)] });
           }
           case "volume": {
             const player = MusicService.getEngine(guildId).player;
             if (!player) return message.channel.send({ embeds: [new EmbedBuilder().setDescription("No track playing.").setColor(Colors.INFO)] });
             const vol = player.volume ?? 80;
-            return confirmReply(message, { summary: `The user checked the volume (currently ${vol}%).`, poolKey: "volume", poolVars: { vol } });
+            return confirmReply(message, { summary: `Volume is ${vol}%.`, poolKey: "volume", poolVars: { vol } });
           }
           case "help":
             return message.channel.send({

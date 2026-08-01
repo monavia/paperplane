@@ -10,6 +10,8 @@ let aiQueue: TaskQueue | null = null;
 let interpretImpl: (userId: string, input: string) => Promise<any> = (userId, input) => new AIDJInstance().interpret(userId, input);
 let askImpl: (userId: string, input: string, sysPrompt: string, opts?: any) => Promise<any> =
   (userId, input, sysPrompt, opts) => AIEngine.ask(userId, input, sysPrompt, opts);
+let askFreshImpl: (userId: string, input: string, sysPrompt: string, opts?: any) => Promise<any> =
+  (userId, input, sysPrompt, opts) => AIEngine.askFresh(userId, input, sysPrompt, opts);
 
 function getAIQueue(): TaskQueue {
   if (!aiQueue) {
@@ -21,6 +23,7 @@ function getAIQueue(): TaskQueue {
     aiQueue.setProcessor(async (task: any) => {
       if (task.type === 'ai:interpret') return await interpretImpl(task.data.userId, task.data.input);
       if (task.type === 'ai:ask') return await askImpl(task.data.userId, task.data.input, task.data.sysPrompt, task.data.opts);
+      if (task.type === 'ai:ask-fresh') return await askFreshImpl(task.data.userId, task.data.input, task.data.sysPrompt, task.data.opts);
       throw new Error(`Unknown AI task type: ${task.type}`);
     });
     aiQueue.on('task:failed', (t: any) =>
@@ -57,5 +60,14 @@ export async function runAIAsk(userId: string, input: string, sysPrompt: string,
   } catch (err) {
     Logger.warn(`[AITaskQueue] ask queue failed, direct fallback: ${err}`);
     return await askImpl(userId, input, sysPrompt, opts);
+  }
+}
+
+export async function runAIAskFresh(userId: string, input: string, sysPrompt: string, opts?: any): Promise<any> {
+  try {
+    return await runQueued('ai:ask-fresh', { userId, input, sysPrompt, opts });
+  } catch (err) {
+    Logger.warn(`[AITaskQueue] ask-fresh queue failed, direct fallback: ${err}`);
+    return await askFreshImpl(userId, input, sysPrompt, opts);
   }
 }

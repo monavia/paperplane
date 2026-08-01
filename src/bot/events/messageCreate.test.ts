@@ -15,8 +15,9 @@ const mockConfigTrigger = "mona";
 vi.mock("../config/bot.js", () => ({ default: { trigger: mockConfigTrigger, token: "", prefix: "-" } }));
 
 const mockRunAIAsk = vi.fn();
+const mockRunAIAskFresh = vi.fn();
 const mockRunAIInterpret = vi.fn();
-vi.mock("../ai/services/AITaskQueue.js", () => ({ runAIAsk: mockRunAIAsk, runAIInterpret: mockRunAIInterpret }));
+vi.mock("../ai/services/AITaskQueue.js", () => ({ runAIAsk: mockRunAIAsk, runAIAskFresh: mockRunAIAskFresh, runAIInterpret: mockRunAIInterpret }));
 
 const mockCheckPrompt = vi.fn();
 vi.mock("../ai/services/PromptFilter.js", () => ({ checkPrompt: mockCheckPrompt }));
@@ -283,23 +284,35 @@ describe("messageCreate", () => {
     assert.strictEqual(desc, "Changed to **Ray**");
   });
 
-  test("pause confirmation is AI-generated", async () => {
+  test("pause confirmation is AI-generated without memory path", async () => {
     mockRunAIInterpret.mockResolvedValue({ type: "pause" });
-    mockRunAIAsk.mockResolvedValue("Dipause dulu ya ⏸️");
+    mockRunAIAskFresh.mockResolvedValue("Dipause dulu ya ⏸️");
     mockGetEngineM.mockReturnValue({ player: { volume: 80 } });
     mockPause.mockResolvedValue(true);
     const msg = makeVoiceMsg({ content: "<@12345> pause" });
     await handler(msg);
-    assert.strictEqual(mockRunAIAsk.mock.calls.length, 1);
-    assert.ok(mockRunAIAsk.mock.calls[0][1].includes("paused"));
-    assert.strictEqual(mockRunAIAsk.mock.calls[0][3].maxTokens, 80);
+    assert.strictEqual(mockRunAIAskFresh.mock.calls.length, 1);
+    assert.strictEqual(mockRunAIAsk.mock.calls.length, 0);
+    assert.ok(mockRunAIAskFresh.mock.calls[0][1].includes("paused"));
+    assert.strictEqual(mockRunAIAskFresh.mock.calls[0][3].maxTokens, 48);
     const desc = (msg.channel.send.mock.calls[0][0].embeds[0] as any).setDescription.mock.calls[0][0];
     assert.strictEqual(desc, "Dipause dulu ya ⏸️");
   });
 
+  test("pause confirmation only uses first line of AI reply", async () => {
+    mockRunAIInterpret.mockResolvedValue({ type: "pause" });
+    mockRunAIAskFresh.mockResolvedValue("Oke deh, santai dulu.\n\nPenjelasan panjang yang tidak boleh ikut terkirim...");
+    mockGetEngineM.mockReturnValue({ player: { volume: 80 } });
+    mockPause.mockResolvedValue(true);
+    const msg = makeVoiceMsg({ content: "<@12345> pause" });
+    await handler(msg);
+    const desc = (msg.channel.send.mock.calls[0][0].embeds[0] as any).setDescription.mock.calls[0][0];
+    assert.strictEqual(desc, "Oke deh, santai dulu.");
+  });
+
   test("pause confirmation falls back to pool phrase when AI fails", async () => {
     mockRunAIInterpret.mockResolvedValue({ type: "pause" });
-    mockRunAIAsk.mockRejectedValue(new Error("timeout"));
+    mockRunAIAskFresh.mockRejectedValue(new Error("timeout"));
     mockGetEngineM.mockReturnValue({ player: { volume: 80 } });
     mockPause.mockResolvedValue(true);
     const msg = makeVoiceMsg({ content: "<@12345> pause" });
@@ -314,11 +327,11 @@ describe("messageCreate", () => {
     const player = makePlayer({ search: vi.fn().mockResolvedValue({ tracks: [{ info: { title: "Lagu A", uri: "https://x/1" } }] }) });
     mockGetLavalink.mockReturnValue({ players: new Map(), createPlayer: vi.fn().mockReturnValue(player) });
     mockGetEngineM.mockReturnValue({ player: null });
-    mockRunAIAsk.mockResolvedValue("2 lagu siap! 🎶");
+    mockRunAIAskFresh.mockResolvedValue("2 lagu siap! 🎶");
     const msg = makeVoiceMsg({ content: "<@12345> kasih saya didi kempot full album" });
     await handler(msg);
-    assert.strictEqual(mockRunAIAsk.mock.calls.length, 1);
-    const summary = mockRunAIAsk.mock.calls[0][1];
+    assert.strictEqual(mockRunAIAskFresh.mock.calls.length, 1);
+    const summary = mockRunAIAskFresh.mock.calls[0][1];
     assert.ok(summary.includes("2 tracks"), `summary missing count: ${summary}`);
     assert.ok(summary.includes("Lagu A"), `summary missing first track: ${summary}`);
     const desc = (msg.channel.send.mock.calls[0][0].embeds[0] as any).setDescription.mock.calls[0][0];

@@ -87,6 +87,16 @@ async ask(userId: any, prompt: any, systemPrompt: any, opts?: { maxTokens?: numb
     return answer;
   }
 
+  async askFresh(userId: any, prompt: any, systemPrompt: any, opts?: { maxTokens?: number; temperature?: number }) {
+    const messages = [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: prompt },
+    ];
+    const response = await this._fetch(messages, false, opts);
+    const data: any = await response.json();
+    return data.choices?.[0]?.message?.content || "No response.";
+  }
+
 async stream(userId: any, prompt: any, onChunk: any) {
     const messages = await PromptBuilder.build(userId, prompt, undefined, this.memory);
 

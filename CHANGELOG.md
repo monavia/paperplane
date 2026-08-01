@@ -1,5 +1,14 @@
 # Changelog — Paperplane
 
+## 2026-08-01 — v3.3.4 (belum dirilis)
+
+### AI Confirmations — Reply Nyangkut Dari Pesan Sebelumnya & Masih Mendikte
+
+- **Problem (log user)** — (1) konfirmasi "pause" membalas dengan teks dari interaksi SEBELUMNYA: *"The user said 'stio' which was a typo for 'stop'... Now the system is saying..."*. Root cause: `AIEngine.ask()` menulis SEMUA percakapan (termasuk konfirmasi) ke `ConversationMemory` yang **persisten di DB** (Mongo/Prisma) — lalu `PromptBuilder` menyuntik 10 entri terakhir ke setiap ask berikutnya → teks lama ikut "nyangkut" di balasan baru. (2) summary prompt naratif ("The user paused the music playback.") bikin model meniru gaya narasi.
+- **Fix** — jalur baru `AIEngine.askFresh()` + `AITaskQueue.runAIAskFresh()` (`ai:ask-fresh`): pesan murni [system, user], **tanpa baca & tanpa tulis memory** — konfirmasi tidak lagi menodai riwayat percakapan maupun tercemar riwayat lama. `confirmReply` beralih ke `askFresh`. Summary di-rewrite ke bentuk terse non-naratif ("Playback paused.", "Queued 3 tracks, first: \"...\"", "Loop mode: track."). `CONFIRMATION_MODE` + larangan narasi eksplisit ("Never narrate — no 'The user…', 'The system…'"). maxTokens 48 tetap.
+- **Cleanup** — `scripts/scrub-confirmation-memory.ts` (one-off): hapus row Conversation yang tercemar (user-row pola summary konfirmasi + assistant-row pola narasi "The user said/The system/Now I need…"). Jalankan di VPS: `npx tsx scripts/scrub-confirmation-memory.ts` — tanpa ini, 10 interaksi pertama user terdampak masih membaca riwayat kotor.
+- **Tests** — `messageCreate.test.ts`: assert jalur konfirmasi pakai `runAIAskFresh` dan `runAIAsk` (jalur memory) **tidak** terpanggil; multi-line reply hanya baris pertama; fallback pool; playlist context. **495/495 pass**, typecheck clean.
+
 ## 2026-08-01 — v3.3.3
 
 ### AI-Driven Confirmations — Bot Terasa Hidup (Alur Chat)
