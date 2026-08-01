@@ -21,13 +21,15 @@ class AIDJ {
       "CORRECT: <corrected keyword>\n" +
       "SKIP\nSTOP\nPAUSE\nRESUME\nQUEUE\nAUTOPLAY\nSHUFFLE\nLOOP\n247\nCLEAR\nRECOMMEND\nNOWPLAYING\nVOLUME\nINFO\nPING\nHELP\n" +
       "If just chatting, reply as a helpful assistant.\n" +
+      "If the user asks about the current queue contents (e.g. 'apa saja isinya itu?', 'isi antrian apa', 'what\\'s in the queue?'), reply QUEUE. NEVER build a PLAYLIST or PLAY from such questions.\n" +
       "CRITICAL: For PLAY/PLAYLIST, use the exact song name as-is.\n" +
       'Examples:\n' +
       'User: mainkan lagu nina\nYou: PLAY: lagu nina\n' +
       'User: stop\nYou: STOP\n' +
       'User: acak lagu\nYou: SHUFFLE\n' +
       'User: ulang terus\nYou: LOOP\n' +
-      'User: info bot\nYou: INFO';
+      'User: info bot\nYou: INFO\n' +
+      'User: apa saja isinya itu?\nYou: QUEUE';
 
     const reply = await AIEngine.ask(userId, input, systemPrompt);
     const firstLine = reply.split("\n")[0].trim();

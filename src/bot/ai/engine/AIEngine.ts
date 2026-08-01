@@ -37,12 +37,12 @@ isReady() {
     this.memory.clear(userId);
   }
 
-  private async _fetch(messages: any[], stream?: boolean): Promise<Response> {
+  private async _fetch(messages: any[], stream?: boolean, opts?: { maxTokens?: number; temperature?: number }): Promise<Response> {
     const body: any = {
       model: aiConfig.model,
       messages,
-      temperature: aiConfig.temperature,
-      max_tokens: aiConfig.maxTokens,
+      temperature: opts?.temperature ?? aiConfig.temperature,
+      max_tokens: opts?.maxTokens ?? aiConfig.maxTokens,
     };
     if (stream) body.stream = true;
 
@@ -71,7 +71,7 @@ isReady() {
     }
   }
 
-async ask(userId: any, prompt: any, systemPrompt: any) {
+async ask(userId: any, prompt: any, systemPrompt: any, opts?: { maxTokens?: number; temperature?: number }) {
     const messages = await PromptBuilder.build(userId, prompt, systemPrompt, this.memory);
 
     if (needsSearch(prompt)) {
@@ -80,7 +80,7 @@ async ask(userId: any, prompt: any, systemPrompt: any) {
       messages.unshift({ role: "system", content: `Web search results for "${prompt}":\n${searchResult}\n\nAnswer the user's question based on these results. If the results are empty or irrelevant, apologize and say you couldn't find the information.` });
     }
 
-    const response = await this._fetch(messages);
+    const response = await this._fetch(messages, false, opts);
     const data: any = await response.json();
     const answer = data.choices?.[0]?.message?.content || "No response.";
     this.memory.add(userId, prompt, answer);

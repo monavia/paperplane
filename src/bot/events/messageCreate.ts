@@ -4,6 +4,7 @@ import { runAIAsk, runAIInterpret } from "../ai/services/AITaskQueue.js";
 import { checkPrompt } from "../ai/services/PromptFilter.js";
 import MemoryService from "../ai/services/MemoryService.js";
 import { buildPersona } from "../ai/config/persona.js";
+import { CONFIRMATION_MODE, fallbackPhrase, withTimeout } from "../ai/config/confirmationPrompts.js";
 import Logger from "../core/utils/Logger.js";
 import { incCommandsExecuted, observeCommandLatency } from "../telemetry/MetricsCollector.js";
 import Colors from "../core/constants/Colors.js";
@@ -24,6 +25,17 @@ import * as NowPlayingEmbed from "../ui/embeds/NowPlayingEmbed.js";
 import { build as buildQueueEmbed } from "../ui/embeds/QueueEmbed.js";
 import CooldownManager from "../core/utils/CooldownManager.js";
 import { classifyError } from "../core/errors/ErrorClassifier.js";
+
+const AI_CONFIRM_TIMEOUT = parseInt(process.env.AI_CONFIRM_TIMEOUT || "4000", 10);
+
+async function confirmReply(message: any, opts: { summary: string; poolKey: string; poolVars?: Record<string, string | number>; color?: number }): Promise<void> {
+  await message.channel.sendTyping().catch(Logger.safe("bot/events/messageCreate.ts"));
+  const userName = message.member?.displayName || message.author.username;
+  const sysPrompt = buildPersona({ userName, nowPlaying: state.nowPlaying.get(message.guildId)?.info?.title }) + "\n\n" + CONFIRMATION_MODE;
+  const aiText = await withTimeout(runAIAsk(message.author.id, opts.summary, sysPrompt, { maxTokens: 80, temperature: 1.0 }), AI_CONFIRM_TIMEOUT);
+  const text = aiText?.trim() ? aiText.trim() : fallbackPhrase(opts.poolKey, opts.poolVars);
+  return message.channel.send({ embeds: [new EmbedBuilder().setDescription(text).setColor(opts.color ?? Colors.SUCCESS)] });
+}
 
 export function start(client: any): void {
   client.on("messageCreate", async (message: any) => {
@@ -151,7 +163,15 @@ export function start(client: any): void {
               });
             }
           }
-          return message.channel.send({ embeds: [queries.length > 1 ? new EmbedBuilder().setDescription(`Queued ${queries.length} tracks.`).setColor(Colors.SUCCESS) : NowPlayingEmbed.build(firstTrack, null)] });
+          if (queries.length > 1) {
+            const firstTitle = firstTrack?.info?.title;
+            return confirmReply(message, {
+              summary: `User queued ${queries.length} tracks from their request${firstTitle ? `. First track: "${firstTitle}"` : ""}.`,
+              poolKey: "queued",
+              poolVars: { n: queries.length },
+            });
+          }
+          return message.channel.send({ embeds: [NowPlayingEmbed.build(firstTrack, null)] });
         }
 
         if (interpreted.type === "info") {
@@ -177,31 +197,31 @@ export function start(client: any): void {
             if (!player) return message.channel.send({ embeds: [ErrorEmbed.build("No track playing.")] });
             const nextTrack = await MusicService.skip(guildId, message.author.id, name);
             if (nextTrack) return message.channel.send({ embeds: [NowPlayingEmbed.build(nextTrack, null)] });
-            return message.channel.send({ embeds: [new EmbedBuilder().setDescription("Queue empty.").setColor(Colors.INFO)] });
+            return confirmReply(message, { summary: "The user skipped; the queue is now empty.", poolKey: "queueEmpty" });
           }
           case "stop": {
             const engine = MusicService.getEngine(guildId);
             if (!engine.player) return message.channel.send({ embeds: [ErrorEmbed.build("Nothing to stop.")] });
             markStopDisconnect(guildId);
             await MusicService.stop(guildId, message.author.id, name);
-            return message.channel.send({ embeds: [new EmbedBuilder().setDescription("Playback stopped.").setColor(Colors.INFO)] });
+            return confirmReply(message, { summary: "The user stopped the music playback.", poolKey: "stopped" });
           }
           case "pause": {
             if (!MusicService.getEngine(guildId).player) return message.channel.send({ embeds: [ErrorEmbed.build("No track playing.")] });
             const paused = await MusicService.pause(guildId, message.author.id, name);
             if (!paused) return message.channel.send({ embeds: [ErrorEmbed.build("Failed to pause.")] });
-            return message.channel.send({ embeds: [new EmbedBuilder().setDescription("Playback paused.").setColor(Colors.SUCCESS)] });
+            return confirmReply(message, { summary: "The user paused the music playback.", poolKey: "paused" });
           }
           case "resume": {
             if (!MusicService.getEngine(guildId).player) return message.channel.send({ embeds: [ErrorEmbed.build("No track playing.")] });
             const resumed = await MusicService.resume(guildId, message.author.id, name);
             if (!resumed) return message.channel.send({ embeds: [ErrorEmbed.build("Failed to resume.")] });
-            return message.channel.send({ embeds: [new EmbedBuilder().setDescription("Playback resumed.").setColor(Colors.SUCCESS)] });
+            return confirmReply(message, { summary: "The user resumed the music playback.", poolKey: "resumed" });
           }
           case "autoplay": {
             const newState = !state.autoplay.get(guildId);
             state.autoplay.set(guildId, newState);
-            return message.channel.send({ embeds: [new EmbedBuilder().setDescription(`Autoplay **${newState ? "ON" : "OFF"}**`).setColor(newState ? Colors.SUCCESS : Colors.INFO)] });
+            return confirmReply(message, { summary: `The user turned autoplay ${newState ? "on" : "off"}.`, poolKey: newState ? "autoplayOn" : "autoplayOff" });
           }
           case "shuffle": {
             const newState = !state.shuffle.get(guildId);
@@ -216,7 +236,7 @@ export function start(client: any): void {
                 state.queues.set(guildId, tracks);
               }
             }
-            return message.channel.send({ embeds: [new EmbedBuilder().setDescription(`Shuffle **${newState ? "ON" : "OFF"}**`).setColor(newState ? Colors.SUCCESS : Colors.INFO)] });
+            return confirmReply(message, { summary: `The user turned shuffle ${newState ? "on" : "off"}.`, poolKey: newState ? "shuffleOn" : "shuffleOff" });
           }
           case "loop": {
             const modes = ["off", "track", "playlist"] as const;
@@ -224,20 +244,20 @@ export function start(client: any): void {
             const idx = modes.indexOf(cur);
             const next = modes[(idx + 1) % modes.length];
             state.loop.set(guildId, next);
-            return message.channel.send({ embeds: [new EmbedBuilder().setDescription(`Loop: **${next}**`).setColor(Colors.INFO)] });
+            return confirmReply(message, { summary: `The user set the loop mode to ${next}.`, poolKey: "loop", poolVars: { mode: next } });
           }
           case "247": {
             const newState = !state.twentyFourSeven.isEnabled(guildId);
             state.twentyFourSeven.set(guildId, newState);
-            return message.channel.send({ embeds: [new EmbedBuilder().setDescription(`24/7 mode **${newState ? "ON" : "OFF"}**`).setColor(newState ? Colors.SUCCESS : Colors.INFO)] });
+            return confirmReply(message, { summary: `The user turned 24/7 mode ${newState ? "on" : "off"}.`, poolKey: newState ? "stayOn" : "stayOff" });
           }
           case "clear": {
             state.queues.clear(guildId);
-            return message.channel.send({ embeds: [new EmbedBuilder().setDescription("Queue cleared.").setColor(Colors.SUCCESS)] });
+            return confirmReply(message, { summary: "The user cleared the queue.", poolKey: "cleared" });
           }
           case "recommend": {
             state.autoplay.set(guildId, true);
-            return message.channel.send({ embeds: [new EmbedBuilder().setDescription("Autoplay enabled — recommendations will play when queue ends.").setColor(Colors.INFO)] });
+            return confirmReply(message, { summary: "The user enabled recommendations via autoplay.", poolKey: "recommend" });
           }
           case "correct_playlist": {
             const keyword = interpreted.keyword;
@@ -271,24 +291,26 @@ export function start(client: any): void {
                 await saveState(guildId);
               });
             }
-            return message.channel.send({ embeds: [new EmbedBuilder().setDescription(`Changed to **${track.info?.title || keyword}**`).setColor(Colors.SUCCESS)] });
+            const cTitle = track.info?.title || keyword;
+            const cUrl = (track.info as any)?.originalUrl || track.info?.uri || "";
+            return message.channel.send({ embeds: [new EmbedBuilder().setDescription(cUrl ? `Changed to [${cTitle}](${cUrl})` : `Changed to **${cTitle}**`).setColor(Colors.SUCCESS)] });
           }
           case "queue": {
             const tracks = getQueue(guildId);
-            if (!tracks?.length) return message.channel.send({ embeds: [new EmbedBuilder().setDescription("Queue is empty.").setColor(Colors.INFO)] });
+            if (!tracks?.length) return confirmReply(message, { summary: "The user asked for the queue, but it is empty.", poolKey: "queueEmpty" });
             const { embed } = buildQueueEmbed(tracks, 1);
             return message.channel.send({ embeds: [embed] });
           }
           case "nowplaying": {
             const nowPlaying = state.nowPlaying.get(guildId);
-            if (!nowPlaying) return message.channel.send({ embeds: [new EmbedBuilder().setDescription("Nothing is playing right now.").setColor(Colors.INFO)] });
+            if (!nowPlaying) return confirmReply(message, { summary: "The user asked what is playing, but nothing is playing.", poolKey: "nothingPlaying" });
             return message.channel.send({ embeds: [NowPlayingEmbed.build(nowPlaying, null)] });
           }
           case "volume": {
             const player = MusicService.getEngine(guildId).player;
             if (!player) return message.channel.send({ embeds: [new EmbedBuilder().setDescription("No track playing.").setColor(Colors.INFO)] });
             const vol = player.volume ?? 80;
-            return message.channel.send({ embeds: [new EmbedBuilder().setDescription(`Current volume: **${vol}%**`).setColor(Colors.INFO)] });
+            return confirmReply(message, { summary: `The user checked the volume (currently ${vol}%).`, poolKey: "volume", poolVars: { vol } });
           }
           case "help":
             return message.channel.send({

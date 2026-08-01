@@ -1,5 +1,25 @@
 # Changelog — Paperplane
 
+## 2026-08-01 — v3.3.3
+
+### AI-Driven Confirmations — Bot Terasa Hidup (Alur Chat)
+
+- **Problem (log user)** — balasan template alur AI kaku & robotik: "Queued 8 tracks.", "Playback paused.", "Queue empty." — monoton, beda-beda tipis.
+- **Fix** — `messageCreate.ts`: semua konfirmasi alur AI (playlist queued, pause, resume, stop, clear, shuffle, loop, autoplay, 247, recommend, queue-kosong, nothing-playing, volume) kini di-generate LLM: aksi tetap dieksekusi instan → typing indicator → `runAIAsk` dengan `CONFIRMATION_MODE` (1 kalimat pendek, bahasa user, variatif, tanpa echo nama command) + konteks aksi (jumlah track, judul lagu pertama, nama user) → teks AI jadi description embed. Race timeout `AI_CONFIRM_TIMEOUT` (default 4s, env-configurable) → kalau AI telat/gagal, fallback ke frasa hangat random dari pool (`confirmationPrompts.ts`, 3 varian per aksi). `AIEngine.ask` & `AITaskQueue.runAIAsk` kini menerima override `maxTokens` (~80) & `temperature` (1.0) khusus konfirmasi — murah & cepat. Error embeds, NowPlayingEmbed, prefix/slash command embeds, dan scrapper Spotify **tidak tersentuh** — AI hanya menyentuh lapisan teks konfirmasi terakhir.
+
+### Queue Follow-Up — "apa saja isinya itu?" Tidak Lagi Nge-Queue Ulang
+
+- **Problem (log user)** — "apa saja isinya itu?" (maksud: lihat isi antrian) malah nge-queue 15 lagu lagi. Regex `CommandInterpreter` hanya match `queue|q|antrian|lagu apa` → frasa follow-up jatuh ke LLM → LLM menghalusinasi `PLAYLIST:`.
+- **Fix** — `CommandInterpreter.ts`: regex queue diperluas (anchored awal): `isinya apa|apa isinya|apa saja isinya|isi (antrian|queue)|daftar (lagu|antrian|queue)|list (lagu|queue)|lihat (antrian|queue)` → langsung `{ type: "queue" }` tanpa LLM. Aman: "mainkan apa saja" tetap `play`, "halo apa saja" tetap `chat`. `AIDJ.ts` systemPrompt: guardrail — pertanyaan isi antrian → `QUEUE`, JANGAN pernah bikin PLAYLIST/PLAY dari pertanyaan seperti itu (+ contoh).
+
+### Changed-to Embed — Judul Jadi Link Clickable
+
+- `messageCreate.ts` case `correct_playlist`: description kini `Changed to [judul](url)` (ambil `originalUrl || uri`), fallback `**judul**` saat URL kosong.
+
+### Tests
+
+- `messageCreate.test.ts` +5: changed-to link & fallback bold, pause AI-generated (cek summary + maxTokens override), pause fallback pool saat AI gagal, playlist AI dengan konteks track count + judul pertama. Mock `EmbedBuilder` di-upgrade ke class-style (vitest 4 menolak `mockReturnValue` + `new`). `CommandInterpreter.test.ts` +3 (7 frasa follow-up → queue, regresi play/chat), `AIDJ.test.ts` +1 (guardrail ada di systemPrompt). **494/494 pass**, typecheck clean.
+
 ## 2026-08-01 — v3.3.2
 
 ### Autoplay — Dedupe Cross-Script (Romaji/Kana/Kanji & Misspelling)

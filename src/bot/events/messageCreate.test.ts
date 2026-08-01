@@ -1,11 +1,13 @@
 import { describe, test, vi, beforeEach } from "vitest";
 import assert from "node:assert";
 
-const mockEmbedBuilder = vi.fn().mockReturnValue({
-  setDescription: vi.fn().mockReturnThis(),
-  setColor: vi.fn().mockReturnThis(),
-  setTitle: vi.fn().mockReturnThis(),
-  setAuthor: vi.fn().mockReturnThis(),
+const mockEmbedBuilder = vi.fn(function () {
+  return {
+    setDescription: vi.fn().mockReturnThis(),
+    setColor: vi.fn().mockReturnThis(),
+    setTitle: vi.fn().mockReturnThis(),
+    setAuthor: vi.fn().mockReturnThis(),
+  };
 });
 vi.mock("discord.js", () => ({ EmbedBuilder: mockEmbedBuilder, MessageType: { Reply: 18 } }));
 
@@ -46,16 +48,21 @@ vi.mock("../database/repositories/GuildRepository.js", () => ({ getPrefix: mockG
 
 const mockIsLavalinkReady = vi.fn();
 const mockGetEngineM = vi.fn();
+const mockSkip = vi.fn();
+const mockStop = vi.fn();
+const mockPause = vi.fn();
+const mockResume = vi.fn();
 vi.mock("../music/services/MusicService.js", () => ({
   isLavalinkReady: mockIsLavalinkReady,
   getEngine: mockGetEngineM,
-  skip: vi.fn(),
-  stop: vi.fn(),
-  pause: vi.fn(),
-  resume: vi.fn(),
+  skip: mockSkip,
+  stop: mockStop,
+  pause: mockPause,
+  resume: mockResume,
 }));
 
-vi.mock("../music/services/QueueService.js", () => ({ getQueue: vi.fn() }));
+const mockGetQueue = vi.fn();
+vi.mock("../music/services/QueueService.js", () => ({ getQueue: mockGetQueue }));
 
 vi.mock("../core/state/StateManager.js", () => ({
   default: {
@@ -68,11 +75,15 @@ vi.mock("../core/state/StateManager.js", () => ({
   },
 }));
 
-vi.mock("../music/engine/lavalink.js", () => ({ get: vi.fn() }));
+const mockGetLavalink = vi.fn();
+vi.mock("../music/engine/lavalink.js", () => ({ get: mockGetLavalink }));
 vi.mock("../music/services/TextChannelStore.js", () => ({ setTextChannelId: vi.fn() }));
-vi.mock("../core/state/QueueLock.js", () => ({ withQueueLock: vi.fn() }));
+const mockWithQueueLock = vi.fn(async (_guildId: string, fn: Function) => { await fn(); });
+vi.mock("../core/state/QueueLock.js", () => ({ withQueueLock: mockWithQueueLock }));
 vi.mock("../music/engine/musicEvents.js", () => ({ markTrackStartSuppressed: vi.fn(), markStopDisconnect: vi.fn() }));
 vi.mock("../music/services/StateService.js", () => ({ saveState: vi.fn() }));
+const mockPickBestTrack = vi.fn((tracks: any[]) => tracks?.[0] ?? null);
+vi.mock("../music/services/SearchService.js", () => ({ pickBestTrack: mockPickBestTrack }));
 vi.mock("../ui/embeds/NowPlayingEmbed.js", () => ({ build: vi.fn() }));
 vi.mock("../ui/embeds/QueueEmbed.js", () => ({ build: vi.fn() }));
 
@@ -232,5 +243,85 @@ describe("messageCreate", () => {
     });
     await handler(msg);
     assert.strictEqual(mockRunAIInterpret.mock.calls.length, 0);
+  });
+
+  function makeVoiceMsg(overrides: any = {}) {
+    return makeMessage({ member: { displayName: "User", voice: { channel: { id: "vc1", rtcRegion: null } } }, ...overrides });
+  }
+
+  function makePlayer(overrides: any = {}) {
+    return {
+      playing: false,
+      paused: false,
+      connect: vi.fn().mockResolvedValue(undefined),
+      play: vi.fn().mockResolvedValue(undefined),
+      stopPlaying: vi.fn().mockResolvedValue(undefined),
+      search: vi.fn().mockResolvedValue({ tracks: [{ info: { title: "Ray", uri: "https://open.spotify.com/track/1" } }] }),
+      ...overrides,
+    };
+  }
+
+  test("changed-to embed uses markdown link when uri present", async () => {
+    mockRunAIInterpret.mockResolvedValue({ type: "correct_playlist", keyword: "Ray" });
+    const player = makePlayer();
+    mockGetLavalink.mockReturnValue({ players: new Map(), createPlayer: vi.fn().mockReturnValue(player) });
+    mockGetEngineM.mockReturnValue({ player: null });
+    const msg = makeVoiceMsg({ content: "<@12345> bukan itu, mainkan Ray" });
+    await handler(msg);
+    const desc = (msg.channel.send.mock.calls[0][0].embeds[0] as any).setDescription.mock.calls[0][0];
+    assert.strictEqual(desc, "Changed to [Ray](https://open.spotify.com/track/1)");
+  });
+
+  test("changed-to embed falls back to bold title when uri missing", async () => {
+    mockRunAIInterpret.mockResolvedValue({ type: "correct_playlist", keyword: "Ray" });
+    const player = makePlayer({ search: vi.fn().mockResolvedValue({ tracks: [{ info: { title: "Ray" } }] }) });
+    mockGetLavalink.mockReturnValue({ players: new Map(), createPlayer: vi.fn().mockReturnValue(player) });
+    mockGetEngineM.mockReturnValue({ player: null });
+    const msg = makeVoiceMsg({ content: "<@12345> bukan itu, mainkan Ray" });
+    await handler(msg);
+    const desc = (msg.channel.send.mock.calls[0][0].embeds[0] as any).setDescription.mock.calls[0][0];
+    assert.strictEqual(desc, "Changed to **Ray**");
+  });
+
+  test("pause confirmation is AI-generated", async () => {
+    mockRunAIInterpret.mockResolvedValue({ type: "pause" });
+    mockRunAIAsk.mockResolvedValue("Dipause dulu ya ⏸️");
+    mockGetEngineM.mockReturnValue({ player: { volume: 80 } });
+    mockPause.mockResolvedValue(true);
+    const msg = makeVoiceMsg({ content: "<@12345> pause" });
+    await handler(msg);
+    assert.strictEqual(mockRunAIAsk.mock.calls.length, 1);
+    assert.ok(mockRunAIAsk.mock.calls[0][1].includes("paused"));
+    assert.strictEqual(mockRunAIAsk.mock.calls[0][3].maxTokens, 80);
+    const desc = (msg.channel.send.mock.calls[0][0].embeds[0] as any).setDescription.mock.calls[0][0];
+    assert.strictEqual(desc, "Dipause dulu ya ⏸️");
+  });
+
+  test("pause confirmation falls back to pool phrase when AI fails", async () => {
+    mockRunAIInterpret.mockResolvedValue({ type: "pause" });
+    mockRunAIAsk.mockRejectedValue(new Error("timeout"));
+    mockGetEngineM.mockReturnValue({ player: { volume: 80 } });
+    mockPause.mockResolvedValue(true);
+    const msg = makeVoiceMsg({ content: "<@12345> pause" });
+    await handler(msg);
+    const pool = ["Dipause dulu ya ⏸️", "Oke, dijeda dulu. Lanjut kapan-kapan!", "Paused — lagunya stay di situ."];
+    const desc = (msg.channel.send.mock.calls[0][0].embeds[0] as any).setDescription.mock.calls[0][0];
+    assert.ok(pool.includes(desc), `unexpected fallback: ${desc}`);
+  });
+
+  test("playlist confirmation is AI-generated with track context", async () => {
+    mockRunAIInterpret.mockResolvedValue({ type: "playlist", songs: ["lagu a", "lagu b"] });
+    const player = makePlayer({ search: vi.fn().mockResolvedValue({ tracks: [{ info: { title: "Lagu A", uri: "https://x/1" } }] }) });
+    mockGetLavalink.mockReturnValue({ players: new Map(), createPlayer: vi.fn().mockReturnValue(player) });
+    mockGetEngineM.mockReturnValue({ player: null });
+    mockRunAIAsk.mockResolvedValue("2 lagu siap! 🎶");
+    const msg = makeVoiceMsg({ content: "<@12345> kasih saya didi kempot full album" });
+    await handler(msg);
+    assert.strictEqual(mockRunAIAsk.mock.calls.length, 1);
+    const summary = mockRunAIAsk.mock.calls[0][1];
+    assert.ok(summary.includes("2 tracks"), `summary missing count: ${summary}`);
+    assert.ok(summary.includes("Lagu A"), `summary missing first track: ${summary}`);
+    const desc = (msg.channel.send.mock.calls[0][0].embeds[0] as any).setDescription.mock.calls[0][0];
+    assert.strictEqual(desc, "2 lagu siap! 🎶");
   });
 });

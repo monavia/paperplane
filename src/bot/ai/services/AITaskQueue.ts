@@ -8,8 +8,8 @@ const AI_QUEUE_TIMEOUT = parseInt(process.env.AI_QUEUE_TIMEOUT || '30000');
 
 let aiQueue: TaskQueue | null = null;
 let interpretImpl: (userId: string, input: string) => Promise<any> = (userId, input) => new AIDJInstance().interpret(userId, input);
-let askImpl: (userId: string, input: string, sysPrompt: string) => Promise<any> =
-  (userId, input, sysPrompt) => AIEngine.ask(userId, input, sysPrompt);
+let askImpl: (userId: string, input: string, sysPrompt: string, opts?: any) => Promise<any> =
+  (userId, input, sysPrompt, opts) => AIEngine.ask(userId, input, sysPrompt, opts);
 
 function getAIQueue(): TaskQueue {
   if (!aiQueue) {
@@ -20,7 +20,7 @@ function getAIQueue(): TaskQueue {
     });
     aiQueue.setProcessor(async (task: any) => {
       if (task.type === 'ai:interpret') return await interpretImpl(task.data.userId, task.data.input);
-      if (task.type === 'ai:ask') return await askImpl(task.data.userId, task.data.input, task.data.sysPrompt);
+      if (task.type === 'ai:ask') return await askImpl(task.data.userId, task.data.input, task.data.sysPrompt, task.data.opts);
       throw new Error(`Unknown AI task type: ${task.type}`);
     });
     aiQueue.on('task:failed', (t: any) =>
@@ -51,11 +51,11 @@ export async function runAIInterpret(userId: string, input: string): Promise<any
   }
 }
 
-export async function runAIAsk(userId: string, input: string, sysPrompt: string): Promise<any> {
+export async function runAIAsk(userId: string, input: string, sysPrompt: string, opts?: any): Promise<any> {
   try {
-    return await runQueued('ai:ask', { userId, input, sysPrompt });
+    return await runQueued('ai:ask', { userId, input, sysPrompt, opts });
   } catch (err) {
     Logger.warn(`[AITaskQueue] ask queue failed, direct fallback: ${err}`);
-    return await askImpl(userId, input, sysPrompt);
+    return await askImpl(userId, input, sysPrompt, opts);
   }
 }

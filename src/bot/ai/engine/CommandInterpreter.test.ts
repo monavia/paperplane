@@ -94,6 +94,19 @@ describe("edge cases", () => {
     assert.deepStrictEqual(ci.interpret("lagu apa"), { type: "queue" });
     assert.deepStrictEqual(ci.interpret("طابور"), { type: "queue" });
   });
+  test("queue follow-up questions", () => {
+    assert.deepStrictEqual(ci.interpret("apa saja isinya itu?"), { type: "queue" });
+    assert.deepStrictEqual(ci.interpret("isinya apa"), { type: "queue" });
+    assert.deepStrictEqual(ci.interpret("apa isinya"), { type: "queue" });
+    assert.deepStrictEqual(ci.interpret("isi antrian"), { type: "queue" });
+    assert.deepStrictEqual(ci.interpret("daftar lagu"), { type: "queue" });
+    assert.deepStrictEqual(ci.interpret("list queue"), { type: "queue" });
+    assert.deepStrictEqual(ci.interpret("lihat antrian"), { type: "queue" });
+  });
+  test("queue follow-up does not hijack play or chat", () => {
+    assert.deepStrictEqual(ci.interpret("mainkan apa saja"), { type: "play", query: "apa saja" });
+    assert.deepStrictEqual(ci.interpret("halo apa saja"), { type: "chat" });
+  });
   test("stop variations", () => {
     assert.deepStrictEqual(ci.interpret("stop"), { type: "stop" });
     assert.deepStrictEqual(ci.interpret("setop"), { type: "stop" });

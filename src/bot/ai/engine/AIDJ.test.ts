@@ -87,4 +87,12 @@ describe("AIDJ", () => {
     assert.strictEqual(askMock.mock.calls[0][0], "user-1");
     assert.strictEqual(askMock.mock.calls[0][1], "halo");
   });
+
+  test("system prompt contains queue follow-up guardrail", async () => {
+    askMock.mockResolvedValue("QUEUE");
+    await aidj.interpret("user-1", "gue penasaran isi queue-nya apa");
+    const sysPrompt: string = askMock.mock.calls[0][2];
+    assert.ok(/what's in the queue\?|apa saja isinya/.test(sysPrompt), "guardrail phrase missing");
+    assert.ok(/NEVER build a PLAYLIST or PLAY/.test(sysPrompt), "guardrail rule missing");
+  });
 });

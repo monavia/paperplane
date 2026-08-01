@@ -9,7 +9,7 @@ class CommandInterpreter {
     if (/^(?:stop|berhenti|matikan|setop|إيقاف|قف)(?:\b|$)/i.test(lower)) return { type: "stop" };
     if (/^(?:pause|jeda|tahan|مؤقت|وقف)(?:\b|$)/i.test(lower)) return { type: "pause" };
     if (/^(?:resume|unpause|lanjutkan|mainkan lagi|استئناف|واصل)(?:\b|$)/i.test(lower)) return { type: "resume" };
-    if (/^(?:queue|q|antrian|lagu apa|طابور)(?:\b|$)/i.test(lower)) return { type: "queue" };
+    if (/^(?:queue|q|antrian|lagu apa|isinya apa|apa isinya|apa saja isinya|isi (?:antrian|queue)|daftar (?:lagu|antrian|queue)|list (?:lagu|queue)|lihat (?:antrian|queue)|طابور)(?:\b|$)/i.test(lower)) return { type: "queue" };
     if (/^(?:autoplay|auto.?play|putar otomatis)\b/i.test(lower)) return { type: "autoplay" };
     if (/^(?:shuffle|acak)\b/i.test(lower)) return { type: "shuffle" };
     if (/^(?:loop|ulang)\b/i.test(lower)) return { type: "loop" };
