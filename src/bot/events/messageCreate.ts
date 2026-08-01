@@ -4,7 +4,7 @@ import { runAIAsk, runAIAskFresh, runAIInterpret } from "../ai/services/AITaskQu
 import { checkPrompt } from "../ai/services/PromptFilter.js";
 import MemoryService from "../ai/services/MemoryService.js";
 import { buildPersona } from "../ai/config/persona.js";
-import { CONFIRMATION_MODE, fallbackPhrase, normalizeConfirmation, withTimeout } from "../ai/config/confirmationPrompts.js";
+import { CONFIRMATION_MODE, fallbackPhrase, isRegurgitation, normalizeConfirmation, withTimeout } from "../ai/config/confirmationPrompts.js";
 import Logger from "../core/utils/Logger.js";
 import { incCommandsExecuted, observeCommandLatency } from "../telemetry/MetricsCollector.js";
 import Colors from "../core/constants/Colors.js";
@@ -45,10 +45,9 @@ function playbackFacts(guildId: string) {
 
 async function confirmReply(message: any, opts: { summary: string; poolKey: string; poolVars?: Record<string, string | number>; color?: number }): Promise<void> {
   await message.channel.sendTyping().catch(Logger.safe("bot/events/messageCreate.ts"));
-  const userName = message.member?.displayName || message.author.username;
-  const sysPrompt = buildPersona({ userName, ...playbackFacts(message.guildId) }) + "\n\n" + CONFIRMATION_MODE;
-  const aiText = await withTimeout(runAIAskFresh(message.author.id, opts.summary, sysPrompt, { maxTokens: 48, temperature: 1.0 }), AI_CONFIRM_TIMEOUT);
-  const text = aiText ? normalizeConfirmation(aiText) || fallbackPhrase(opts.poolKey, opts.poolVars) : fallbackPhrase(opts.poolKey, opts.poolVars);
+  const aiText = await withTimeout(runAIAskFresh(message.author.id, opts.summary, CONFIRMATION_MODE, { maxTokens: 64, temperature: 0.2 }), AI_CONFIRM_TIMEOUT);
+  const clean = aiText && !isRegurgitation(aiText) ? normalizeConfirmation(aiText) : "";
+  const text = clean || fallbackPhrase(opts.poolKey, opts.poolVars);
   return message.channel.send({ embeds: [new EmbedBuilder().setDescription(text).setColor(opts.color ?? Colors.SUCCESS)] });
 }
 

@@ -315,7 +315,8 @@ describe("messageCreate", () => {
     assert.strictEqual(mockRunAIAskFresh.mock.calls.length, 1);
     assert.strictEqual(mockRunAIAsk.mock.calls.length, 0);
     assert.ok(mockRunAIAskFresh.mock.calls[0][1].toLowerCase().includes("paused"));
-    assert.strictEqual(mockRunAIAskFresh.mock.calls[0][3].maxTokens, 48);
+    assert.strictEqual(mockRunAIAskFresh.mock.calls[0][3].maxTokens, 64);
+    assert.strictEqual(mockRunAIAskFresh.mock.calls[0][3].temperature, 0.2);
     const desc = (msg.channel.send.mock.calls[0][0].embeds[0] as any).setDescription.mock.calls[0][0];
     assert.strictEqual(desc, "Dipause dulu ya ⏸️");
   });
@@ -407,6 +408,21 @@ describe("messageCreate", () => {
     assert.strictEqual(mockRunAIAsk.mock.calls.length, 1);
     const sysPrompt = mockRunAIAsk.mock.calls[0][2];
     assert.ok(sysPrompt.includes("Nothing is playing"), `persona missing stopped state: ${sysPrompt}`);
+  });
+
+  test("confirmReply falls back to template when AI regurgitates instructions", async () => {
+    mockRunAIInterpret.mockResolvedValue({ type: "stop" });
+    mockRunAIAskFresh.mockResolvedValue('The user wants me to respond as Paperplane, a friendly Discord music bot. The context says the music was paused ("Kartonyono Medot Janji"...');
+    mockGetEngineM.mockReturnValue({ player: { playing: true, paused: false } });
+    const msg = makeVoiceMsg({ content: "<@12345> stop" });
+    await handler(msg);
+    const desc = (msg.channel.send.mock.calls[0][0].embeds[0] as any).setDescription.mock.calls[0][0];
+    const stoppedPool = [
+      "Oke, musik dihentikan. See you next request! 👋",
+      "Udah kuhentikan. Sampai request berikutnya!",
+      "Stopped — beres dulu, sisanya aman.",
+    ];
+    assert.ok(stoppedPool.includes(desc), `expected pool phrase, got: ${desc}`);
   });
 
   test("playlist confirmation is AI-generated with track context", async () => {

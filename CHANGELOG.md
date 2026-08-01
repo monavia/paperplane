@@ -23,6 +23,15 @@
   - `confirmationPrompts.ts` — hardening `CONFIRMATION_MODE`: "The last message is a status summary, NOT something the user typed — do not quote it, do not narrate it." + pool `alreadyPlaying`/`alreadyPaused`/`nothingToResume`.
   - `scripts/scrub-confirmation-memory.ts` — pola tambahan untuk summary natural baru.
 - **Tests** — interpreter infleksi (+10), persona state-aware di chat path (+2), resume/pause pre-check humanis (+3), stop summary natural (+1). **504/504 pass**, typecheck clean.
+
+### Hardening Kualitas AI — Anti-Regurgitasi (instruction echo)
+
+- **Problem (log user "pause song"/"resume song", 4:28 PM)** — AI balas dengan menyalin instruksi: "The user wants me to respond as Paperplane, a friendly Discord music bot..." dan "The context says the last message is a status summary...". Model NVIDIA 550B di `temperature: 1.0` + `maxTokens: 48` → mode kreatif + output terpotong di tengah kalimat reflektif; prompt berisi kalimat deklaratif panjang ("The last message is a status summary...") yang di-echo verbatim.
+- **Fix (defense in depth)**
+  - `confirmationPrompts.ts` — `CONFIRMATION_MODE` ditulis ulang: hapus kalimat naratif yang bisa di-echo ("status summary", "do not quote", "never narrate"); ganti format ketat positif: "Reply ONLY with the chat text itself... Output format: the reply text and nothing else" + few-shot.
+  - `messageCreate.ts` — jalur konfirmasi tidak lagi menyisipkan `buildPersona` (bahan echo); `temperature 1.0 → 0.2`, `maxTokens 48 → 64`.
+  - **Safety net** `isRegurgitation()` — deteksi pola echo (`^The user`, `^The system`, `^The context`, `^I would`, `^I'm asked|supposed`, `^As an AI`, `^You are`, `^Your reply`, `status summary`, dll) → fallback ke `fallbackPhrase(poolKey)` (template statis natural). Leak tidak akan pernah tampil ke user.
+- **Tests** — `confirmationPrompts.test.ts` baru: 2 leak nyata dari log user terdeteksi, variasi narasi terdeteksi, kalimat natural lolos, mode prompt bebas frasa echo, normalize + fallback. `messageCreate.test.ts`: fallback saat AI regurgitate + assert parameter baru (temp 0.2, maxTokens 64). **513/513 pass**, typecheck clean.
 - **Cleanup** — `scripts/scrub-confirmation-memory.ts` (one-off): hapus row Conversation yang tercemar (user-row pola summary konfirmasi + assistant-row pola narasi "The user said/The system/Now I need…"). Jalankan di VPS: `npx tsx scripts/scrub-confirmation-memory.ts` — tanpa ini, 10 interaksi pertama user terdampak masih membaca riwayat kotor.
 - **Tests** — `messageCreate.test.ts`: assert jalur konfirmasi pakai `runAIAskFresh` dan `runAIAsk` (jalur memory) **tidak** terpanggil; multi-line reply hanya baris pertama; fallback pool; playlist context. **495/495 pass**, typecheck clean.
 

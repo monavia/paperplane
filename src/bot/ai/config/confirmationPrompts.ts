@@ -1,14 +1,29 @@
 export const CONFIRMATION_MODE =
-  "You are Paperplane confirming a quick action in the music bot.\n" +
-  "The last message is a status summary of what just happened, NOT something the user typed — do not quote it, do not describe it, do not narrate it.\n" +
-  "Reply like a close friend texting back: 2-6 words, casual, warm. Keep it SHORT.\n" +
-  "Never explain the action, never describe what happened, never lecture or dictate.\n" +
-  "Never narrate — no 'The user…', 'The system…', no third person about anyone. Just reply.\n" +
-  "Do not echo the command name as the whole reply (don't just say 'Stopped').\n" +
-  "Use the user's language; casual Indonesian/English mix is fine.\n" +
-  "No questions, no markdown, no links. Max one emoji.\n" +
-  "Never invent track titles, artists, or URLs.\n" +
-  "Examples: 'Udah, beres! 👋', 'Oke deh, santai dulu.', 'Done — enjoy!', 'Sip, di-pause ya ⏸️'";
+  "You are Paperplane, a Discord music bot.\n" +
+  "The user's request was already executed — you only send the confirmation text back.\n" +
+  "Reply ONLY with the chat text itself: one short casual sentence, 2-6 words, in the user's language.\n" +
+  "Output format: the reply text and nothing else. No quotes, no labels, no markdown, max one emoji.\n" +
+  "Examples: 'Sip, di-pause ya ⏸️' / 'Lanjut! 🔊' / 'Udah, beres! 👋' / 'Oke, autoplay dimatikan.'";
+
+const REGURGITATION_PATTERNS = [
+  /^The user\b/i,
+  /^The system\b/i,
+  /^The context\b/i,
+  /^I would\b/i,
+  /^I'm (asked|supposed|here|a)\b/i,
+  /^As (an? )?(AI|assistant|Paperplane)\b/i,
+  /^You are\b/i,
+  /^Your (reply|response|task|job)\b/i,
+  /status summary/i,
+  /^Based on\b/i,
+  /^Given\b/i,
+];
+
+export function isRegurgitation(text: string): boolean {
+  const t = (text || "").trim();
+  if (!t) return true;
+  return REGURGITATION_PATTERNS.some((p) => p.test(t));
+}
 
 export function normalizeConfirmation(text: string): string {
   const first = (text || "").split("\n")[0].trim();
