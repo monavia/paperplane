@@ -6,6 +6,7 @@ import { getEngine } from "../services/PlayerService.js";
 import { getBestNode, getBestNodeForFailover, getPenalty, isDraining, recordDisconnect, recordError } from "./NodePenaltyService.js";
 import { applyFilters, setFilter, setEqualizer } from "../services/PlayerService.js";
 import { searchWithRetry } from "../services/SearchService.js";
+import { resolveEQBands } from "../../core/constants/EQPresets.js";
 import type { LavalinkManager } from "lavalink-client" with { "resolution-mode": "require" };
 
 let lavalink: LavalinkManager | null = null;
@@ -131,8 +132,9 @@ export async function failoverFromNode(nodeId: string) {
           applyFilters(guildId).catch(Logger.safe("bot/music/engine/FailoverManager.ts"));
         }
         const savedBands = state.equalizer.get(guildId);
-        if (savedBands) {
-          setEqualizer(guildId, savedBands, "system", "System").catch(Logger.safe("bot/music/engine/FailoverManager.ts"));
+        const bands = resolveEQBands(savedBands);
+        if (bands) {
+          setEqualizer(guildId, bands, "system", "System").catch(Logger.safe("bot/music/engine/FailoverManager.ts"));
         }
       }
     } catch (err: any) {

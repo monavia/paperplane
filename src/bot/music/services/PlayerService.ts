@@ -6,9 +6,10 @@ import { deleteTextChannelId } from "./TextChannelStore.js";
 import { saveState, deleteState, stopPositionSync } from "./StateService.js";
 import { get, connectWithRetry } from "../engine/lavalink.js";
 import { deletePlayerData } from "../services/PersistentPlayerStore.js";
-import { setAutoplay } from "../../database/repositories/GuildRepository.js";
+import { setAutoplay, setLastFilter, setShuffle, setLastEqualizer } from "../../database/repositories/GuildRepository.js";
 import { withQueueLock } from "../../core/state/QueueLock.js";
 import ActivityService from "../../services/ActivityService.js";
+import { resolveEQBands } from "../../core/constants/EQPresets.js";
 
 interface Engine {
   guildId: string;
@@ -101,8 +102,11 @@ export async function destroyEngine(guildId: string): Promise<void> {
     state.autoplay.delete(guildId);
     setAutoplay(guildId, false).catch(Logger.safe("bot/music/services/PlayerService.ts"));
     state.shuffle.delete(guildId);
+    setShuffle(guildId, false).catch(Logger.safe("bot/music/services/PlayerService.ts"));
     state.filter.delete(guildId);
+    setLastFilter(guildId, "none").catch(Logger.safe("bot/music/services/PlayerService.ts"));
     state.equalizer.delete(guildId);
+    setLastEqualizer(guildId, "flat").catch(Logger.safe("bot/music/services/PlayerService.ts"));
   }
 }
 
@@ -145,6 +149,12 @@ export async function stop(guildId: string, userId: string, userName: string): P
   if (!state.twentyFourSeven.isEnabled(guildId)) {
     state.autoplay.set(guildId, false);
     setAutoplay(guildId, false).catch(Logger.safe("bot/music/services/PlayerService.ts"));
+    state.filter.delete(guildId);
+    setLastFilter(guildId, "none").catch(Logger.safe("bot/music/services/PlayerService.ts"));
+    state.shuffle.delete(guildId);
+    setShuffle(guildId, false).catch(Logger.safe("bot/music/services/PlayerService.ts"));
+    state.equalizer.delete(guildId);
+    setLastEqualizer(guildId, "flat").catch(Logger.safe("bot/music/services/PlayerService.ts"));
   }
 
   const nodeDead = player && !player.node?.connected;
@@ -161,8 +171,9 @@ export async function stop(guildId: string, userId: string, userName: string): P
             applyFilters(guildId).catch(Logger.safe("bot/music/services/PlayerService.ts"));
           }
           const savedBands = state.equalizer.get(guildId);
-          if (savedBands) {
-            setEqualizer(guildId, savedBands, "system", "System").catch(Logger.safe("bot/music/services/PlayerService.ts"));
+          const bands = resolveEQBands(savedBands);
+          if (bands) {
+            setEqualizer(guildId, bands, "system", "System").catch(Logger.safe("bot/music/services/PlayerService.ts"));
           }
         } catch (err: any) {
           Logger.warn(`[247-Stop] Rejoin failed for ${guildId}: ${err?.message}`);

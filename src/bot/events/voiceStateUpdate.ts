@@ -2,7 +2,7 @@ import { EmbedBuilder } from "discord.js";
 import Logger from "../core/utils/Logger.js";
 import Colors from "../core/constants/Colors.js";
 import { getTextChannelId } from "../music/services/TextChannelStore.js";
-import { setLastFilter, setAutoplay, setShuffle } from "../database/repositories/GuildRepository.js";
+import { setLastFilter, setAutoplay, setShuffle, setLastEqualizer } from "../database/repositories/GuildRepository.js";
 import { isIdleDisconnect, clearIdleDisconnect, isStopDisconnect, clearStopDisconnect } from "../music/engine/musicEvents.js";
 import state from "../core/state/StateManager.js";
 import { isLavalinkReady } from "../music/services/MusicService.js";
@@ -53,6 +53,7 @@ export function start(client: any): void {
       }
 
       await setLastFilter(guildId, "none").catch(Logger.safe("bot/events/voiceStateUpdate.ts"));
+      await setLastEqualizer(guildId, "flat").catch(Logger.safe("bot/events/voiceStateUpdate.ts"));
 
       if (isIdleDisconnect(guildId)) {
         clearIdleDisconnect(guildId);
@@ -72,6 +73,7 @@ export function start(client: any): void {
         setShuffle(guildId, false).catch(Logger.safe("bot/events/voiceStateUpdate.ts"));
         state.filter.delete(guildId);
         state.equalizer.delete(guildId);
+        setLastEqualizer(guildId, "flat").catch(Logger.safe("bot/events/voiceStateUpdate.ts"));
       }
 
 const channelId = getTextChannelId(guildId);

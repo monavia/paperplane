@@ -2,6 +2,13 @@
 
 ## 2026-08-01 — v3.3.4 (unreleased)
 
+### Equalizer — Shared Presets, Resume Fix, and Stop Reset
+
+- **Shared preset module** — new `src/bot/core/constants/EQPresets.ts` consolidates 3 duplicated `EQ_PRESETS` tables (prefix/equalizer, slash/equalizer, apiServer) into a single source of truth with 8 presets: flat, bass, treble, rock, jazz, pop, edm, classical. Includes `resolveEQBands(value)` helper: string preset → bands, array → passthrough, unknown → null.
+- **Resume fix** — StateService restore (373-380), PlayerService 247-rejoin (163-165), FailoverManager (2 sites) now resolve preset strings to bands via `resolveEQBands`. EQ now correctly restores after bot restart/failover/247-rejoin (previously skipped when DB stored preset name string).
+- **Stop reset (full symmetry)** — command stop now clears all mode RAM + DB just like autoplay: autoplay=false, filter="none", shuffle=false, EQ="flat". Added to PlayerService.stop (247-off block), destroyEngine, and voiceStateUpdate cleanup (mirrors filter's unconditional DB reset). Dashboard stop, /stop, -stop, AI stop all apply.
+- **Tests** — `EQPresets.test.ts` (9 tests: 8 presets, 15 bands each, gain bounds, resolveEQBands variants), `voiceStateUpdate.test.ts` mock extended with `setLastEqualizer`. 528 tests pass, typecheck clean.
+
 ### AI Confirmations — Reply Stuck On Previous Message & Still Narrating
 
 - **Problem (log user)** — (1) "pause" confirmation replied with text from a PREVIOUS interaction: *"The user said 'stio' which was a typo for 'stop'... Now the system is saying..."*. Root cause: `AIEngine.ask()` writes ALL conversations (including confirmations) to `ConversationMemory`, which is **persistent in the DB** (Mongo/Prisma) — then `PromptBuilder` injects the last 10 entries into every subsequent ask → old text "sticks" into new replies. (2) The narrative summary prompt ("The user paused the music playback.") made the model mimic the narrative style.

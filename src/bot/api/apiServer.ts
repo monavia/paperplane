@@ -19,6 +19,7 @@ import { getMetrics } from "../telemetry/MetricsCollector.js";
 import * as redis from "../cache/redis.js";
 import * as Sentry from "@sentry/node";
 import { createApiHandler, jsonResponse, ApiError, withAuth, getUserId, requireApiSameVoice, guildRateLimit, globalRateLimit } from "../../lib/api-base.js";
+import { EQ_PRESETS, PRESET_LIST } from "../../bot/core/constants/EQPresets.js";
 
 const SNOWFLAKE_RE = /^\d{17,20}$/;
 function validateGuildId(req: any, res: any, next: any) {
@@ -203,54 +204,13 @@ app.get("/api/health", createApiHandler(async (_req, res) => {
     const current = await getLastEqualizer(guildId);
     jsonResponse(res, {
       current: typeof current === 'string' ? current : "flat",
-      presets: ["flat", "bass", "treble", "rock", "jazz", "pop", "edm", "classical"],
+      presets: PRESET_LIST.map(p => p.value),
     });
   }));
 
   app.post("/api/guild/:guildId/equalizer", createApiHandler(async (req, res) => {
     const { guildId } = req.params;
     const { preset } = req.body;
-    const EQ_PRESETS: Record<string, { band: number; gain: number }[]> = {
-      flat: Array.from({ length: 15 }, (_, i) => ({ band: i, gain: 0.0 })),
-      bass: Array.from({ length: 15 }, (_, i) => ({ band: i, gain: i < 5 ? 0.4 - i * 0.1 : -0.05 - (i - 5) * 0.02 })),
-      treble: Array.from({ length: 15 }, (_, i) => ({ band: i, gain: i < 5 ? -0.2 + i * 0.05 : -0.1 + (i - 5) * 0.05 })),
-      rock: [
-        { band: 0, gain: 0.2 }, { band: 1, gain: 0.1 }, { band: 2, gain: 0.0 },
-        { band: 3, gain: -0.1 }, { band: 4, gain: -0.1 }, { band: 5, gain: 0.0 },
-        { band: 6, gain: 0.1 }, { band: 7, gain: 0.2 }, { band: 8, gain: 0.3 },
-        { band: 9, gain: 0.3 }, { band: 10, gain: 0.3 }, { band: 11, gain: 0.2 },
-        { band: 12, gain: 0.1 }, { band: 13, gain: 0.0 }, { band: 14, gain: -0.1 },
-      ],
-      jazz: [
-        { band: 0, gain: 0.2 }, { band: 1, gain: 0.15 }, { band: 2, gain: 0.1 },
-        { band: 3, gain: 0.05 }, { band: 4, gain: 0.0 }, { band: 5, gain: -0.05 },
-        { band: 6, gain: -0.1 }, { band: 7, gain: -0.05 }, { band: 8, gain: 0.0 },
-        { band: 9, gain: 0.05 }, { band: 10, gain: 0.1 }, { band: 11, gain: 0.15 },
-        { band: 12, gain: 0.2 }, { band: 13, gain: 0.25 }, { band: 14, gain: 0.3 },
-      ],
-      pop: [
-        { band: 0, gain: -0.05 }, { band: 1, gain: 0.0 }, { band: 2, gain: 0.05 },
-        { band: 3, gain: 0.1 }, { band: 4, gain: 0.15 }, { band: 5, gain: 0.2 },
-        { band: 6, gain: 0.2 }, { band: 7, gain: 0.15 }, { band: 8, gain: 0.1 },
-        { band: 9, gain: 0.05 }, { band: 10, gain: 0.0 }, { band: 11, gain: -0.05 },
-        { band: 12, gain: -0.1 }, { band: 13, gain: -0.1 }, { band: 14, gain: -0.05 },
-      ],
-      edm: [
-        { band: 0, gain: 0.3 }, { band: 1, gain: 0.25 }, { band: 2, gain: 0.15 },
-        { band: 3, gain: 0.0 }, { band: 4, gain: -0.05 }, { band: 5, gain: 0.0 },
-        { band: 6, gain: 0.1 }, { band: 7, gain: 0.2 }, { band: 8, gain: 0.25 },
-        { band: 9, gain: 0.3 }, { band: 10, gain: 0.35 }, { band: 11, gain: 0.3 },
-        { band: 12, gain: 0.2 }, { band: 13, gain: 0.1 }, { band: 14, gain: 0.0 },
-      ],
-      classical: [
-        { band: 0, gain: 0.1 }, { band: 1, gain: 0.05 }, { band: 2, gain: 0.0 },
-        { band: 3, gain: -0.05 }, { band: 4, gain: -0.1 }, { band: 5, gain: -0.05 },
-        { band: 6, gain: 0.0 }, { band: 7, gain: 0.05 }, { band: 8, gain: 0.1 },
-        { band: 9, gain: 0.15 }, { band: 10, gain: 0.2 }, { band: 11, gain: 0.25 },
-        { band: 12, gain: 0.3 }, { band: 13, gain: 0.25 }, { band: 14, gain: 0.2 },
-      ],
-    };
-
     const bands = EQ_PRESETS[preset] || EQ_PRESETS.flat;
     const ok = await PlayerService.setEqualizer(guildId, bands, "dashboard", "Dashboard");
     if (ok) await setLastEqualizer(guildId, preset);

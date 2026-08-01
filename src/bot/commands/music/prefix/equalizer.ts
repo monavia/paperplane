@@ -6,34 +6,27 @@ import * as ErrorEmbed from "../../../../bot/ui/embeds/ErrorEmbed.js";
 import Colors from "../../../../bot/core/constants/Colors.js";
 import { requireSameVoice } from "../../../../bot/core/utils/VoiceCheck.js";
 import state from "../../../../bot/core/state/StateManager.js";
+import { EQ_PRESETS, PRESET_LIST } from "../../../../bot/core/constants/EQPresets.js";
 
-const EQ_PRESETS: Record<string, { band: number; gain: number }[]> = {
-  flat: Array.from({ length: 15 }, (_, i) => ({ band: i, gain: 0.0 })),
-  bass: Array.from({ length: 15 }, (_, i) => ({ band: i, gain: i < 5 ? 0.4 - i * 0.1 : -0.05 - (i - 5) * 0.02 })),
-  treble: Array.from({ length: 15 }, (_, i) => ({ band: i, gain: i < 5 ? -0.2 + i * 0.05 : -0.1 + (i - 5) * 0.05 })),
-  rock: [
-    { band: 0, gain: 0.2 }, { band: 1, gain: 0.1 }, { band: 2, gain: 0.0 },
-    { band: 3, gain: -0.1 }, { band: 4, gain: -0.1 }, { band: 5, gain: 0.0 },
-    { band: 6, gain: 0.1 }, { band: 7, gain: 0.2 }, { band: 8, gain: 0.3 },
-    { band: 9, gain: 0.3 }, { band: 10, gain: 0.3 }, { band: 11, gain: 0.2 },
-    { band: 12, gain: 0.1 }, { band: 13, gain: 0.0 }, { band: 14, gain: -0.1 },
-  ],
-  jazz: [
-    { band: 0, gain: 0.2 }, { band: 1, gain: 0.15 }, { band: 2, gain: 0.1 },
-    { band: 3, gain: 0.05 }, { band: 4, gain: 0.0 }, { band: 5, gain: -0.05 },
-    { band: 6, gain: -0.1 }, { band: 7, gain: -0.05 }, { band: 8, gain: 0.0 },
-    { band: 9, gain: 0.05 }, { band: 10, gain: 0.1 }, { band: 11, gain: 0.15 },
-    { band: 12, gain: 0.2 }, { band: 13, gain: 0.25 }, { band: 14, gain: 0.3 },
-  ],
-};
-
-const PRESET_LIST = [
-  { name: "Flat", value: "flat" },
-  { name: "Bass", value: "bass" },
-  { name: "Treble", value: "treble" },
-  { name: "Rock", value: "rock" },
-  { name: "Jazz", value: "jazz" },
-];
+function buildPresetRows(current: string): ActionRowBuilder<ButtonBuilder>[] {
+  const rows: ActionRowBuilder<ButtonBuilder>[] = [];
+  let row = new ActionRowBuilder<ButtonBuilder>();
+  for (const p of PRESET_LIST) {
+    row.addComponents(
+      new ButtonBuilder()
+        .setCustomId(`eq_${p.value}`)
+        .setLabel(p.name)
+        .setStyle(p.value === current ? ButtonStyle.Success : ButtonStyle.Secondary)
+        .setDisabled(p.value === current),
+    );
+    if (row.components.length === 4) {
+      rows.push(row);
+      row = new ActionRowBuilder<ButtonBuilder>();
+    }
+  }
+  if (row.components.length) rows.push(row);
+  return rows;
+}
 
 export default {
   name: "equalizer",
@@ -44,23 +37,15 @@ export default {
     const down = MusicService.requireLavalink();
     if (down) return (message.channel as any).send(down);
 
-    const current = await getLastEqualizer(message.guildId!);
+const current = await getLastEqualizer(message.guildId!);
 
-    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-      ...PRESET_LIST.map((p) =>
-        new ButtonBuilder()
-          .setCustomId(`eq_${p.value}`)
-          .setLabel(p.name)
-          .setStyle(p.value === current ? ButtonStyle.Success : ButtonStyle.Secondary)
-          .setDisabled(p.value === current)
-      ),
-    );
+    const rows = buildPresetRows(current);
 
     const embed = new EmbedBuilder()
       .setDescription(`Current EQ: **${current}**`)
       .setColor(Colors.INFO);
 
-    const msg = await (message.channel as any).send({ embeds: [embed], components: [row] });
+    const msg = await (message.channel as any).send({ embeds: [embed], components: rows });
 
     const collector = msg.createMessageComponentCollector({
       filter: (i: any) => i.user.id === message.author.id,

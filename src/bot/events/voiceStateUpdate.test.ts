@@ -9,6 +9,7 @@ const h = vi.hoisted(() => ({
   mockSetLastFilter: vi.fn().mockResolvedValue(undefined),
   mockSetAutoplay: vi.fn().mockResolvedValue(undefined),
   mockSetShuffle: vi.fn().mockResolvedValue(undefined),
+  mockSetLastEqualizer: vi.fn().mockResolvedValue(undefined),
   mockIs247: vi.fn(),
   mockIsLavalinkReady: vi.fn(),
   mockGetEngine: vi.fn(),
@@ -29,6 +30,7 @@ vi.mock("../database/repositories/GuildRepository.js", () => ({
   setLastFilter: h.mockSetLastFilter,
   setAutoplay: h.mockSetAutoplay,
   setShuffle: h.mockSetShuffle,
+  setLastEqualizer: h.mockSetLastEqualizer,
 }));
 
 vi.mock("../music/engine/musicEvents.js", () => ({

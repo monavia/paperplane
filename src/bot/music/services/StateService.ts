@@ -10,6 +10,7 @@ import { getAutoplay, getLoop, getShuffle, get247, getLastFilter, getLastEqualiz
 import { setFilter, setEqualizer } from "./PlayerService.js";
 import * as EventBus from "../events/EventBus.js";
 import { EmbedBuilder } from "discord.js";
+import { resolveEQBands } from "../../core/constants/EQPresets.js";
 
 let restoreRetryTimer: NodeJS.Timeout | null = null;
 let uncachedRetries = 0;
@@ -371,12 +372,9 @@ async function restoreGuildState(client: any, saved: any): Promise<boolean> {
         applyFilters(saved.guildId).catch(Logger.safe("bot/music/services/StateService.ts"));
       }
       const savedBands = state.equalizer.get(saved.guildId);
-      if (savedBands) {
-        const presetName = typeof savedBands === "string" ? savedBands : null;
-        const bands = presetName ? null : savedBands;
-        if (bands) {
-          setEqualizer(saved.guildId, bands, "system", "System").catch(Logger.safe("bot/music/services/StateService.ts"));
-        }
+      const bands = resolveEQBands(savedBands);
+      if (bands) {
+        setEqualizer(saved.guildId, bands, "system", "System").catch(Logger.safe("bot/music/services/StateService.ts"));
       }
       // Autoplay restore: check if humans in VC, leave after 1m if nobody
       if (state.autoplay.get(saved.guildId)) {
