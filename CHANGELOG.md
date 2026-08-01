@@ -33,7 +33,20 @@
   - **Safety net** `isRegurgitation()` — deteksi pola echo (`^The user`, `^The system`, `^The context`, `^I would`, `^I'm asked|supposed`, `^As an AI`, `^You are`, `^Your reply`, `status summary`, dll) → fallback ke `fallbackPhrase(poolKey)` (template statis natural). Leak tidak akan pernah tampil ke user.
 - **Tests** — `confirmationPrompts.test.ts` baru: 2 leak nyata dari log user terdeteksi, variasi narasi terdeteksi, kalimat natural lolos, mode prompt bebas frasa echo, normalize + fallback. `messageCreate.test.ts`: fallback saat AI regurgitate + assert parameter baru (temp 0.2, maxTokens 64). **513/513 pass**, typecheck clean.
 - **Cleanup** — `scripts/scrub-confirmation-memory.ts` (one-off): hapus row Conversation yang tercemar (user-row pola summary konfirmasi + assistant-row pola narasi "The user said/The system/Now I need…"). Jalankan di VPS: `npx tsx scripts/scrub-confirmation-memory.ts` — tanpa ini, 10 interaksi pertama user terdampak masih membaca riwayat kotor.
-- **Tests** — `messageCreate.test.ts`: assert jalur konfirmasi pakai `runAIAskFresh` dan `runAIAsk` (jalur memory) **tidak** terpanggil; multi-line reply hanya baris pertama; fallback pool; playlist context. **495/495 pass**, typecheck clean.
+
+### "lanjut" State-Aware — Skip vs Resume (bukan Disconnect)
+- **Problem (log user, 5:35 PM)** — "seryn pause" → "Oke, dijeda dulu. Lanjut kapan-kapan!" lalu "lanjut" → "Disconnected from voice channel." + "Belum ada lagu di antrian. Minta satu, gas! 🎵". Root cause: interpreter memetakan "lanjut" ke `skip` → `PlayerService.skip()` saat queue kosong + tanpa autoplay/247 → `player.disconnect()` + `player.destroy()` (PlayerService.ts:122-129) → voiceStateUpdate kirim embed "Disconnected from voice channel."
+- **Fix** — `messageCreate.ts` case `skip` state-aware: `player.paused` → **resume** (summary "Resumed the music." / pool `nothingToResume` kalau gagal); `playing` → skip normal; tanpa player → "No track playing."
+- **Tests** — `messageCreate.test.ts` +3: "lanjut" saat paused → `resume` dipanggil & `skip` tidak; resume gagal → pool nothingToResume; "lanjut" saat playing → tetap skip ke lagu berikutnya. **516/516 pass**, typecheck clean.
+
+### Last-Track Error — Queue End Senyap (AllClientsFailedException)
+
+- **Problem (log Lavalink + bot, 11:08)** — lagu "Kamaz (feat. dlb)" gagal: `AllClientsFailedException` (TVHTML5 decode fail = socket connect failure, WEB/ANDROID_VR "This video requires login") — transient jaringan, tapi cause berisi "requires login" → klasifikasi **permanent** → `findMultiSourceFallback()` tak menemukan alternatif (search balik ke lagu sama) → `markBad` + `stopPlaying()` **tanpa pesan**. Lebih parah: karena lagu ini lagu TERAKHIR, `queueEnd` jalan duluan → `nowPlaying` kosong → `jitterBuffer()` salah sangka "player already moved on" → cancel SELURUH error handling — fallback/retry tidak pernah dieksekusi. Play kedua manual langsung sukses → bukti errornya transient.
+- **Fix**
+  - `jitterBuffer()` — klasifikasi ulang: cancel hanya bila nowPlaying berisi track LAIN (sudah pulih) atau `isStopDisconnect` (stop sengaja); nowPlaying kosong tanpa stop → queue berakhir KARENA error ini → lanjut ke handler.
+  - `trackStart` — `clearStopDisconnect` + cleanup `permanentRetried` per-guild (edge case 247: flag nyangkut karena bot tak pernah leave VC).
+  - **Retry-once** untuk error permanent (`permanentRetried`, key `${guildId}:${trackId}`) — pola `isFirstAttempt`, tanpa delay, bounded 1x: kalau retry sukses, lagu jalan tanpa intervensi user; gagal lagi → `markBad` + `stopPlaying()` + embed error "Track failed to play after retry — skipping it." (tidak ada lagi keheningan).
+- **Tests** — `isPermanentTrackError` (regex tidak diubah) tetap meng-cover exact string log user. **516/516 pass**, typecheck clean.
 
 ## 2026-08-01 — v3.3.3
 
