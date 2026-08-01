@@ -23,10 +23,9 @@ async function resolveSpotifyTrack(player: any, spotifyItem: any, user: any): Pr
   const q = spotifyItem.query || `${spotifyItem.artists?.join(" ") || ""} ${spotifyItem.name}`.trim();
   if (!q) return null;
   let tracks: any;
-  try { const ytm = await searchWithRetry(player, { query: `ytmsearch:${q}` }, user); tracks = ytm?.tracks; } catch {}
-  if (!tracks?.length) { try { const yt = await searchWithRetry(player, { query: `ytsearch:${q}` }, user); tracks = yt?.tracks; } catch {} }
+  try { const ytm = await searchWithRetry(player, { query: `ytsearch:${q}` }, user); tracks = ytm?.tracks; } catch {}
   if (tracks?.length) {
-    const track = pickBestTrack(tracks);
+    const track = pickBestTrack(tracks, q);
     if (!track.info) track.info = {};
     const artistStr = spotifyItem.artists?.join(", ") || track.info.author || "";
     track.info.author = artistStr;
@@ -85,6 +84,11 @@ export default {
 
       let player = getPlayer(message.guildId);
       let connectPromise: Promise<void> | null = null;
+      if (player && !player.node?.connected) {
+        Logger.warn(`[Play] Stale player (node=${player.node?.id || "?"}) — recreating for guild=${message.guildId}`);
+        await player.destroy().catch(Logger.safe("commands/music/prefix/play.ts"));
+        player = null;
+      }
       if (!player) {
         player = createPlayer(message.guildId, voice.id, message.channelId, voice.rtcRegion);
         connectPromise = player.connect();
@@ -149,16 +153,12 @@ export default {
       let searchQuery = query;
       if (!query.startsWith("http") && !query.includes(":")) {
         currentSource = 'youtube';
-        searchQuery = `ytmsearch:${query}`;
+        // ytmsearch needs a MUSIC client on Lavalink; plain ytsearch until one is configured
+        searchQuery = `ytsearch:${query}`;
       }
 
       let result = await cachedSearch(player, searchQuery, message.author);
 
-      if (!result?.tracks?.length && searchQuery.startsWith("ytmsearch:")) {
-        currentSource = 'ytsearch';
-        const ytFallback = `ytsearch:${query}`;
-        result = await cachedSearch(player, ytFallback, message.author);
-      }
 
       if (!result?.tracks?.length) {
         currentSource = 'soundcloud';
@@ -217,7 +217,7 @@ export default {
       }
 
       const tracks = result?.tracks;
-      const track = tracks?.length ? pickBestTrack(tracks) : null;
+      const track = tracks?.length ? pickBestTrack(tracks, query) : null;
       if (!track) {
         return message.channel.send({ embeds: [ErrorEmbed.build("No results found.")] });
       }

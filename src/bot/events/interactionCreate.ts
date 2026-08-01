@@ -3,6 +3,7 @@ import { isLavalinkReady } from "../music/services/MusicService.js";
 import * as ErrorEmbed from "../ui/embeds/ErrorEmbed.js";
 import CooldownManager from "../core/utils/CooldownManager.js";
 import { incCommandsExecuted, observeCommandLatency } from "../telemetry/MetricsCollector.js";
+import { classifyError } from "../core/errors/ErrorClassifier.js";
 
 export function start(client: any): void {
   client.on("interactionCreate", async (interaction: any) => {
@@ -32,8 +33,14 @@ if (musicCommands.includes(interaction.commandName) && !isLavalinkReady()) {
       observeCommandLatency(interaction.commandName, Date.now() - start);
     } catch (err: any) {
       incCommandsExecuted({ command: interaction.commandName, status: "failure" });
-      Logger.error(`Command ${interaction.commandName} error: ${err.message}`);
-      const reply = { content: "An error occurred while executing this command.", ephemeral: true };
+      const cls = classifyError(err);
+      if (cls.kind === "user") {
+        Logger.warn(`Command ${interaction.commandName} user error: ${err.message}`);
+      } else {
+        Logger.error(`Command ${interaction.commandName} error: ${err.message}`);
+        import("@sentry/node").then((S) => S.captureException(err, { tags: { command: interaction.commandName } })).catch(() => {});
+      }
+      const reply = { content: cls.message, ephemeral: true };
       if (interaction.deferred || interaction.replied) {
         await interaction.editReply(reply).catch((e: any) =>
           Logger.warn(`[interactionCreate] Failed to editReply for /${interaction.commandName}: ${e?.message || e}`)

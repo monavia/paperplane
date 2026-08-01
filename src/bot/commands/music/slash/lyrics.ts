@@ -30,7 +30,9 @@ export default {
           text = lyrics.text || lyrics.lines.map((l: any) => l.line).join("\n");
           source = lyrics.sourceName || lyrics.provider || "Lavalink";
         }
-      } catch {}
+      } catch (e: any) {
+        Logger.warn(`[LYRICS] Lavalink lyrics unavailable, falling back: ${e?.message || e}`);
+      }
 
       if (!text) {
         const lrclib = await fetchLyrics(track);

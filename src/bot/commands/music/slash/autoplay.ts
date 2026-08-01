@@ -5,6 +5,7 @@ import { requireSameVoice } from "../../../../bot/core/utils/VoiceCheck.js";
 import * as ErrorEmbed from "../../../../bot/ui/embeds/ErrorEmbed.js";
 import { setAutoplay } from "../../../../bot/database/repositories/GuildRepository.js";
 import state from "../../../../bot/core/state/StateManager.js";
+import { autoplayInst } from "../../../../bot/music/engine/musicEvents.js";
 
 const TIMEOUT = 30000;
 
@@ -54,6 +55,7 @@ export default {
     collector.on("collect", async (i: any) => {
       const newState = i.customId === "autoplay_on";
       state.autoplay.set(guildId, newState);
+      if (!newState) autoplayInst.clearPrefetch(guildId);
       const result = new EmbedBuilder()
         .setDescription(`Autoplay is **${newState ? "ON" : "OFF"}**`)
         .setColor(newState ? Colors.SUCCESS : Colors.ERROR);

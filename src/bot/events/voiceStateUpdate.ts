@@ -42,6 +42,16 @@ export function start(client: any): void {
       cancelAloneTimer(guildId);
       Logger.info(`[VoiceState] Bot left voice in ${guildId}`);
 
+      // Voice flap guard — Discord voice session hiccup emits a transient "left"
+      // while the track keeps playing (player still active). Cleaning state here
+      // would wipe nowPlaying/queues under a running player. Skip cleanup if the
+      // player is still playing/paused — lavalink/Watchdog recovers the voice.
+      const player = getEngine(guildId)?.player;
+      if (player?.playing || player?.paused) {
+        Logger.warn(`[VoiceState] Voice flap in ${guildId} — player still ${player.playing ? "playing" : "paused"}, skipping cleanup (voice reconnect in progress)`);
+        return;
+      }
+
       await setLastFilter(guildId, "none").catch(Logger.safe("bot/events/voiceStateUpdate.ts"));
 
       if (isIdleDisconnect(guildId)) {

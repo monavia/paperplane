@@ -1,5 +1,142 @@
 # Changelog — Paperplane
 
+## 2026-08-01 — v3.3.0
+
+### Non-Latin Support — Junk Filter & Recommendation (KR/CN/JP/AR/TH)
+
+- **Problem** — user melaporkan lagu berbahasa unik (Korea/China/dsb) susah dicari & rekomendasinya berantakan. Root cause: semua normalisasi teks di engine pakai `/[^a-z0-9]/g` → karakter non-Latin (한글, 中文, ไทย, العربية) dibuang habis → key jadi `""`/`"-"` → **1 lagu non-Latin diputar, SEMUA lagu non-Latin dianggap played** (trackKeyOf/_trackKey), `_isSameTrack` mencampur judul berbeda, genrePrefs tidak pernah tersimpan, keyword overlap kosong. Tambahan: query search non-Latin tidak menghasilkan keyword (`queryKeywords` regex ASCII) → semua kandidat kena `-8`.
+- **Fix A — Unicode normalization** — 12 titik di `RecommendationEngine.ts` (normAuthor, trackKeyOf, markBadTrack/markGoodTrack author, incrementGenre, authorRep/authorPenalty, `_extractKeywords`, `_isSameTrack`, `_isNearDuplicate`, `_trackKey`, `_candidateScore`, genrePrefs check) + `AutoplayEngine._trackKey`: `[^a-z0-9]` → `[^\p{L}\p{N}]/u`. Latin behavior identik (460 test lama tetap hijau), non-Latin kini menghasilkan key/jenis nyata. `SearchService.queryKeywords`: `/[a-z0-9]{3,}/` → `/[\p{L}\p{N}]{3,}/u` → query Korea/Thai/AR ikut matching.
+- **Fix B — pola multilingual di `JunkKeywords.ts`** — `HARD_JUNK_RE` + lyrics-family KR/CN/JP/AR/TH/VI (`가사` sudah ada, `歌詞`, `字幕`, `中字`, `자막`, `كلمات`, `เนื้อเพลง`, `बोल`, `lời bài hát`, `vietsub`) + editorial per bahasa (KR `뉴스/팩트/순위/사연`, CN `新闻/故事/解说/盘点/排名`, JP `ニュース/解説/ランキング/まとめ/事実`, AR `أخبار/قصة/حقائق/شرح`, TH `ข่าว/เรื่องราว`). `SOFT_JUNK_RE` + penanda episode `\d+(화|회|集|話)`, `حلقة N`, `ตอนที่ N` + hashtag Unicode `#[\p{L}\p{N}_]{3,}` (regex jadi `/iu`). Baru `STYLE_ML_RE` (翻唱/커버/カバー/ريمكس/คัฟเวอร์/dll) dipakai di filter autoplay RecEngine (strict + fallback), `scoreTrack` −1, dan sinyal `styleML` (weight 1, soft).
+- **Fix C — false positive** — `/generation/i` dihapus dari `EVENT_PATTERNS` (kena nama asli "Girls' Generation" 少女時代).
+- **Tests** — `RecommendationEngine.test.ts` +6 (distinct key non-Latin tanpa collision, dedupe suffix Korea, `밤편지 가사` junk vs `밤편지` bersih, editorial 5 bahasa, tier hashtag Unicode, style soft), `SearchService.test.ts` +3 (official Korea menang atas versi 가사, query Thailand menghasilkan keyword, versi 리믹스 kalah ranking). **469/469 pass** (460 + 9), typecheck clean.
+
+## 2026-08-01 — v3.2.9
+
+### Junk Filter — Lyrics / Editorial / Hashtag
+
+- **Problem** — 2 track junk lolos filter (log user): 1) `FLOWER POWER Lyrics (KAN/ROM/ENG)` diputar via search manual padahal official audio/MV ada — root cause: `SearchService.scoreTrack` memberi **+4 boost** ke judul mengandung "lyrics" (dan tidak ada pola junk lyrics sama sekali), official cuma +2 → lirik fan-upload menang ranking. 2) `Pupupapa - Facts of Yoon Chan Young you should know | #MisogynyControversy #Allofusaredead` lolos autoplay — `pipeSuffix` gagal menangkap `| #...` (butuh huruf setelah pipe), tidak ada pola hashtag/editorial; repeat 2× dalam satu sesi karena `clearPlayed` ikut menghapus reputasi badTracks hasil belajar.
+- **Fix** — `JunkKeywords.ts`: pola 2 tier baru. `HARD_JUNK_RE` (weight 3, 1 hit langsung block di autoplay): lyrics-family (`lyrics`, `lirik`, `가사`, `歌词`, `kan/rom/eng`, `engsub`) + frasa editorial (`facts about/of/on`, `you should know`, `everything about`, `behind the scenes`, `documentary`, `explained`, `top N`, `interview`, `podcast/lecture/seminar/audiobook`). `SOFT_JUNK_RE` (weight 1, butuh kombinasi): hashtag `#\w{3,}`, `how to`, `story of`, `news/update/review/reaction/ranking/recap/teaser/trailer/controversy/episode/season`. Guard false-positive: "How to Save a Life", "Story of My Life", "The Story of Us", "#Beautiful" → 1 poin, tetap lolos.
+- **`RecommendationEngine.ts`** — `getTriggeredSignals` + `hardJunk`/`softJunk`; `pipeSuffix` diwiden `/\|\s*#?[a-z0-9]{3,}/` (tangkep `| #tag`); `DEFAULT_SIGNAL_WEIGHTS` + `hardJunk: 3, softJunk: 1`. `clearPlayed()` **berhenti menghapus badTracks/authorRep** (hanya playedTracks) → reputasi junk hasil belajar bertahan antar sesi; bonus: `lastTrack` (co-occurrence learning) ikut bertahan.
+- **`SearchService.ts`** — `scoreTrack`: lyrics `+4` → `HARD_JUNK_RE −3` / `SOFT_JUNK_RE −1`. Official audio/MV menang atas reupload lirik; versi lirik tetap playable kalau satu-satunya hasil (penalty, bukan hard-block). Jalur refilter `pickBestTrack` otomatis aktif karena `isJunkTrack` kini menangkap kasus baru.
+- **Tests** — `SearchService.test.ts` +3 (official beat lyrics; editorial+hashtag kalah ranking; lyrics-only tetap playable), `RecommendationEngine.test.ts` +5 (lyrics junk, editorial+hashtag junk, facts-of alone junk, hashtag alone not junk, soft phrases not junk). **460/460 pass** (452 + 8), typecheck clean.
+
+## 2026-08-01 — v3.2.8
+
+### Autoplay Prefetch — YouTube-style Instant Transition
+
+- **Problem** — `getNextTrack` dihitung **saat lagu habis** (queue end), rec engine jalan sekuensial (YouTube Mix + artist search + title fallback) → jeda 2–4 detik antar lagu autoplay. YouTube: "Up Next" sudah dipilih jauh sebelumnya, gap < 1s.
+- **Fix** — `AutoplayEngine.ts`: `schedulePrefetch()` dipasang di `trackStart` (hanya saat autoplay ON + queue kosong + bukan loop track/playlist + duration > 0), timer fire **15s sebelum lagu selesai** (floor 10s untuk lagu pendek) → `prefetch()` hitung rec di muka → cache per-guild (`{track, sourceKey, at}`, TTL 10 menit). `getNextTrack()` cek cache dulu (sourceKey = `info.identifier` fallback author-title): **hit → return instan (< 300ms)**, cache dibuang; miss → fallback hitung on-demand (perilaku lama, aman).
+- **Safeguard dipindah ke waktu konsumsi** — counter autoplay, loop detection, circuit breaker (`_applyGuards`) jalan saat `getNextTrack`, bukan saat prefetch → prefetch yang tidak terpakai tidak menambah counter/skip. Filter strict 120–480s + wajib duration (`_computeNext`) tetap di sisi output — track aneh tidak mungkin lolos.
+- **Invalidasi** — `clearPrefetch` di: toggle autoplay OFF (command prefix + slash), `state:delete`, `recommendation:clearPlayed`, `clearAutoplay`, `_disable` (circuit breaker). Last-writer-wins: sourceKey beda → prefetch baru replace cache lama.
+- **Call site lain otomatis dapat cache-hit** — `PlaybackEngine.skip`, `PlayerWatchdog` recovery, ghost-queue path (`handleQueueEnd` via `trackEnd`) — semua pakai instance `AutoplayEngine` yang sama (`export const autoplayInst` di musicEvents).
+- **Accepted misses** (fallback on-demand) — seek maju jauh (timer belum fire), pause > 10 menit (TTL). Stream live (duration 0) tidak dijadwalkan.
+- **Tests** — `AutoplayEngine.test.ts` +7 (consume-cache, no extra search, miss on source change, timer at duration-15s, 10s floor, clearPrefetch, disabled no-op), `musicEvents.test.ts` +5 (trackStart schedule saat autoplay on + queue kosong; skip saat off / queue berisi / loop track / duration 0; shared `registeredHandlers` map karena `register()` idempotent). **452/452 pass** (440 + 12), typecheck clean.
+
+## 2026-07-31 — v3.2.7
+
+### Ops — Lavalink VPS YouTube Hardening (setup notes)
+
+Konfigurasi `application.yml` di Lavalink 4.2.2 + youtube-plugin 1.18.2 yang menyelesaikan blok YouTube dari IP datacenter:
+
+- **OAuth hanya jalan di client `TV`** — docs resmi: *"Only the TV client supports OAuth... Web, Android, and Music clients only support public content"*. Config: `clients: [TV, WEB, ANDROID_VR]` + `oauth: { enabled: true, refreshToken: "..." }`. Sebelumnya pakai `WEB/MUSIC` → warning "OAuth has been enabled without registering any OAuth-compatible clients" (token ter-refresh tapi tidak dipakai). `MUSIC` client cuma untuk search, tidak bisa streaming.
+- **Remote cipher server** — youtube-plugin 1.18.2 regex cipher rusak terhadap player script YouTube baru (`Must find sig function`, issue #225 — maintainer: *"use a remote cipher server"*). Fix: `remoteCipher: { url: "https://cipher.kikkia.dev/", userAgent: "paperplane" }` (public instance yt-cipher, rate limit 10 req/s; self-host via `kikkia/yt-cipher` untuk >1k players).
+- **IPv4 stack paksa (fase 1)** — VPS tanpa IPv6 → stream googlevideo gagal `Network is unreachable`. Start: `java -Djava.net.preferIPv4Stack=true -jar Lavalink.jar`.
+- **IPv6 enable di AWS (fase 2 — solved CDN block)** — VPC/subnet + IPv6 CIDR, route `::/0` → Internet Gateway, auto-assign IPv6 di instance; OS `net.ipv6.conf.all.accept_ra=2`. Start diganti `java -Djava.net.preferIPv6Addresses=true -jar Lavalink.jar` (preferensi, bukan paksaan — IPv4 tetap fallback). Hasil: video niche yang di-block di IPv4 datacenter (KAMAZ — `Connect timed out`/SYN blackhole per-node googlevideo) tembus via IPv6. Video populer (blinding lights) jalan di kedua stack. Setup komplit: `docs/LAVALINK_VPS_SETUP.md`.
+- **CDN block per-video (sisa risiko)** — jika video niche tetap gagal di IPv4 maupun IPv6 (block di kedua stack untuk node itu), tidak bisa di-fix di config — bot-side fallback multi-source (section bawah) yang menangani.
+
+### Error Handling — Classification, Friendly Messages, Defer Standardization (1.8)
+
+- **`ErrorClassifier.ts` (new)** — `src/bot/core/errors/ErrorClassifier.ts`: classifies thrown errors into 3 kinds:
+  - `UserError` (new class) — command-level validation errors; message shown verbatim to the user.
+  - `discord` — `DiscordAPIError` (via `.code`/`.status`): friendly messages for 429 (rate limit), 403/50013 (missing permissions), 50007 (DMs blocked), 10008 (deleted message).
+  - `system` — anything else; generic "Something went wrong on my side" with **no internals leaked** (DB connection strings, IPs, stack traces never reach the user).
+- **Wired into both entry points** — `interactionCreate.ts` and `messageCreate.ts` (prefix commands, both paths): system/discord errors → `Logger.error` + `Sentry.captureException` (with command tag); user errors → `Logger.warn` only, no Sentry noise. Replaces the generic "An error occurred while executing this command." / "Command error." everywhere.
+- **Defer standardization** — defer happens only after all guards pass, before any heavy work:
+  - `prefix.ts` — `setPrefix`/`getPrefix` (DB calls) moved after `deferReply` (was: DB write before defer, risking the 3s interaction window).
+  - `remove.ts` — `deferReply` moved to the top after voice guard; all `interaction.reply` paths converted to `editReply` (including the confirm-button flow via `editReply`-resolved message + `awaitMessageComponent`); `removeByQuery` (await, slow) no longer runs before defer.
+  - Audited the other 14 slash commands (play, search, skip, seek, lyrics, playlist, stop, pause, resume, queue, volume, swap, shuffle, 247): all already correct (guard → defer).
+- **Lyrics safe-catch verified + hardened** — audited `slash/lyrics.ts` + `prefix/lyrics.ts`: outer try/catch with `Logger.error` + friendly embed, silent inner catch for `getCurrentLyrics()` fallback to LRCLIB, `fetchReply().catch()`, `LyricsService` internal catches — all present. Two gaps fixed: prefix lyrics loading-message `channel.send` now has `.catch(Logger.safe(...))`; the two silent `catch {}` for Lavalink lyrics now `Logger.warn` (observable fallback).
+- **Tests** — new `ErrorClassifier.test.ts` (6 tests: UserError, 50013, 429, unknown Discord code, system-error leak check, null input). 431 total passing.
+
+### Play After Lavalink Restart — Stale Player Fix
+
+- **Bug** — after a Lavalink/node restart, the first `-p`/`/play` produced no sound until the user ran `-stop` and played again. Root cause: `getPlayer()` returned the old player whose node session was gone, but client-side `player.playing` was still `true` → the play path saw "already playing" and silently queued the track instead of playing it.
+- **Fix** — both `prefix/play.ts` and `slash/play.ts`: before reusing a player, check `player.node?.connected`. If the node is disconnected (stale session), destroy the player and create a fresh one (with a fresh voice connect) — no more silent first play after a Lavalink restart.
+
+### Track Error — Permanent Error Detection + Multi-Source Fallback
+
+- **Problem** — YouTube blocks certain niche videos from datacenter IPs (AWS/cloud) with a disguised "This video requires login" / `AllClientsFailedException` / "Video player configuration error". These errors are permanent — retrying the same track always fails, so the old flow burned 2-3 retry cycles (re-resolve → retry original → drop) before falling back.
+- **`isPermanentTrackError(errMsg)`** — `musicEvents.ts` (exported, testable): detects permanent YouTube failures by pattern (`requires login`, `AllClientsFailedException`, `Video player configuration`, `Sign in to confirm you're not a bot`, `This video is unavailable`, `removed by the uploader`, `playability`). Matches against `exception.message` + `exception.cause` (Context7-verified payload shape).
+- **Immediate multi-source fallback** — `findMultiSourceFallback()`: on permanent error, skips retries entirely and tries the same song on `ytsearch` → `scsearch` (SoundCloud) → `dzsearch` (Deezer), picking the first working track via `pickBestTrack` (skips same-URI duplicates, preserves source/requester metadata).
+- **Immediate blacklist** — if no fallback source works, the track is `recommendation:markBad`'d (source `"error"`) in one cycle instead of three, then `stopPlaying()` → `queueEnd` → autoplay advances to a *different* track. Node-disconnected path still routes through `recoverPlayer`.
+- **Tests** — 2 new tests in `musicEvents.test.ts`: permanent patterns match (6 cases incl. real `AllClientsFailedException` string), transient errors rejected (ECONNRESET/ETIMEDOUT/generic/empty). 435 total passing.
+
+### Autoplay Stuck Fallback — Blacklist, Never Stop
+
+- **Problem** — when a Lavalink node goes unstable, every track stalls (`trackStuck` at 15s). Each stuck fired `stopPlaying()` → `queueEnd` → autoplay recommended the *next* track, which could also stall — but worse, the same stalled track could be recommended again, looping it forever.
+- **Fix** — `musicEvents.ts` `trackStuck` handler now emits `recommendation:markBad` with `source: "stuck"` before stopping the player:
+  - The stalled track is blacklisted from autoplay recommendations (same path as error/skip feedback — 3 strikes makes it permanently bad).
+  - `queueEnd` → autoplay continues with a *different* track — the stuck track can never be picked again. Fallback always happens; the bot never stops on its own.
+  - Play path already had the full fallback chain (re-resolve with duration match → retry original → drop after 3 failures → `recoverPlayer` when node disconnects) — stuck is now symmetric with track errors.
+- **Tests** — 2 new tests in `musicEvents.test.ts` via real handler registration: stuck → `stopPlaying` called + `recommendation:markBad` emitted with `source: "stuck"`; node disconnected → no unsafe stop. 436 total passing.
+
+### Search Selection — Query-Aware Track Ranking
+
+- **Bug** — `-p`/`/play` always took `tracks[0]` from the search result (as long as the title had no bad keyword), so YouTube's popularity ranking decided the song. `-p cyka blyat` / `-p blyatman cyka blyat` both played "Russian Village Boys x Cosmo & Skoro - Cyka" (80M views) instead of "DJ Blyatman - Cyka Blyat".
+- **Fix** — `pickBestTrack(tracks, query?)` (`SearchService.ts`) now reranks results against the user's query keywords: +5 per keyword found in the title, +3 per keyword found in the author, +10 bonus when every keyword matches, −8 penalty when nothing matches. Backward compatible — without a query the old `tracks[0]` behavior is preserved (playlist URLs, direct links).
+- **Wired in** — both `prefix/play.ts` + `slash/play.ts` pass the raw query (and Spotify resolve query) into `pickBestTrack`; the multi-source fallback in `musicEvents.ts` passes its author+title query too, so error fallback gets the same ranking.
+- **Drop `ytmsearch:` from the regular search flow** — the VPS Lavalink has no `MUSIC` client configured (`clients: [TV, WEB, ANDROID_VR]`), so `ytmsearch:` always returned empty (1 wasted request + ~400ms per command). Plain `ytsearch:` is used first now; the dead `ytmsearch` fallback branch was removed. Re-enable `ytmsearch:` when a MUSIC client is added on Lavalink. (`resolveSpotifyTrack` keeps its `ytmsearch` → `ytsearch` attempt chain.)
+- **Tests** — new `SearchService.test.ts` (4 tests: artist+title rerank, full-keyword-match preference, legacy no-query behavior, URL queries skip keyword scoring). 440 total passing (442 incl. 2 earlier-added in this release; benchmark timing flake is pre-existing).
+
+### Search Selection — "DJ" Filter Bug (root cause of wrong tracks)
+
+- **Root cause found** — `BAD_KEYWORDS` in `SearchService.ts` contained `"dj"`. `hasBadKeyword()` matched it against BOTH title and author, so **any track with "dj" in the artist name was filtered out** (DJ Blyatman, DJ Snake, DJ Khaled, ...). Every `-p` search for a DJ-artist returned the leftover fallback track: `-p cyka blyat` played "BIAŁAS & LANEK", "S Meme - CYKA BLYAT edition", or "Russian Village Boys - Cyka" — and even the KAMAZ "success" earlier was actually "Kamaz AMV - Namida" (the real "DJ Blyatman Kamaz" was filtered). The query-aware ranking from the previous patch never got a chance — the DJ track was removed before scoring.
+- **Fix** — removed `"dj"` from `BAD_KEYWORDS`. DJ artists now survive the bad-keyword filter and win on query ranking.
+- **Full search-flow audit (every search path)** — replaced `ytmsearch:` with `ytsearch:` in **12 places**: `resolveSpotifyTrack` (prefix+slash play), `/search` command (was always empty without a MUSIC client → "No results found"), reply-trigger paths in `messageCreate.ts` ×2, autoplay recommendation in `RecommendationEngine.ts` ×2, queue-end spotify re-resolve in `musicEvents.ts`, playlist import in `PlaylistService.ts` (deduped duplicate branch), state restore in `StateService.ts`, failover re-resolve loops in `FailoverManager.ts` ×2, `findTrackWithDuration`, and **`defaultSearchPlatform: "ytmsearch"` → `"ytsearch"` in `lavalink.ts`** (query without prefix was silently searching an unavailable platform). All because the VPS Lavalink has no `MUSIC` client configured — every `ytmsearch` was one wasted request + ~400ms and zero results. Revert to `ytmsearch` if a MUSIC client is ever added.
+- **Verified clean** — `isCover`, `isJunkTrack`, `STYLE_RE`, `CLICKBAIT_PATTERNS`, `POST_OFFICIAL_RE` all pass "DJ Blyatman & Russian Village Boys - CYKA BLYAT (Official Music Video)" (no false positives); `/search` command is user-picks-from-list (no hidden filtering); search cache keys are per-query (correct).
+- **Tests** — `SearchService.test.ts` +1 regression test: track with "DJ Blyatman" artist is NOT filtered and wins query ranking (5 tests total). Typecheck clean; 440/440 passing (benchmark timing flake passes solo).
+
+### Search Selection — Duration Range Filter
+
+- **Problem** — garbage search hits like "S Meme - CYKA BLYAT edition" (under 10 seconds) could win `pickBestTrack`. Search results should only surface real songs.
+- **Fix** — `pickBestTrack` now filters tracks outside **2–8 minutes** (`info.length`/`durationMs`, 120s–480s) before ranking, for non-URL queries only (direct links/playlists never filtered; unknown duration passes). If every result is out of range, the full original list is used as fallback so the user never gets a hard "No results".
+- **Tests** — `SearchService.test.ts` +4: short track filtered when alternatives exist, long track filtered, all-out-of-range falls back, URL queries bypass the filter (9 tests total). Typecheck clean.
+
+### Ghost Queue — Autoplay Never Triggered (false "finished")
+
+- **Bug** — with autoplay ON and an empty queue, the last track ended (`trackEnd reason=finished`, `queue=0`), then nothing played: ~30s of silence until the Watchdog's "silent voice loss" reconnected and replay/failover finally kicked in. The player's internal `queueEnd` (which triggers autoplay + cleanup) never fired.
+- **Root cause** — dual queue state: `state.queues` (RAM, playback source) vs `player.queue.tracks` (lavalink-client mirror for persistence via MongoQueueStore). When the mirror held leftover tracks the RAM didn't know about ("ghost"), lavalink-client's internal `trackEnd` (Node.ts) shifted a ghost into `queue.current` and emitted user `trackEnd` instead of going straight to `queueEnd`; with `autoSkip` unset the ghost was never played, so internal `queueEnd` (→ `playing=false` + user `queueEnd`) never fired → zombie player, autoplay dead. Verified against lavalink-client source + docs (Context7): `player.playing` is a plain field set false only in internal `queueEnd`.
+- **Fix** — `musicEvents.ts`:
+  - `advanceQueue`, track-loop replay, and the autoplay play path now call `state.queues.syncToPlayer(guildId)` right before `player.play(...)` — the mirror is rewritten from RAM before every play, so a ghost can never sit in `queue.current`.
+  - `trackEnd` handler: ghost detection (`queue=0 && player.playing`) → reset `player.queue.current`/`playing`/`tracks`, then run the full queue-end path (autoplay → cleanup) inline via the refactored `handleQueueEnd()` — autoplay resumes instantly instead of waiting for the Watchdog.
+  - `queueEnd` listener refactored into `handleQueueEnd(player, track, payload)` (shared by both events); guard semantics preserved.
+- **Tests** — `StateStores.test.ts` +3 (QueueStore mirror follows RAM on `set`, `syncToPlayer` rewrites mirror, no-op without RAM data); typecheck clean.
+
+### Autoplay Hardening — Absolute Duration + Recommendation Fallback
+
+- **Strict filter** — `RecommendationEngine` strict filter now also requires the absolute **2–8 minute** range (`DurationFilter.ts`, shared with search) in addition to the ±40% relative check; the old escape hatch (`origDuration < 30s` skips duration checks) no longer lets 10-second memes through. Lenient fallback additionally drops tracks under 30s.
+- **Recommendation fallback** — `AutoplayEngine.getNextTrack` no longer blindly takes `recs[0]`: it picks the first of `recs[0..2]` with a valid title and in-range duration, so a bad first candidate no longer kills autoplay.
+- **`DurationFilter.ts` (new)** — `MIN_DURATION_MS`/`MAX_DURATION_MS`/`isInDurationRange` moved out of `SearchService` into a dependency-free module (reads `info.length`/`durationMs`/`duration`), breaking an import cycle (`AutoplayEngine → SearchService → PlayerService → musicEvents → AutoplayEngine`).
+- **Tests** — new `AutoplayEngine.test.ts` (5: first-valid pick, all-valid picks recs[0], all-out-of-range → null, empty → null, no current track → null); `SearchService.test.ts` +2 (`isInDurationRange` reads `info.duration`, unknown duration passes). 454 total passing.
+
+### Voice Flap — False "Bot left voice" + AI-Play Wrong Track
+
+- **Bug (from live logs)** — `[VoiceState] Bot left voice` fired while the track kept playing (position sync kept advancing): a transient Discord voice-session hiccup ("flap") triggers `voiceStateUpdate` with `channelId=null` for a split second, and the handler wiped state (`deleteState`: nowPlaying/queues/loop cleared) under a running player. The following autoplay play then failed silently (no voice), and the next track request replayed the same song.
+- **Fix** — `voiceStateUpdate.ts`: "Bot left voice" now checks the player first — if `player.playing`/`paused` is still true it's a flap; cleanup is skipped and lavalink/Watchdog recovers the voice instead of wiping state.
+- **AI-play path used raw `tracks[0]`** — `messageCreate.ts` AI "play X" intent took `result.tracks[0]` directly (bypassing `pickBestTrack`), so it could replay the same wrong/popular version ("CYKA BLYAT" by Russian Village Boys instead of DJ Blyatman). Now goes through `pickBestTrack(result.tracks, q)` like every other play path.
+- **Play-into-dead-voice guards** — `advanceQueue` and the autoplay play path in `musicEvents.ts` now bail with a warn when `player.connected` is false (voice gone), deferring to the Watchdog recovery instead of a silent failed play.
+
+### Autoplay — Duration Mandatory (unknown duration = non-music)
+
+- **Bug (live)** — "Novosibirsk State University | Top 10 un..." (a lecture/presentation video, no known duration) slipped through autoplay: `isInDurationRange` passes tracks with unknown duration by design (needed for URL search queries), and both the strict/lenient filters + `AutoplayEngine` treated unknown duration as acceptable.
+- **Fix** — autoplay now REQUIRES a known duration in the 2–8 minute band, at every layer: strict filter (`!!t?.info?.duration && isInDurationRange(t)`), lenient fallback (same, replacing the old `<30s bumper`), and `AutoplayEngine.getNextTrack` (`r.info?.duration >= MIN && <= MAX`). Tracks without duration (presentations, podcasts, tutorials) can never be autoplayed again.
+- **Tests** — `AutoplayEngine.test.ts` +1: no-duration track skipped when a valid track follows. 440 total passing.
+
+### Log Noise — PositionSync Silent (anomalies only)
+
+- **Problem** — `[PositionSync]` logged every second because real-world deltas almost never equal exactly 1000ms (599–1015), flooding logs during playback.
+- **Fix** — `StateService.ts` `startPositionSync` now logs only anomalies: `delta < 0` (seek/restart) or `delta > 3000` (gap/skip/lag). Normal playback is silent; the DB position flush (POSITION_FLUSH_INTERVAL) is untouched.
+
 ## 2026-07-30 — v3.2.6
 
 ### AI Humanize — Persona, Per-User Memory, Reply-to-Trigger

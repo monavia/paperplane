@@ -18,7 +18,6 @@ export const EVENT_PATTERNS = [
   /paguron/i,
   /brothehood/i,
   /community/i,
-  /generation/i,
   /senenan/i,
   /pernikahan/i,
   /khitanan/i,
@@ -36,3 +35,12 @@ export const POST_OFFICIAL_RE = /\(\s*official\s*(?:music\s*video|mv|live\s*musi
 export const AUTHOR_OFFICIAL_RE = /official\s*(?:mv|music\s*video)/i;
 
 export const STYLE_RE = /version|ver\.|tribute|keroncong|kroncong|akustik|acoustic|instrumental|karaoke|session\b/i;
+
+// gaya/seni non-Latin (KR/CN/JP/AR/TH) — weight 1 (soft): bantu turunkan ranking remix/cover/live
+export const STYLE_ML_RE = /(?:翻唱|伴奏|卡拉OK|커버|리믹스|노래방|라이브|カバー|リミックス|ライブ|カラオケ|ريمكس|كاريوكي|คัฟเวอร์|รีมิกซ์|คาราโอเกะ)/i;
+
+// 1 hit = berat (weight 3, langsung block di autoplay): reupload lyrics + frasa editorial/news-channel
+export const HARD_JUNK_RE = /(?:^|[^\w])(?:lyrics?|lirik|가사|歌词|歌詞|字幕|中字|자막|كلمات|เนื้อเพลง|बोल|lời bài hát|vietsub|kan\/rom\/eng|engsub)(?:[^\w]|$)|facts?\s+(?:about|of|on|behind)\b|you\s+should\s+know|everything\s+about|behind\s+the\s+scenes|documentary|explained|top\s+\d+|interview\b|podcast|lecture|seminar|audiobook|뉴스|팩트|순위|사연|新闻|故事|解说|盘点|排名|ニュース|解説|ランキング|まとめ|事実|أخبار|قصة|حقائق|شرح|ข่าว|เรื่องราว/i;
+
+// ringan (weight 1): butuh kombinasi biar block — hindari false positive (How to Save a Life, Story of My Life, #Beautiful)
+export const SOFT_JUNK_RE = /#[\p{L}\p{N}_]{3,}|how\s+to\b|story\s+of\b|news\b|update\b|review\b|reaction\b|ranking\b|recap\b|teaser\b|trailer\b|controversy\b|episode\b|season\b|\d+\s*(?:화|회|集|話)|حلقة\s*\d+|ตอน(?:\s*ที่)?\s*\d+/iu;

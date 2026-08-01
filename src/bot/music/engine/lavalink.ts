@@ -160,7 +160,7 @@ export async function init(client: any): Promise<boolean> {
     playerOptions: {
       volumeDecrementer: 0.75,
       clientBasedPositionUpdateInterval: 50,
-      defaultSearchPlatform: "ytmsearch",
+      defaultSearchPlatform: "ytsearch",
       applyVolumeAsFilter: false,
     },
   });

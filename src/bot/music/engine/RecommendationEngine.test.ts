@@ -1,121 +1,98 @@
-import { describe, it, assert } from "vitest";
-import { isJunkTitle, isJunkTrack, markBadTrack, markGoodTrack, isComboBad, isStrictBoostActive, cooccurCount } from "./RecommendationEngine.js";
-import RecommendationEngine from "./RecommendationEngine.js";
-import * as EventBus from "../events/EventBus.js";
+import { describe, test, beforeEach } from "vitest";
+import assert from "node:assert";
+import RecommendationEngine, { isJunkTrack } from "./RecommendationEngine.js";
 
-describe("isJunkTitle", () => {
-  it("flags emoji + clickbait + separator title", () => {
-    assert.ok(isJunkTitle("LUKA DIATAS LUKA //\u{1F62D} KALAU GAK MAU MENANGIS JANGAN DI PLAY"));
+function mkTrack(title: string, author = "Artist"): any {
+  return { info: { title, author } };
+}
+
+describe("RecommendationEngine same-track dedupe", () => {
+  let engine: RecommendationEngine;
+
+  beforeEach(() => {
+    engine = new RecommendationEngine();
   });
 
-  it("passes legit all-caps official video title", () => {
-    assert.ok(!isJunkTitle("DENNY CAKNAN - NEGORO ANGIN (Official Music Video)"));
+  test("suffix variants of the same song are treated as same track", () => {
+    assert.ok(engine._isSameTrack(mkTrack("Cyka (Official Video)"), mkTrack("Cyka")));
+    assert.ok(engine._isSameTrack(mkTrack("Cyka - Official Audio"), mkTrack("Cyka")));
+    assert.ok(engine._isSameTrack(mkTrack("Cyka (Remix)", "A"), mkTrack("Cyka", "A")));
   });
 
-  it("passes plain title", () => {
-    assert.ok(!isJunkTitle("Rampungan"));
+  test("Topic channel author matches the real artist", () => {
+    assert.ok(engine._isSameTrack(mkTrack("Cyka", "DJ Blyatman - Topic"), mkTrack("Cyka", "DJ Blyatman, Russian Village Boys")));
   });
 
-  it("flags warning/galau clickbait", () => {
-    assert.ok(isJunkTitle("Warning Jangan Nonton Sedih Banget Galau"));
-  });
-});
-
-describe("isJunkTrack", () => {
-  it("flags kembar campursari re-upload with lyric suffix", () => {
-    assert.ok(isJunkTrack("Kembar Campursari ( Official Music Video ) Iseh kebayang bayang", "NEGORO ANGIN"));
+  test("different tracks are not conflated", () => {
+    assert.ok(!engine._isSameTrack(mkTrack("Cyka"), mkTrack("Other Song")));
   });
 
-  it("flags author with official mv marker", () => {
-    assert.ok(isJunkTrack("Kawitaning Sinawang | koyo ngene yen nandang loro asmoro", "Campursari (Official MV)"));
+  test("variant title still blocks replay via playedTracks", () => {
+    engine._markPlayed("g1", mkTrack("Cyka (Official Video)"));
+    assert.ok(engine._isPlayed("g1", mkTrack("Cyka")));
   });
 
-  it("flags meme channel author", () => {
-    assert.ok(isJunkTrack("DIES NATALIS KE - 16 SMKN 1 BANGSRI (PANAGA XVI)", "SHAUN THE SHEEP"));
+  test("clearPlayed actually clears shared state", () => {
+    engine._markPlayed("g2", mkTrack("Cyka"));
+    new RecommendationEngine().clearPlayed("g2");
+    assert.ok(!engine._isPlayed("g2", mkTrack("Cyka")));
   });
 
-  it("flags wedding event video title", () => {
-    assert.ok(isJunkTrack("KDK MUSIC - WEDDING TEGUH & MUNA - SENENAN JEPARA", "FEBY PESEK"));
+  test("non-latin tracks get distinct keys (no collision)", () => {
+    engine._markPlayed("g3", mkTrack("밤편지", "아이유"));
+    assert.ok(engine._isPlayed("g3", mkTrack("밤편지", "아이유")));
+    assert.ok(!engine._isPlayed("g3", mkTrack("밤하늘", "아이유")));
+    assert.ok(!engine._isPlayed("g3", mkTrack("밤편지", "폴킴")));
   });
 
-  it("flags happy party video", () => {
-    assert.ok(isJunkTrack("LALUNA MUSIC - HAPPY PARTY BROTHEHOOD MAGUAN", "BUNGA PERMATA"));
-  });
-
-  it("passes legit caps artist + caps title", () => {
-    assert.ok(!isJunkTrack("Widodari", "DENNY CAKNAN"));
-  });
-
-  it("passes legit live music video", () => {
-    assert.ok(!isJunkTrack("KALAH WETON (Official Live Music)", "DINDA TERATU"));
-  });
-
-  it("passes legit title with single pipe tag", () => {
-    assert.ok(!isJunkTrack("Crito Mustahil ( Mung ) | #albumkalihwelasku", "Denny Caknan"));
+  test("non-latin suffix variants still dedupe", () => {
+    assert.ok(engine._isSameTrack(mkTrack("밤편지 (Official Audio)"), mkTrack("밤편지")));
   });
 });
 
-describe("markBadTrack", () => {
-  it("is idempotent", () => {
-    const track = { info: { title: "Wirang", author: "Denny Caknan" } };
-    markBadTrack("g1", track);
-    markBadTrack("g1", track);
-    markBadTrack("g2", track);
-  });
-});
-
-describe("adaptive weights (layer 2)", () => {
-  it("markGoodTrack decays clickbait weight until title stops being junk", () => {
-    const title = "Warning Jangan Nonton Sedih Banget Galau";
-    assert.ok(isJunkTrack(title));
-    for (let i = 0; i < 6; i++) markGoodTrack("g9", { info: { title, author: "Some Artist" } });
-    assert.ok(!isJunkTrack(title));
+describe("junk signals (hardJunk/softJunk)", () => {
+  test("lyrics reupload is junk", () => {
+    assert.ok(isJunkTrack("FLOWER POWER Lyrics (KAN/ROM/ENG)", "Fan Upload"));
   });
 
-  it("is safe on missing info", () => {
-    markGoodTrack("g9", {});
-  });
-});
-
-describe("_isNearDuplicate (layer 3)", () => {
-  it("flags same tokens modulo case/space", () => {
-    const eng = new RecommendationEngine();
-    assert.ok(eng._isNearDuplicate(
-      { info: { title: "KALAH WETON (Official Live Music)", author: "DINDA TERATU" } },
-      { info: { title: "Kalah Weton Official Live Music", author: "Dinda Teratu" } },
-    ));
+  test("editorial + hashtag title is junk", () => {
+    assert.ok(isJunkTrack("Facts of Yoon Chan Young you should know | #Allofusaredead", "Pupupapa"));
   });
 
-  it("passes distinct tracks", () => {
-    const eng = new RecommendationEngine();
-    assert.ok(!eng._isNearDuplicate(
-      { info: { title: "Wirang", author: "Denny Caknan" } },
-      { info: { title: "Kalah Weton", author: "Denny Caknan" } },
-    ));
+  test("facts-of alone is junk", () => {
+    assert.ok(isJunkTrack("Facts of Yoon Chan Young", "Pupupapa"));
   });
-});
 
-describe("combo history (layer 4)", () => {
-  it("flags combo after 5 bad marks", () => {
-    const track = { info: { title: "\u{1F62D} Jangan Nonton", author: "Junk Channel" } };
-    for (let i = 0; i < 5; i++) markBadTrack("g10", track);
-    assert.ok(isComboBad("g10", track));
+  test("hashtag alone is not junk", () => {
+    assert.ok(!isJunkTrack("#Beautiful", "Mariah Carey"));
   });
-});
 
-describe("rapid skip (layer 5)", () => {
-  it("activates strict boost after 2 skip-source markBad within window", () => {
-    const track = { info: { title: "Sigar", author: "Denny Caknan" } };
-    EventBus.emit("recommendation:markBad", { guildId: "g11", track, source: "skip" });
-    EventBus.emit("recommendation:markBad", { guildId: "g11", track, source: "skip" });
-    assert.ok(isStrictBoostActive("g11"));
+  test("soft phrases alone are not junk", () => {
+    assert.ok(!isJunkTrack("The Story of Us", "Taylor Swift"));
+    assert.ok(!isJunkTrack("Story of My Life", "One Direction"));
+    assert.ok(!isJunkTrack("How to Save a Life", "The Fray"));
   });
-});
 
-describe("co-occurrence (layer 6)", () => {
-  it("builds edges from consecutive history entries", () => {
-    EventBus.emit("history:addEntry", { guildId: "g12", track: { info: { title: "Wirang", author: "Denny Caknan" } } });
-    EventBus.emit("history:addEntry", { guildId: "g12", track: { info: { title: "Sigar", author: "Denny Caknan" } } });
-    assert.ok(cooccurCount("dennycaknan-wirang", "dennycaknan-sigar") >= 1);
+  test("korean lyrics title is junk, plain korean title is not", () => {
+    assert.ok(isJunkTrack("밤편지 가사", "아이유"));
+    assert.ok(!isJunkTrack("밤편지", "아이유"));
+  });
+
+  test("multilingual editorial junk is caught (KR/CN/JP/AR/TH)", () => {
+    assert.ok(isJunkTrack("아이유 뉴스 모음", "채널"));
+    assert.ok(isJunkTrack("某歌曲背后的故事", "频道"));
+    assert.ok(isJunkTrack("あの曲のまとめ", "チャンネル"));
+    assert.ok(isJunkTrack("أخبار الفنان", "قناة"));
+    assert.ok(isJunkTrack("เรื่องราวของเพลงนี้", "ช่อง"));
+  });
+
+  test("unicode hashtag tiers: lyrics tag junk, plain tag not", () => {
+    assert.ok(isJunkTrack("#كلمات", "فنان"));
+    assert.ok(!isJunkTrack("#أغنية", "فنان"));
+  });
+
+  test("non-latin style variants are soft junk (not hard-blocked)", () => {
+    assert.ok(!isJunkTrack("밤편지 커버", "누군가"));
+    assert.ok(!isJunkTrack("中文翻唱", "某人"));
   });
 });

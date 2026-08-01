@@ -141,3 +141,45 @@ describe("NowPlayingStore", () => {
   });
   test("overwrite existing track", () => { store.set("g1", { title: "old" }); store.set("g1", { title: "new" }); assert.strictEqual(store.get("g1").title, "new"); });
 });
+
+describe("QueueStore syncToPlayer (mirror)", () => {
+  function mkStoreWithMirror() {
+    const store = new QueueStore();
+    const mirror: any = {
+      tracks: [],
+      splice(index: number, amount: number, insert?: any) {
+        if (amount) mirror.tracks.splice(index, amount);
+        if (insert !== undefined) {
+          const items = Array.isArray(insert) ? insert.flat(2) : [insert];
+          mirror.tracks.splice(index, 0, ...items);
+        }
+        return mirror.tracks[index] ?? null;
+      },
+    };
+    store.setPlayerGetter(() => ({ queue: mirror }));
+    return { store, mirror };
+  }
+
+  test("mirror tracks follow RAM state on set", () => {
+    const { store, mirror } = mkStoreWithMirror();
+    store.set("g1", [{ info: { title: "A" } }, { info: { title: "B" } }]);
+    assert.strictEqual(mirror.tracks.length, 2);
+    store.set("g1", []);
+    assert.strictEqual(mirror.tracks.length, 0);
+  });
+
+  test("syncToPlayer rewrites mirror from RAM", () => {
+    const { store, mirror } = mkStoreWithMirror();
+    store.set("g1", [{ info: { title: "A" } }]);
+    mirror.tracks.push({ info: { title: "GHOST" } });
+    store.syncToPlayer("g1");
+    assert.strictEqual(mirror.tracks.length, 1);
+  });
+
+  test("syncToPlayer no-ops when RAM has no data for guild", () => {
+    const { store, mirror } = mkStoreWithMirror();
+    mirror.tracks.push({ info: { title: "GHOST" } });
+    store.syncToPlayer("unknown-guild");
+    assert.strictEqual(mirror.tracks.length, 1);
+  });
+});

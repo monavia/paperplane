@@ -2,7 +2,8 @@ import * as EventBus from "../events/EventBus.js";
 import { isCover } from "../services/TitleResolver.js";
 import { getAdapter } from "../../cache/CacheAdapter.js";
 import Logger from "../../core/utils/Logger.js";
-import { CLICKBAIT_PATTERNS, EVENT_PATTERNS, REUPLOAD_RE, POST_OFFICIAL_RE, AUTHOR_OFFICIAL_RE, STYLE_RE } from "./JunkKeywords.js";
+import { CLICKBAIT_PATTERNS, EVENT_PATTERNS, REUPLOAD_RE, POST_OFFICIAL_RE, AUTHOR_OFFICIAL_RE, STYLE_RE, STYLE_ML_RE, HARD_JUNK_RE, SOFT_JUNK_RE } from "./JunkKeywords.js";
+import { isInDurationRange } from "../services/DurationFilter.js";
 
 const GENRE_PREFIX = "taste:";
 const TASTE_TTL = 7 * 86400000;
@@ -22,9 +23,15 @@ const DEFAULT_SIGNAL_WEIGHTS: Record<string, number> = {
   emoji: 2, openParen: 1, dblSeparator: 1, pipeSuffix: 1,
   capsTitle: 2, capsAuthor: 2, clickbait: 2, event: 2,
   postOfficial: 2, authorOfficial: 2, multiDash: 2, reupload: 2,
-  bangQuest: 1,
+  bangQuest: 1, hardJunk: 3, softJunk: 1, styleML: 1,
 };
 
+const playedTracks = new Map<string, Set<string>>();
+const VARIANT_PAREN_RE = /[([][^()\]]*(?:official|remix|radio\s*edit|lyrics?|lyric\s*video|slowed|sped\s*up|cover|karaoke|instrumental|audio|video|mv|4k|hd|720p|1080p)[^()\]]*[)\]]/gi;
+const VARIANT_DASH_RE = /[-\u2013\u2014]\s*(?:official(?:\s*(?:music\s*)?(?:video|audio)|\s*lyrics?)?|lyric\s*video|remix|radio\s*edit|slowed(?:\s*\+?\s*reverb)?|sped\s*up|cover|karaoke|instrumental|mv|4k|hd|720p|1080p)\s*$/i;
+const stripTitleVariants = (s: string) => s.replace(VARIANT_PAREN_RE, "").replace(VARIANT_DASH_RE, "").trim();
+const AUTHOR_SUFFIX_RE = /[-–—]\s*topic\s*$|\s*official\s*$/i;
+const normAuthor = (s: any) => (s || "").toLowerCase().replace(AUTHOR_SUFFIX_RE, "").replace(/[^\p{L}\p{N}]/gu, "");
 const badTracks = new Map<string, Set<string>>();
 const authorRep = new Map<string, Map<string, number>>();
 const goodAuthorRep = new Map<string, Map<string, number>>();
@@ -38,7 +45,7 @@ let signalWeightsLoaded = false;
 let signalWeightsSaveTimer: any = null;
 
 function trackKeyOf(track: any): string {
-  const norm = (s: any) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const norm = (s: any) => (s || "").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
   const a = norm(track?.info?.author || "");
   const t = norm(track?.info?.title || "");
   return a ? `${a}-${t}` : t;
@@ -51,7 +58,7 @@ export function markBadTrack(guildId: string, track: any): void {
   const set = badTracks.get(guildId)!;
   set.add(key);
   if (set.size > BAD_TRACK_CAP) { const first = set.values().next().value; if (first) set.delete(first); }
-  const author = (track?.info?.author || "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 20);
+  const author = (track?.info?.author || "").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "").slice(0, 20);
   if (author) {
     if (!authorRep.has(guildId)) authorRep.set(guildId, new Map());
     const rep = authorRep.get(guildId)!;
@@ -81,7 +88,7 @@ export function markGoodTrack(guildId: string, track: any): void {
     comboHistory.set(comboKey, combo);
     if (comboHistory.size > COMBO_CAP) { const first = comboHistory.keys().next().value; if (first !== undefined) comboHistory.delete(first); }
   }
-  const author = (track?.info?.author || "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 20);
+  const author = (track?.info?.author || "").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "").slice(0, 20);
   if (author) {
     if (!goodAuthorRep.has(guildId)) goodAuthorRep.set(guildId, new Map());
     const rep = goodAuthorRep.get(guildId)!;
@@ -97,18 +104,9 @@ async function incrementGenre(guildId: string, author: string): Promise<void> {
     const adapter = getAdapter();
     const key = `${GENRE_PREFIX}${guildId}`;
     const taste = await adapter.get<Record<string, number>>(key) || {};
-    const genre = author.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 20);
+    const genre = author.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "").slice(0, 20);
     if (genre) { taste[genre] = (taste[genre] || 0) + 1; await adapter.set(key, taste, TASTE_TTL); }
   } catch {}
-}
-
-function clearBadTrack(guildId: string): void {
-  badTracks.delete(guildId);
-  authorRep.delete(guildId);
-  goodAuthorRep.delete(guildId);
-  rapidSkips.delete(guildId);
-  strictBoost.delete(guildId);
-  lastTrack.delete(guildId);
 }
 
 function isBadTrack(guildId: string, track: any): boolean {
@@ -117,7 +115,7 @@ function isBadTrack(guildId: string, track: any): boolean {
 
 function authorPenalty(guildId: string, author: string): number {
   if (!author) return 0;
-  const k = author.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 20);
+  const k = author.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "").slice(0, 20);
   return authorRep.get(guildId)?.get(k) || 0;
 }
 
@@ -128,7 +126,10 @@ function getTriggeredSignals(title: string, author?: string): Map<string, number
   if (/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u.test(t)) signals.set("emoji", 1);
   if (/^\s*[(\[]/.test(t) && /[)\]]/.test(t)) signals.set("openParen", 1);
   if (/\/\/|\|\||\|[^|]*\|/.test(t)) signals.set("dblSeparator", 1);
-  if (/\|\s*[a-z]{3,}/i.test(t)) signals.set("pipeSuffix", 1);
+  if (/\|\s*#?[a-z0-9]{3,}/i.test(t)) signals.set("pipeSuffix", 1);
+  if (HARD_JUNK_RE.test(t)) signals.set("hardJunk", 1);
+  if (SOFT_JUNK_RE.test(t)) signals.set("softJunk", 1);
+  if (STYLE_ML_RE.test(t)) signals.set("styleML", 1);
   if (/\b[A-Z][A-Z\s-]{14,}\b/.test(t)) signals.set("capsTitle", 1);
   if (/\b[A-Z][A-Z\s-]{14,}\b/.test(a)) signals.set("capsAuthor", 1);
   let clickbaitCount = 0;
@@ -208,8 +209,6 @@ function isStrictBoostActive(guildId: string): boolean {
 }
 
 class RecommendationEngine {
-  private playedTracks: Map<string, Set<string>> = new Map();
-
   async _searchWithRetry(player: any, query: any, retries = 3): Promise<any> {
     for (let i = 0; i <= retries; i++) {
       try {
@@ -257,7 +256,7 @@ class RecommendationEngine {
     const words = new Set<string>();
     const add = (s: string) => {
       for (const raw of (s || "").toLowerCase().split(/[\s,()[\]]+/)) {
-        const w = raw.replace(/[^a-z0-9가-힣]/g, "").trim();
+        const w = raw.replace(/[^\p{L}\p{N}]/gu, "").trim();
         if (w && w.length > 1 && !stopWords.has(w)) words.add(w);
       }
     };
@@ -268,13 +267,18 @@ class RecommendationEngine {
 
   _isSameTrack(a: any, b: any): boolean {
     if (!a?.info || !b?.info) return false;
-    const norm = (s: any) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-    return norm(a.info.title) === norm(b.info.title) && norm(a.info.author) === norm(b.info.author);
+    const norm = (s: any) => (s || "").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+    const at = norm(stripTitleVariants(a.info.title));
+    const bt = norm(stripTitleVariants(b.info.title));
+    if (at !== bt) return false;
+    const aa = normAuthor(a.info.author);
+    const ba = normAuthor(b.info.author);
+    return aa === ba || (!!aa && !!ba && (aa.includes(ba) || ba.includes(aa)));
   }
 
   _isNearDuplicate(a: any, b: any): boolean {
     if (!a?.info || !b?.info) return false;
-    const tokens = (s: any) => new Set<string>((s || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean));
+    const tokens = (s: any) => new Set<string>((s || "").toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter(Boolean));
     const jaccard = (x: Set<string>, y: Set<string>): number => {
       if (!x.size && !y.size) return 0;
       let inter = 0;
@@ -287,24 +291,23 @@ class RecommendationEngine {
   }
 
   _trackKey(track: any): string {
-    const norm = (s: any) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-    return `${norm(track?.info?.author || "")}-${norm(track?.info?.title || "")}`;
+    const norm = (s: any) => (s || "").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+    return `${norm(track?.info?.author || "")}-${norm(stripTitleVariants(track?.info?.title || ""))}`;
   }
 
   _isPlayed(guildId: string, track: any): boolean {
-    return this.playedTracks.get(guildId)?.has(this._trackKey(track)) || false;
+    return playedTracks.get(guildId)?.has(this._trackKey(track)) || false;
   }
 
   _markPlayed(guildId: string, track: any): void {
-    if (!this.playedTracks.has(guildId)) this.playedTracks.set(guildId, new Set());
-    const played = this.playedTracks.get(guildId)!;
+    if (!playedTracks.has(guildId)) playedTracks.set(guildId, new Set());
+    const played = playedTracks.get(guildId)!;
     played.add(this._trackKey(track));
     if (played.size > 100) { const first = played.values().next().value; if (first) played.delete(first); }
   }
 
   clearPlayed(guildId: string): void {
-    this.playedTracks.delete(guildId);
-    clearBadTrack(guildId);
+    playedTracks.delete(guildId);
   }
 
   _candidateScore(t: any, track: any, genrePrefs: Set<string>, origDuration: number, origKeywords: Set<string>, sourceW: number, guildId: string): number {
@@ -315,7 +318,7 @@ class RecommendationEngine {
       if (ratio < 0.1) s += 3;
       else if (ratio < 0.25) s += 1;
     }
-    const ta = (t?.info?.author || "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 20);
+    const ta = (t?.info?.author || "").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "").slice(0, 20);
     if (genrePrefs.has(ta)) s += 2;
     const candKw = this._extractKeywords(t);
     for (const k of origKeywords) if (candKw.has(k)) s += 1;
@@ -349,6 +352,7 @@ class RecommendationEngine {
   async getRecommendations(player: any, track: any, guildId: string, count: number = 5): Promise<any[]> {
     if (!track?.info) return [];
     try {
+      this._markPlayed(guildId, track);
       this._incrementGenre(guildId, track.info.author).catch(() => {});
 
       const candidates: { t: any; w: number }[] = [];
@@ -367,7 +371,7 @@ class RecommendationEngine {
       // 2. Similar artist search — diverse recommendations, highest priority
       const author = (track.info.author || "").replace(/^Various\s*$/i, "").trim();
       if (author && author !== "Unknown Artist") {
-        const r = await this._searchWithRetry(player, { query: `ytmsearch:${author}` }).catch(() => null);
+        const r = await this._searchWithRetry(player, { query: `ytsearch:${author}` }).catch(() => null);
         if (r?.tracks?.length) {
           for (const t of r.tracks) {
             const k = this._trackKey(t);
@@ -380,7 +384,7 @@ class RecommendationEngine {
       if (candidates.length < count) {
         const query = this._buildQuery(track.info);
         if (query) {
-          const r = await this._searchWithRetry(player, { query: `ytmsearch:${query}` }).catch(() => null);
+          const r = await this._searchWithRetry(player, { query: `ytsearch:${query}` }).catch(() => null);
           if (r?.tracks?.length) {
             for (const t of r.tracks) {
               const k = this._trackKey(t);
@@ -410,9 +414,10 @@ class RecommendationEngine {
         !isCover(t?.info?.title || "", t?.info?.author) &&
         !isJunkTrack(t?.info?.title || "", t?.info?.author, strictActive ? 1 : 0) &&
         !titleL.includes("instrumental") && !titleL.includes("karaoke") &&
-        !STYLE_RE.test(titleL) &&
+        !STYLE_RE.test(titleL) && !STYLE_ML_RE.test(titleL) &&
+        !!t?.info?.duration && isInDurationRange(t) &&
         (origDuration < 30000 || !t?.info?.duration || Math.abs(t.info.duration - origDuration) / origDuration < 0.4) &&
-        (!genrePrefs.size || genrePrefs.has(ta.replace(/[^a-z0-9]/g, "").slice(0, 20))) &&
+        (!genrePrefs.size || genrePrefs.has(ta.replace(/[^\p{L}\p{N}]/gu, "").slice(0, 20))) &&
         hasOverlap;
       });
 
@@ -424,7 +429,8 @@ class RecommendationEngine {
             !isComboBad(guildId, t) &&
             !isCover(t?.info?.title || "", t?.info?.author) &&
             !isJunkTrack(t?.info?.title || "", t?.info?.author) &&
-            !STYLE_RE.test(tl);
+            !STYLE_RE.test(tl) && !STYLE_ML_RE.test(tl) &&
+            !!t?.info?.duration && isInDurationRange(t);
         });
         for (const { t } of fallback) this._markPlayed(guildId, t);
         Logger.info(`[RecEngine] Strict filter empty, fallback to lenient (${fallback.length} tracks)`);

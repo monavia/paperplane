@@ -23,10 +23,9 @@ async function resolveSpotifyTrack(player: any, spotifyItem: any, user: any): Pr
   const q = spotifyItem.query || `${spotifyItem.artists?.join(" ") || ""} ${spotifyItem.name}`.trim();
   if (!q) return null;
   let result: any;
-  try { result = await searchWithRetry(player, { query: `ytmsearch:${q}` }, user); } catch {}
-  if (!result?.tracks?.length) { try { result = await searchWithRetry(player, { query: `ytsearch:${q}` }, user); } catch {} }
+  try { result = await searchWithRetry(player, { query: `ytsearch:${q}` }, user); } catch {}
   if (result?.tracks?.length) {
-    const track = pickBestTrack(result.tracks);
+    const track = pickBestTrack(result.tracks, q);
     if (!track.info) track.info = {};
     const artistStr = spotifyItem.artists?.join(", ") || track.info.author || "";
     track.info.author = artistStr;
@@ -67,6 +66,11 @@ export default {
 
       let player = getPlayer(interaction.guildId);
       let connectPromise: Promise<void> | null = null;
+      if (player && !player.node?.connected) {
+        Logger.warn(`[Play] Stale player (node=${player.node?.id || "?"}) — recreating for guild=${interaction.guildId}`);
+        await player.destroy().catch(Logger.safe("commands/music/slash/play.ts"));
+        player = null;
+      }
       if (!player) {
         player = createPlayer(interaction.guildId, voice.id, interaction.channelId, voice.rtcRegion);
         connectPromise = player.connect();
@@ -151,16 +155,12 @@ export default {
       // Regular search
       if (!query.startsWith("http") && !query.includes(":")) {
         currentSource = 'youtube';
-        searchQuery = `ytmsearch:${query}`;
+        // ytmsearch needs a MUSIC client on Lavalink; plain ytsearch until one is configured
+        searchQuery = `ytsearch:${query}`;
       }
 
       let result = await cachedSearch(player, searchQuery, interaction.user);
 
-      if (!result?.tracks?.length && searchQuery.startsWith("ytmsearch:")) {
-        currentSource = 'ytsearch';
-        const ytFallback = `ytsearch:${query}`;
-        result = await cachedSearch(player, ytFallback, interaction.user);
-      }
 
       if (!result?.tracks?.length) {
         currentSource = 'soundcloud';
@@ -217,7 +217,7 @@ export default {
       }
 
       const tracks = result?.tracks;
-      const track = tracks?.length ? pickBestTrack(tracks) : null;
+      const track = tracks?.length ? pickBestTrack(tracks, query) : null;
       if (!track) {
         return interaction.editReply({
           embeds: [ErrorEmbed.build("No results found.")],

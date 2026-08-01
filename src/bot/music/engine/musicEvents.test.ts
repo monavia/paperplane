@@ -5,13 +5,13 @@ vi.mock("./lavalink.js", () => ({ get: vi.fn(), cacheTrack: vi.fn(), clearTrackC
 vi.mock("../services/PlayerService.js", () => ({ destroyEngine: vi.fn(), getEngine: vi.fn(() => ({ player: null })) }));
 vi.mock("../../core/state/StateManager.js", () => ({
   default: {
-    queues: { get: vi.fn(() => []), set: vi.fn(), clear: vi.fn(), has: vi.fn(() => false) },
+    queues: { get: vi.fn(() => []), set: vi.fn(), clear: vi.fn(), has: vi.fn(() => false), syncToPlayer: vi.fn() },
     nowPlaying: { get: vi.fn(), set: vi.fn(), delete: vi.fn() },
     position: { get: vi.fn(() => 0), set: vi.fn(), delete: vi.fn() },
     loop: { get: vi.fn(), delete: vi.fn() },
     twentyFourSeven: { isEnabled: vi.fn(() => false), getChannelId: vi.fn(() => ""), delete: vi.fn() },
     voiceChannels: { get: vi.fn(), set: vi.fn(), delete: vi.fn() },
-    autoplay: { get: vi.fn(() => false) },
+    autoplay: { get: vi.fn(() => false), set: vi.fn() },
     restored: { has: vi.fn(() => false) },
   }
 }));
@@ -23,7 +23,7 @@ vi.mock("../../core/state/LyricsMessageStore.js", () => ({
   default: { get: vi.fn(), set: vi.fn(), delete: vi.fn() }
 }));
 vi.mock("./AutoplayEngine.js", () => ({
-  default: function() { return { getNextTrack: vi.fn(), recEngine: {} }; }
+  default: function() { return { getNextTrack: vi.fn(), schedulePrefetch: vi.fn(), clearPrefetch: vi.fn(), recEngine: {} }; }
 }));
 vi.mock("../services/TitleResolver.js", () => ({
   cleanTitle: vi.fn((t: string) => ({ title: t, author: "" })),
@@ -45,6 +45,9 @@ import * as musicEvents from "./musicEvents.js";
 import * as lavalink from "./lavalink.js";
 import state from "../../core/state/StateManager.js";
 import Logger from "../../core/utils/Logger.js";
+import * as EventBus from "../events/EventBus.js";
+
+const registeredHandlers = new Map<string, Function>();
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -142,6 +145,59 @@ describe("network error pattern", () => {
   test("deezer pattern is case insensitive", () => assert.ok(DEEZER_RE.test("Deezer Error")));
 });
 
+describe("trackStuck fallback", () => {
+  beforeEach(() => {
+    (lavalink.get as any).mockReturnValue({ on: (e: string, h: Function) => { registeredHandlers.set(e, h); } });
+    musicEvents.register({} as any);
+  });
+
+  test("stops player and blacklists track from autoplay", async () => {
+    const player = { guildId: "stuck-g1", node: { connected: true }, stopPlaying: vi.fn(() => Promise.resolve()) };
+    const track = { info: { title: "Stuck Track", uri: "youtube:abc" } };
+    const marks: any[] = [];
+    const off = EventBus.on("recommendation:markBad", (p: any) => { marks.push(p); });
+    try {
+      const handler = registeredHandlers.get("trackStuck");
+      assert.ok(handler, "trackStuck handler registered");
+      await handler(player, track, { thresholdMs: 15000 });
+      assert.strictEqual(player.stopPlaying.mock.calls.length, 1);
+      assert.strictEqual(marks.length, 1);
+      assert.strictEqual(marks[0].guildId, "stuck-g1");
+      assert.strictEqual(marks[0].source, "stuck");
+      assert.strictEqual(marks[0].track, track);
+    } finally {
+      off();
+    }
+  });
+
+  test("node disconnected — stops player safely without recovery", async () => {
+    const player = { guildId: "stuck-g2", node: { connected: false }, stopPlaying: vi.fn(() => Promise.resolve()) };
+    const track = { info: { title: "T2" } };
+    const handler = registeredHandlers.get("trackStuck");
+    assert.ok(handler, "trackStuck handler registered");
+    await handler(player, track, { thresholdMs: 15000 });
+    assert.strictEqual(player.stopPlaying.mock.calls.length, 0);
+  });
+});
+
+describe("permanent track error detection", () => {
+  test("matches YouTube login/playability failures", () => {
+    assert.ok(musicEvents.isPermanentTrackError("AllClientsFailedException: (yts.version: 1.18.2) All clients failed to load the item."));
+    assert.ok(musicEvents.isPermanentTrackError("This video requires login."));
+    assert.ok(musicEvents.isPermanentTrackError("Video player configuration error"));
+    assert.ok(musicEvents.isPermanentTrackError("AllClientsFailedException. Client [WEB] failed: This video requires login."));
+    assert.ok(musicEvents.isPermanentTrackError("Sign in to confirm you're not a bot"));
+    assert.ok(musicEvents.isPermanentTrackError("This video is unavailable"));
+  });
+
+  test("does not match transient errors", () => {
+    assert.ok(!musicEvents.isPermanentTrackError("ECONNRESET"));
+    assert.ok(!musicEvents.isPermanentTrackError("ETIMEDOUT"));
+    assert.ok(!musicEvents.isPermanentTrackError("Something went wrong"));
+    assert.ok(!musicEvents.isPermanentTrackError(""));
+  });
+});
+
 describe("error loop detection", () => {
   function simulateCheck(existingTimestamps: number[]): { isLoop: boolean; count: number } {
     const now = Date.now();
@@ -167,5 +223,78 @@ describe("error loop detection", () => {
     const timestamps = [old, old, old, old];
     const { isLoop } = simulateCheck(timestamps);
     assert.ok(!isLoop);
+  });
+});
+
+describe("trackStart autoplay prefetch scheduling", () => {
+  beforeEach(() => {
+    (lavalink.get as any).mockReturnValue({
+      on: (e: string, h: Function) => { registeredHandlers.set(e, h); },
+      players: { get: vi.fn(() => null) },
+    });
+    musicEvents.register({} as any);
+  });
+
+  afterEach(() => {
+    for (const g of ["pf-1", "pf-2", "pf-3", "pf-4", "pf-5"]) musicEvents.clearStuckTimer(g);
+  });
+
+  function mockState(autoplayOn: boolean, loopMode: any, queue: any[]): void {
+    state.autoplay.get = vi.fn(() => autoplayOn);
+    state.loop.get = vi.fn(() => loopMode);
+    state.queues.get = vi.fn(() => queue);
+  }
+
+  test("schedules prefetch when autoplay on, queue empty, loop off", async () => {
+    mockState(true, undefined, []);
+    const inst = (musicEvents as any).autoplayInst;
+    const player = { guildId: "pf-1", connected: true, node: { connected: true } };
+    const track = { info: { title: "T", author: "A", duration: 200_000 } };
+    const handler = registeredHandlers.get("trackStart");
+    assert.ok(handler, "trackStart handler registered");
+    await handler(player, track);
+    assert.strictEqual(inst.schedulePrefetch.mock.calls.length, 1);
+    assert.strictEqual(inst.schedulePrefetch.mock.calls[0][1], track);
+    assert.strictEqual(inst.schedulePrefetch.mock.calls[0][3], 200_000);
+  });
+
+  test("does not schedule when autoplay off", async () => {
+    mockState(false, undefined, []);
+    const inst = (musicEvents as any).autoplayInst;
+    const player = { guildId: "pf-2", connected: true, node: { connected: true } };
+    const handler = registeredHandlers.get("trackStart");
+    assert.ok(handler);
+    await handler(player, { info: { title: "T", author: "A", duration: 200_000 } });
+    assert.strictEqual(inst.schedulePrefetch.mock.calls.length, 0);
+  });
+
+  test("does not schedule when queue still has tracks", async () => {
+    mockState(true, undefined, [{ info: { title: "Q" } }]);
+    const inst = (musicEvents as any).autoplayInst;
+    const player = { guildId: "pf-3", connected: true, node: { connected: true } };
+    const handler = registeredHandlers.get("trackStart");
+    assert.ok(handler);
+    await handler(player, { info: { title: "T", author: "A", duration: 200_000 } });
+    assert.strictEqual(inst.schedulePrefetch.mock.calls.length, 0);
+  });
+
+  test("does not schedule when loop track", async () => {
+    mockState(true, "track", []);
+    const inst = (musicEvents as any).autoplayInst;
+    const player = { guildId: "pf-4", connected: true, node: { connected: true } };
+    const handler = registeredHandlers.get("trackStart");
+    assert.ok(handler);
+    await handler(player, { info: { title: "T", author: "A", duration: 200_000 } });
+    assert.strictEqual(inst.schedulePrefetch.mock.calls.length, 0);
+  });
+
+  test("does not schedule when duration unknown (live stream)", async () => {
+    mockState(true, undefined, []);
+    const inst = (musicEvents as any).autoplayInst;
+    const player = { guildId: "pf-5", connected: true, node: { connected: true } };
+    const handler = registeredHandlers.get("trackStart");
+    assert.ok(handler);
+    await handler(player, { info: { title: "Live", author: "A" } });
+    assert.strictEqual(inst.schedulePrefetch.mock.calls.length, 0);
   });
 });

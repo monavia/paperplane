@@ -111,12 +111,6 @@ export async function importPlaylist(guildId: string, tracks: PortableTrack[], u
       const searchQuery = `${pt.author} ${pt.title}`.trim();
       if (!resolved && searchQuery) {
         try {
-          const result = await player.search({ query: `ytmsearch:${searchQuery}` }, { id: userId });
-          if (result?.tracks?.[0]) resolved = result.tracks[0];
-        } catch {}
-      }
-      if (!resolved && searchQuery) {
-        try {
           const result = await player.search({ query: `ytsearch:${searchQuery}` }, { id: userId });
           if (result?.tracks?.[0]) resolved = result.tracks[0];
         } catch {}

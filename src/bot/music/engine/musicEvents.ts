@@ -16,14 +16,19 @@ import { getPrefix } from "../../database/repositories/GuildRepository.js";
 import botConfig from "../../config/bot.js";
 import * as EventBus from "../events/EventBus.js";
 import { cleanTitle, saveSpotifyMeta, applySpotifyMeta } from "../services/TitleResolver.js";
-import { findTrackWithDuration } from "../services/SearchService.js";
+import { findTrackWithDuration, pickBestTrack, searchWithRetry } from "../services/SearchService.js";
 import { getAdapter } from "../../cache/CacheAdapter.js";
 import { markDead, deadFingerprint } from "../../cache/DeadTrackService.js";
 import { validateTrack } from "./TrackValidator.js";
 import { isFailoverGuild as fmIsFailoverGuild, clearFailoverGuild as fmClearFailoverGuild } from "./FailoverManager.js";
 import AutoplayEngine from "./AutoplayEngine.js";
 
-const autoplayInst = new AutoplayEngine();
+export const autoplayInst = new AutoplayEngine();
+
+// Cache prefetch dibuang saat state dihapus atau queue habis tanpa autoplay —
+// cegah konsumsi rec basi. Instance sama dengan yang dipakai trackStart/handleQueueEnd.
+EventBus.on('state:delete', (p: any) => { if (p?.guildId) autoplayInst.clearPrefetch(p.guildId); });
+EventBus.on('recommendation:clearPlayed', (p: any) => { if (p?.guildId) autoplayInst.clearPrefetch(p.guildId); });
 
 const disconnectTimers = new Map<string, any>();
 const errorTimestamps = new Map<string, number[]>();
@@ -84,6 +89,10 @@ let registered = false;
 async function advanceQueue(player: any): Promise<any> {
   const guildId = player.guildId;
   return withQueueLock(guildId, async () => {
+    if (!player.node?.connected || !player.connected) {
+      Logger.warn(`[advanceQueue] guild=${guildId} voice not connected — deferring until Watchdog recovers`);
+      return null;
+    }
     while (true) {
       const queue = state.queues.get(guildId) || [];
       if (!queue.length) break;
@@ -98,6 +107,7 @@ async function advanceQueue(player: any): Promise<any> {
 
       state.nowPlaying.set(guildId, next);
       try {
+        state.queues.syncToPlayer(guildId);
         await player.play({ track: next, clientTrack: next });
         
         EventBus.emit('state:save', { guildId });
@@ -178,6 +188,43 @@ export function startStuckTimer(guildId: string): void {
 export function clearStuckTimer(guildId: string): void {
   const t = stuckTimers.get(guildId);
   if (t) { clearTimeout(t); stuckTimers.delete(guildId); }
+}
+
+/** Errors that will never succeed on retry — skip retries, fall back immediately. */
+const PERMANENT_TRACK_ERROR_RE = /requires login|allclientsfailedexception|video player configuration|sign in to confirm|this video is unavailable|removed by the uploader|video has been removed|playability/i;
+
+export function isPermanentTrackError(errMsg: string): boolean {
+  return PERMANENT_TRACK_ERROR_RE.test(errMsg);
+}
+
+/** Fallback chain for permanently-failing tracks: try the same song on other sources. */
+async function findMultiSourceFallback(player: any, track: any, user: any): Promise<any | null> {
+  const orig = state.nowPlaying.get(player.guildId);
+  const title = orig?.info?.title || track?.info?.title || "";
+  const author = orig?.info?.author || track?.info?.author || "";
+  if (!title) return null;
+  const q = author ? `${author} ${title}` : title;
+  const candidates = [
+    { query: `ytsearch:${q}`, label: "ytsearch" },
+    { query: `scsearch:${q}`, label: "soundcloud" },
+    { query: `dzsearch:${q}`, label: "deezer" },
+  ];
+  for (const c of candidates) {
+    try {
+      const result = await searchWithRetry(player, { query: c.query }, user);
+      const found = result?.tracks?.length ? pickBestTrack(result.tracks, q) : null;
+      if (!found) continue;
+      const sameUri = found.info?.uri && track?.info?.uri && found.info.uri === track.info.uri;
+      if (sameUri) continue;
+      if (!found.info) found.info = {};
+      found.info.source = found.info.source || track?.info?.source || "youtube";
+      found.info.originalUrl = found.info.uri;
+      found.info.requester = track?.info?.requester;
+      Logger.info(`[trackError] Multi-source fallback via ${c.label}: "${found.info?.title?.slice(0, 40) || "?"}"`);
+      return found;
+    } catch {}
+  }
+  return null;
 }
 
 /** Network jitter buffer: delay trackError 500ms, cancel if player already moved on */
@@ -288,7 +335,7 @@ function register(client: any): void {
         if (!next?.info?.uri) return;
         const uri = next.info.uri;
         const isSpotify = /open\.spotify\.com/i.test(uri) || /^spotify:/.test(uri);
-        const search = await player.search({ query: isSpotify ? `ytmsearch:${next.info.author || ""} ${next.info.title || ""}` : uri }, { id: "system" }).catch(() => null);
+        const search = await player.search({ query: isSpotify ? `ytsearch:${next.info.author || ""} ${next.info.title || ""}` : uri }, { id: "system" }).catch(() => null);
         if (search?.tracks?.[0]?.encoded) {
           next.encoded = search.tracks[0].encoded;
           
@@ -296,6 +343,17 @@ function register(client: any): void {
         }
       } catch { Logger.warn("[trackStart] Track re-resolution failed"); }
     });
+
+    // Autoplay prefetch (YouTube-style): jadwalkan rec lagu berikutnya ~15s sebelum
+    // lagu ini selesai. Queue kosong + autoplay ON + bukan loop → lagu ini terakhir,
+    // jadi prefetch untuk lagu berikutnya. Stream live (duration 0) tak bisa dijadwalkan.
+    const autoOn = state.autoplay.get(player.guildId);
+    const loopMode = state.loop.get(player.guildId);
+    if (autoOn && loopMode !== "track" && loopMode !== "playlist"
+      && (state.queues.get(player.guildId)?.length ?? 0) === 0
+      && player.connected && (track?.info?.duration || 0) > 0) {
+      autoplayInst.schedulePrefetch(player, track, player.guildId, track.info.duration);
+    }
   });
 
   l.on("trackEnd", (player: any, _track: any, reason: any) => {
@@ -310,10 +368,22 @@ function register(client: any): void {
       advancingFromTrackEnd.add(player.guildId);
       advanceQueue(player).catch(err => Logger.error(`[trackEnd] advanceQueue failed for ${player.guildId}: ${err.message}`))
         .finally(() => advancingFromTrackEnd.delete(player.guildId));
+    } else if (queueLen === 0 && player.playing) {
+      // Ghost track di player.queue (mirror tak sinkron dgn RAM) — internal queueEnd tak akan
+      // pernah fire, jadi autoplay/cleanup mati (zombie ~30s sampai Watchdog silent voice loss).
+      // Reset mirror + paksa jalur queue-end manual supaya autoplay jalan instan.
+      Logger.warn(`[trackEnd] ghost queue (queue=0 playing=true) guild=${player.guildId} — resetting player.queue, forcing queue-end path`);
+      player.queue.current = null;
+      player.playing = false;
+      if (player.queue?.tracks?.length) player.queue.tracks.length = 0;
+      handleQueueEnd(player, _track, reason).catch((err: any) => {
+        Sentry.captureException(err, { tags: { guildId: player.guildId, type: "trackEnd-ghost" } });
+        Logger.error(`[trackEnd] ghost queue-end failed for ${player.guildId}: ${err?.message}`);
+      });
     }
   });
 
-  l.on("queueEnd", async (player: any, track: any, payload: any) => {
+  async function handleQueueEnd(player: any, track: any, payload: any): Promise<void> {
     if (advancingFromTrackEnd.has(player.guildId)) return;
     if (queueEndGuard.has(player.guildId)) return;
     queueEndGuard.add(player.guildId);
@@ -338,6 +408,7 @@ function register(client: any): void {
       if (loopMode === "track" && track?.encoded) {
         state.nowPlaying.set(player.guildId, track);
         try {
+          state.queues.syncToPlayer(player.guildId);
           await player.play({ track, clientTrack: track });
           
           EventBus.emit('state:save', { guildId: player.guildId });
@@ -370,7 +441,12 @@ function register(client: any): void {
           const sourceTrack = track?.info ? track : (state.nowPlaying.get(player.guildId) || player.queue.previous?.[0] || track);
           const autoTrack = await autoplayInst.getNextTrack(player, sourceTrack, player.guildId);
           if (autoTrack) {
+            if (!player.connected) {
+              Logger.warn(`[autoplay] guild=${player.guildId} voice not connected — deferring (Watchdog will recover)`);
+              return;
+            }
             state.nowPlaying.set(player.guildId, autoTrack);
+            state.queues.syncToPlayer(player.guildId);
             await player.play({ track: autoTrack, clientTrack: autoTrack }).catch((err: any) => Logger.warn(`[autoplay] Play failed: ${err.message}`));
             
             EventBus.emit('state:save', { guildId: player.guildId });
@@ -449,6 +525,13 @@ function register(client: any): void {
       Sentry.captureException(err, { tags: { guildId: player.guildId, type: "queueEnd" } });
       Logger.error(`[queueEnd] guild=${player.guildId} handler crashed: ${err?.message}`);
     }
+  }
+
+  l.on("queueEnd", (player: any, track: any, payload: any) => {
+    handleQueueEnd(player, track, payload).catch((err: any) => {
+      Sentry.captureException(err, { tags: { guildId: player?.guildId, type: "queueEnd" } });
+      Logger.error(`[queueEnd] guild=${player?.guildId} listener crashed: ${err?.message}`);
+    });
   });
 
   l.on("trackError", async (player: any, track: any, payload: any) => {
@@ -499,8 +582,14 @@ function register(client: any): void {
       const isFirstAttempt = attemptCount < 1;
       const isDeezerError = /deezer/i.test(errMsg);
       const isNetworkError = /econnreset|enotfound|econnrefused|etimedout|timeout|aborted/i.test(errMsg);
+      const isPermanent = isPermanentTrackError(`${errMsg} ${payload?.exception?.cause || ""}`);
       let alt: any = null;
-      if (isDeezerError || isNetworkError) {
+      if (isPermanent) {
+        retried.delete(trackId);
+        retryTracks.set(player.guildId, retried);
+        Logger.warn(`[trackError] Permanent error — skipping retries, multi-source fallback: "${track?.info?.title?.slice(0, 30) || "?"}"`);
+        alt = await findMultiSourceFallback(player, track, clientRef?.user);
+      } else if (isDeezerError || isNetworkError) {
         retried.set(trackId, 1);
         retryTracks.set(player.guildId, retried);
         Logger.info(`[trackError] ${isDeezerError ? "Deezer" : "Network"} error — skipping fallback search for "${track?.info?.title?.slice(0,30) || "?"}"`);
@@ -533,6 +622,23 @@ function register(client: any): void {
         if (alt) {
           markTrackStartSuppressed(player.guildId);
           await player.play({ track: alt, clientTrack: alt });
+          return;
+        }
+
+        if (isPermanent) {
+          EventBus.emit('recommendation:markBad', { guildId: player.guildId, track, source: "error" });
+          if (player.node?.connected) {
+            manualAdvances.delete(player.guildId);
+            player.stopPlaying().catch(Logger.safe("bot/music/engine/musicEvents.ts"));
+          } else {
+            Logger.info(`[trackError] guild=${player.guildId} node disconnected — recovering player`);
+            setImmediate(async () => {
+              const p = await lavalink.recoverPlayer(player.guildId);
+              if (p?.node?.connected) {
+                await advanceQueue(p);
+              }
+            });
+          }
           return;
         }
 
@@ -587,15 +693,18 @@ function register(client: any): void {
     }
   });
 
-  l.on("trackStuck", (player: any, track: any, payload: any) => {
+  l.on("trackStuck", async (player: any, track: any, payload: any) => {
     try {
       Sentry.captureException(new Error("trackStuck"), {
         tags: { guildId: player.guildId, type: "trackStuck" },
         extra: { track: track?.info?.title, thresholdMs: payload?.thresholdMs },
       });
       Logger.warn(`[trackStuck] guild=${player.guildId}/${getGuildName(player.guildId)} threshold=${payload?.thresholdMs || 0}ms restored=${state.restored.has(player.guildId)} track="${track?.info?.title || "?"}"`);
+      // Fallback anti-loop: blacklist this track from autoplay so the same stalled
+      // track is never picked again — the next recommendation becomes the fallback.
+      EventBus.emit('recommendation:markBad', { guildId: player.guildId, track, source: "stuck" });
       if (player.node?.connected) {
-        player.stopPlaying().catch(Logger.safe("bot/music/engine/musicEvents.ts"));
+        await player.stopPlaying().catch(Logger.safe("bot/music/engine/musicEvents.ts"));
       }
     } catch (err: any) {
       Logger.error(`[trackStuck] guild=${player.guildId} handler crashed: ${err?.message}`);

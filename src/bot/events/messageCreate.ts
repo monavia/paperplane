@@ -19,9 +19,11 @@ import { setTextChannelId } from "../music/services/TextChannelStore.js";
 import { withQueueLock } from "../core/state/QueueLock.js";
 import { markTrackStartSuppressed, markStopDisconnect } from "../music/engine/musicEvents.js";
 import { saveState } from "../music/services/StateService.js";
+import { pickBestTrack } from "../music/services/SearchService.js";
 import * as NowPlayingEmbed from "../ui/embeds/NowPlayingEmbed.js";
 import { build as buildQueueEmbed } from "../ui/embeds/QueueEmbed.js";
 import CooldownManager from "../core/utils/CooldownManager.js";
+import { classifyError } from "../core/errors/ErrorClassifier.js";
 
 export function start(client: any): void {
   client.on("messageCreate", async (message: any) => {
@@ -57,7 +59,7 @@ export function start(client: any): void {
           if (!isLavalinkReady() && musicCommands.includes(found.name)) {
             return message.channel.send({ embeds: [ErrorEmbed.build("Music service is currently unavailable. Please try again in a few minutes.")] });
           }
-          const startA = Date.now(); try { const r = await found.execute(message, args); incCommandsExecuted({ command: found.name, status: "success" }); observeCommandLatency(found.name, Date.now() - startA); return r; } catch (e: any) { incCommandsExecuted({ command: found.name, status: "failure" }); Logger.error(`Prefix command alias "${commandName}" error:`, e); return message.channel.send("Command error.").catch(Logger.safe("bot/events/messageCreate.ts")); }
+          const startA = Date.now(); try { const r = await found.execute(message, args); incCommandsExecuted({ command: found.name, status: "success" }); observeCommandLatency(found.name, Date.now() - startA); return r; } catch (e: any) { incCommandsExecuted({ command: found.name, status: "failure" }); const cls = classifyError(e); if (cls.kind === "user") Logger.warn(`Prefix command "${commandName}" user error: ${e.message}`); else { Logger.error(`Prefix command alias "${commandName}" error:`, e); import("@sentry/node").then((S) => S.captureException(e, { tags: { command: found.name } })).catch(() => {}); } return message.channel.send(cls.message).catch(Logger.safe("bot/events/messageCreate.ts")); }
         }
         return;
       }
@@ -70,7 +72,7 @@ export function start(client: any): void {
       if (!isLavalinkReady() && musicCommands.includes(cmd.name)) {
         return message.channel.send({ embeds: [ErrorEmbed.build("Music service is currently unavailable. Please try again in a few minutes.")] });
       }
-      const startB = Date.now(); try { const r = await cmd.execute(message, args); incCommandsExecuted({ command: cmd.name, status: "success" }); observeCommandLatency(cmd.name, Date.now() - startB); return r; } catch (e: any) { incCommandsExecuted({ command: cmd.name, status: "failure" }); Logger.error(`Prefix command "${commandName}" error:`, e); return message.channel.send("Command error.").catch(Logger.safe("bot/events/messageCreate.ts")); }
+      const startB = Date.now(); try { const r = await cmd.execute(message, args); incCommandsExecuted({ command: cmd.name, status: "success" }); observeCommandLatency(cmd.name, Date.now() - startB); return r; } catch (e: any) { incCommandsExecuted({ command: cmd.name, status: "failure" }); const cls = classifyError(e); if (cls.kind === "user") Logger.warn(`Prefix command "${commandName}" user error: ${e.message}`); else { Logger.error(`Prefix command "${commandName}" error:`, e); import("@sentry/node").then((S) => S.captureException(e, { tags: { command: cmd.name } })).catch(() => {}); } return message.channel.send(cls.message).catch(Logger.safe("bot/events/messageCreate.ts")); }
     }
 
     // AI trigger: bot mention, trigger word, or reply to a bot message
@@ -130,8 +132,8 @@ export function start(client: any): void {
           let firstTrack: any = null;
           for (let i = 0; i < queries.length; i++) {
             const q = queries[i];
-            const result = await player.search({ query: `ytmsearch:${q}` }, message.author);
-            const track = result?.tracks?.[0];
+            const result = await player.search({ query: `ytsearch:${q}` }, message.author);
+            const track = result?.tracks?.[0] ? pickBestTrack(result.tracks, q) : null;
             if (!track) continue;
             if (i === 0) firstTrack = track;
             if (i === 0 && !player.playing && !player.paused) {
@@ -250,7 +252,7 @@ export function start(client: any): void {
             }
             MusicService.getEngine(guildId).player = player;
             setTextChannelId(guildId, message.channelId);
-            const result = await player.search({ query: `ytmsearch:${keyword}` }, message.author);
+            const result = await player.search({ query: `ytsearch:${keyword}` }, message.author);
             const track = result?.tracks?.[0];
             if (!track) return message.channel.send({ embeds: [ErrorEmbed.build("No results found.")] });
             if (player.playing || player.paused) {

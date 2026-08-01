@@ -16,7 +16,7 @@ export default {
     const track = player?.queue?.current;
     if (!track) return (message.channel as any).send({ embeds: [ErrorEmbed.build("Nothing is playing.")] });
 
-    const msg = await (message.channel as any).send({ embeds: [new EmbedBuilder().setDescription("Fetching lyrics...").setColor(Colors.INFO)] });
+    const msg = await (message.channel as any).send({ embeds: [new EmbedBuilder().setDescription("Fetching lyrics...").setColor(Colors.INFO)] }).catch(Logger.safe("commands/music/prefix/lyrics.ts"));
 
     try {
       let text = "";
@@ -28,7 +28,9 @@ export default {
           text = lyrics.text || lyrics.lines.map((l: any) => l.line).join("\n");
           source = lyrics.sourceName || lyrics.provider || "Lavalink";
         }
-      } catch {}
+      } catch (e: any) {
+        Logger.warn(`[LYRICS] Lavalink lyrics unavailable, falling back: ${e?.message || e}`);
+      }
 
       if (!text) {
         const lrclib = await fetchLyrics(track);

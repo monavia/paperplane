@@ -3,10 +3,11 @@ import { cleanTitle, isCover } from "./TitleResolver.js";
 import { getBestNode, getPenalty, recordError, recordHtmlError, isDraining, isUnhealthy } from "../engine/NodePenaltyService.js";
 import { get } from "../engine/lavalink.js";
 import { isJunkTrack } from "../engine/RecommendationEngine.js";
+import { HARD_JUNK_RE, SOFT_JUNK_RE, STYLE_ML_RE } from "../engine/JunkKeywords.js";
 
 const BAD_KEYWORDS = [
   "remix", "cover", "live", "karaoke", "nightcore", "slowed", "sped up",
-  "reverb", "bass boosted", "8d", "viral", "tiktok", "joget", "dj",
+  "reverb", "bass boosted", "8d", "viral", "tiktok", "joget",
   "versi", "tribute", "instrumental",
 ];
 
@@ -24,32 +25,71 @@ function scoreTrack(track: any): number {
   let score = 0;
 
   if (PREFERRED_SOURCES.has(track.info?.sourceName)) score += 10;
-  if (title.includes("lyrics") || title.includes("lyric")) score += 4;
+  if (HARD_JUNK_RE.test(title)) score -= 3;
+  if (SOFT_JUNK_RE.test(title)) score -= 1;
+  if (STYLE_ML_RE.test(title)) score -= 1;
   if (title.includes("official") || author.includes("vevo")) score += 2;
 
   return score;
 }
 
-export function pickBestTrack(tracks: any[]): any {
+const QUERY_STOPWORDS = new Set(["feat", "ft", "the", "and", "with"]);
+
+function queryKeywords(query?: string): string[] {
+  if (!query || /:\/\//.test(query)) return [];
+  return (query.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) || []).filter((w) => !QUERY_STOPWORDS.has(w));
+}
+
+function scoreQuery(track: any, keywords: string[]): number {
+  if (!keywords.length) return 0;
+  const title = (track.info?.title || "").toLowerCase();
+  const author = (track.info?.author || "").toLowerCase();
+  let score = 0;
+  let matched = 0;
+  for (const kw of keywords) {
+    const inTitle = title.includes(kw);
+    const inAuthor = author.includes(kw);
+    if (inTitle) score += 5;
+    if (inAuthor) score += 3;
+    if (inTitle || inAuthor) matched++;
+  }
+  if (matched === keywords.length) score += 10;
+  if (matched === 0) score -= 8;
+  return score;
+}
+
+import { isInDurationRange } from "./DurationFilter.js";
+export { MIN_DURATION_MS, MAX_DURATION_MS, isInDurationRange } from "./DurationFilter.js";
+
+export function pickBestTrack(tracks: any[], query?: string): any {
   if (!tracks?.length) return null;
-  if (tracks.length === 1) {
-    const cleaned = cleanTitle(tracks[0].info?.title || "", tracks[0].info?.author || "");
-    tracks[0].info.title = cleaned.title;
-    tracks[0].info.author = cleaned.author;
-    return tracks[0];
+  const keywords = queryKeywords(query);
+  const isUrl = !!query && /:\/\//.test(query);
+  const pool = !isUrl ? tracks.filter(isInDurationRange) : tracks;
+  const candidates = pool.length ? pool : tracks;
+
+  if (candidates.length === 1) {
+    const cleaned = cleanTitle(candidates[0].info?.title || "", candidates[0].info?.author || "");
+    candidates[0].info.title = cleaned.title;
+    candidates[0].info.author = cleaned.author;
+    return candidates[0];
   }
 
-  const first = tracks[0];
+  const first = candidates[0];
   const firstTitle = (first.info?.title || "").toLowerCase();
 
   let best = first;
   if (hasBadKeyword(firstTitle, first.info?.author) || isJunkTrack(first.info?.title || "", first.info?.author)) {
-    const filtered = tracks.filter((t) => !hasBadKeyword((t.info?.title || "").toLowerCase(), t.info?.author) && !isJunkTrack(t.info?.title || "", t.info?.author));
+    const filtered = candidates.filter((t) => !hasBadKeyword((t.info?.title || "").toLowerCase(), t.info?.author) && !isJunkTrack(t.info?.title || "", t.info?.author));
     if (filtered.length) {
-      const scored = filtered.map((t: any) => ({ track: t, score: scoreTrack(t) }));
+      const scored = filtered.map((t: any) => ({ track: t, score: scoreTrack(t) + scoreQuery(t, keywords) }));
       scored.sort((a, b) => b.score - a.score);
       best = scored[0].track;
     }
+  } else if (keywords.length) {
+    const scored = candidates.map((t: any) => ({ track: t, score: scoreTrack(t) + scoreQuery(t, keywords) }));
+    scored.sort((a, b) => b.score - a.score);
+    best = scored[0].track;
   }
 
   const cleaned = cleanTitle(best.info?.title || "", best.info?.author || "");
@@ -119,7 +159,7 @@ export async function findTrackWithDuration(
       return fallback.tracks.find((t: any) => !t.info?.sourceName?.includes("deezer")) || fallback.tracks[0];
     }
   }
-  for (const prefix of ["ytsearch", "ytmsearch", "scsearch", "dzsearch"]) {
+  for (const prefix of ["ytsearch", "scsearch", "dzsearch"]) {
     let res = null;
     try {
       res = await player.search({ query: `${prefix}:${query}` }, clientRef);
