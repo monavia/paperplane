@@ -115,6 +115,26 @@ const channelId = getTextChannelId(guildId);
       }
     }
 
+    // Non-bot member moved to a different voice channel (e.g. server automation
+    // moving inactive users). channelId changes but is never null — without this
+    // branch the alone timer never starts.
+    if (oldState.channelId && newState.channelId && oldState.channelId !== newState.channelId && oldState.member?.id !== botId) {
+      const guildId = oldState.guild.id;
+      const vc = oldState.guild.channels.cache.get(oldState.channelId);
+      if (vc?.isVoiceBased() && vc.members?.has(botId)) {
+        const humans = vc.members.filter((m: any) => !m.user?.bot).size;
+        if (humans === 0 && !state.twentyFourSeven.isEnabled(guildId)) {
+          Logger.info(`[VoiceState] No humans in ${guildId} (member moved out) — will disconnect in 1m`);
+          startAloneTimer(guildId);
+        }
+      }
+      const newVc = newState.guild.channels.cache.get(newState.channelId);
+      if (newVc?.isVoiceBased() && newVc.members?.has(botId)) {
+        cancelAloneTimer(guildId);
+      }
+      return;
+    }
+
     // Someone joined a voice channel (cancel alone timer if active)
     if (newState.channelId && !oldState.channelId && newState.member?.id !== botId) {
       const guildId = newState.guild.id;

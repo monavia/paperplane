@@ -27,11 +27,28 @@ const DEFAULT_SIGNAL_WEIGHTS: Record<string, number> = {
 };
 
 const playedTracks = new Map<string, Set<string>>();
+const playedEntries = new Map<string, { title: string; author: string; identifier?: string }[]>();
 const VARIANT_PAREN_RE = /[([][^()\]]*(?:official|remix|radio\s*edit|lyrics?|lyric\s*video|slowed|sped\s*up|cover|karaoke|instrumental|audio|video|mv|4k|hd|720p|1080p)[^()\]]*[)\]]/gi;
 const VARIANT_DASH_RE = /[-\u2013\u2014]\s*(?:official(?:\s*(?:music\s*)?(?:video|audio)|\s*lyrics?)?|lyric\s*video|remix|radio\s*edit|slowed(?:\s*\+?\s*reverb)?|sped\s*up|cover|karaoke|instrumental|mv|4k|hd|720p|1080p)\s*$/i;
 const stripTitleVariants = (s: string) => s.replace(VARIANT_PAREN_RE, "").replace(VARIANT_DASH_RE, "").trim();
 const AUTHOR_SUFFIX_RE = /[-–—]\s*topic\s*$|\s*official\s*$/i;
 const normAuthor = (s: any) => (s || "").toLowerCase().replace(AUTHOR_SUFFIX_RE, "").replace(/[^\p{L}\p{N}]/gu, "");
+const CJK_RE = /[\u3040-\u30FF\u3400-\u9FFF\uAC00-\uD7AF]/;
+const levenshtein = (a: string, b: string): number => {
+  if (a === b) return 0;
+  const prev = new Array<number>(b.length + 1);
+  for (let j = 0; j <= b.length; j++) prev[j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    let cur = i;
+    for (let j = 1; j <= b.length; j++) {
+      const next = Math.min(prev[j] + 1, cur + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev[j - 1] = cur;
+      cur = next;
+    }
+    prev[b.length] = cur;
+  }
+  return prev[b.length];
+};
 const badTracks = new Map<string, Set<string>>();
 const authorRep = new Map<string, Map<string, number>>();
 const goodAuthorRep = new Map<string, Map<string, number>>();
@@ -295,8 +312,34 @@ class RecommendationEngine {
     return `${norm(track?.info?.author || "")}-${norm(stripTitleVariants(track?.info?.title || ""))}`;
   }
 
+  // Bandingkan 2 track sebagai "lagu sama" — tahan terhadap variasi penulisan author
+  // (romaji vs kana/kanji vs misspelling metadata, mis. 北乃きい / kitano kii / kitnao kii).
+  _isSameSong(a: any, b: any): boolean {
+    const idOf = (t: any) => t?.info?.identifier || t?.identifier;
+    const idA = idOf(a);
+    const idB = idOf(b);
+    if (idA && idB && idA === idB) return true;
+    const normTitle = (t: any) => (t || "").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+    const at = normTitle(stripTitleVariants(a?.info?.title || a?.title || ""));
+    const bt = normTitle(stripTitleVariants(b?.info?.title || b?.title || ""));
+    if (at !== bt) return false;
+    const authorOf = (t: any) => normAuthor(t?.info?.author || t?.author || "");
+    const aa = authorOf(a);
+    const ba = authorOf(b);
+    if (!aa || !ba) return true;
+    if (aa === ba) return true;
+    if (aa.length >= 3 && ba.includes(aa)) return true;
+    if (ba.length >= 3 && aa.includes(ba)) return true;
+    const aLatin = !CJK_RE.test(aa);
+    const bLatin = !CJK_RE.test(ba);
+    if (aLatin && bLatin) return levenshtein(aa, ba) <= 2;
+    if (aLatin !== bLatin) return true; // script campuran: tak bisa dibuktikan beda → konservatif skip
+    return false;
+  }
+
   _isPlayed(guildId: string, track: any): boolean {
-    return playedTracks.get(guildId)?.has(this._trackKey(track)) || false;
+    if (playedTracks.get(guildId)?.has(this._trackKey(track))) return true;
+    return playedEntries.get(guildId)?.some((e) => this._isSameSong(e, track)) || false;
   }
 
   _markPlayed(guildId: string, track: any): void {
@@ -304,10 +347,15 @@ class RecommendationEngine {
     const played = playedTracks.get(guildId)!;
     played.add(this._trackKey(track));
     if (played.size > 100) { const first = played.values().next().value; if (first) played.delete(first); }
+    if (!playedEntries.has(guildId)) playedEntries.set(guildId, []);
+    const entries = playedEntries.get(guildId)!;
+    entries.push({ title: track?.info?.title || "", author: track?.info?.author || "", identifier: track?.info?.identifier || undefined });
+    if (entries.length > 100) entries.shift();
   }
 
   clearPlayed(guildId: string): void {
     playedTracks.delete(guildId);
+    playedEntries.delete(guildId);
   }
 
   _candidateScore(t: any, track: any, genrePrefs: Set<string>, origDuration: number, origKeywords: Set<string>, sourceW: number, guildId: string): number {

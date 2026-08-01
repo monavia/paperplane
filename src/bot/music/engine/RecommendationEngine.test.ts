@@ -50,6 +50,59 @@ describe("RecommendationEngine same-track dedupe", () => {
   });
 });
 
+describe("history dedupe across author spellings", () => {
+  let engine: RecommendationEngine;
+
+  beforeEach(() => {
+    engine = new RecommendationEngine();
+  });
+
+  test("misspelled latin author with same title is treated as played", () => {
+    engine._markPlayed("g10", mkTrack("It's All Right", "北乃きい"));
+    assert.ok(engine._isPlayed("g10", mkTrack("It's All Right", "kitnao kii")));
+  });
+
+  test("cross-script author with same title is treated as played", () => {
+    engine._markPlayed("g11", mkTrack("ヒーター", "Kitano Kii"));
+    assert.ok(engine._isPlayed("g11", mkTrack("ヒーター", "北乃きい")));
+  });
+
+  test("same title with clearly different CJK authors is not played", () => {
+    engine._markPlayed("g12", mkTrack("밤편지", "아이유"));
+    assert.ok(!engine._isPlayed("g12", mkTrack("밤편지", "폴킴")));
+  });
+
+  test("different titles are not conflated", () => {
+    engine._markPlayed("g13", mkTrack("ヒーター", "北乃きい"));
+    assert.ok(!engine._isPlayed("g13", mkTrack("サクラサク", "北乃きい")));
+  });
+
+  test("variant title with cross-script author still dedupes", () => {
+    engine._markPlayed("g14", mkTrack("ヒーター (Official Audio)", "北乃きい"));
+    assert.ok(engine._isPlayed("g14", mkTrack("ヒーター", "kitnao kii")));
+  });
+
+  test("same identifier blocks even with different titles", () => {
+    engine._markPlayed("g15", { info: { title: "One Take", author: "A", identifier: "abc123XYZ99" } });
+    assert.ok(engine._isPlayed("g15", { info: { title: "One Take (Live)", author: "A", identifier: "abc123XYZ99" } }));
+  });
+
+  test("getRecommendations excludes duplicate variant returned by search", async () => {
+    const current = { info: { title: "It's All Right", author: "北乃きい", duration: 200_000, identifier: "abc123XYZ99" } };
+    const duplicate = { info: { title: "It's All Right", author: "kitnao kii", duration: 200_000, identifier: "dupVid000001" } };
+    const other = { info: { title: "Jumping!", author: "北乃きい", duration: 200_000, identifier: "otherVid00001" } };
+    const search = async (query: any) => {
+      const q = String(query?.query || "");
+      if (q.includes("list=RD")) return { loadType: "playlist", tracks: [] };
+      return { loadType: "search", tracks: [duplicate, other] };
+    };
+    const recs = await engine.getRecommendations({ search }, current, "g16", 3);
+    assert.ok(recs.length > 0);
+    assert.ok(!recs.some((r: any) => r.info.title === "It's All Right" && r.info.author === "kitnao kii"));
+    assert.ok(recs.some((r: any) => r.info.title === "Jumping!"));
+  });
+});
+
 describe("junk signals (hardJunk/softJunk)", () => {
   test("lyrics reupload is junk", () => {
     assert.ok(isJunkTrack("FLOWER POWER Lyrics (KAN/ROM/ENG)", "Fan Upload"));

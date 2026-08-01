@@ -1,5 +1,19 @@
 # Changelog — Paperplane
 
+## 2026-08-01 — v3.3.2
+
+### Autoplay — Dedupe Cross-Script (Romaji/Kana/Kanji & Misspelling)
+
+- **Problem (log user, lagu Jepang)** — 3 dari 12 lagu autoplay diulang dalam ~40 menit (ヒーター ×2, It's All Right ×2 berurutan, 涙は魅せない ×2). Root cause: dedupe `_trackKey` hanya lowercase + strip non-alnum → `北乃きい` / `kitano kii` / `kitnao kii` (misspelling dari metadata YT Music) = 3 key berbeda → `_isPlayed` & `_detectLoop` lolos semua. `_isSameTrack` hanya cek vs lagu saat ini, bukan riwayat.
+- **Fix** — `RecommendationEngine.ts`: state baru `playedEntries` (title/author/identifier, cap 100, sejajar `playedTracks`); helper `_isSameSong` — identifier sama → sama; title (setelah `stripTitleVariants`) beda → beda; author: sama/includes → sama, Latin↔Latin `levenshtein ≤ 2` (tangkap `kitano`↔`kitnao`), CJK↔CJK → beda (anti false-positive, `아이유` vs `폴킴` tetap beda), campuran script → konservatif sama. `_isPlayed` diperluas: fast-path key eksak + fallback `_isSameSong` vs semua entry riwayat. Call site tidak berubah — `getRecommendations` sudah `_markPlayed` lagu saat ini sebelum filter, jadi duplikat back-to-back ikut terblokir.
+- **Tests** — `RecommendationEngine.test.ts` +7: misspelling Latin, cross-script, CJK beda artis anti-conflate, title beda, variant title + cross-script, identifier sama, integrasi `getRecommendations` mengecualikan duplikat variant. **486/486 pass**, typecheck clean.
+
+### Voice State — Timer Alone Saat Member Dipindah Automation Server
+
+- **Problem** — user di-move otomatis oleh automation server (1 user + 1 bot, queue panjang/autoplay) → bot tidak keluar. `voiceStateUpdate` hanya punya cabang leave (`channelId === null`) & join (`oldState.channelId === null`) — perpindahan (dua-duanya non-null) tidak memicu timer sama sekali.
+- **Fix** — cabang baru "member moved": channel lama = channel bot & kosong manusia & 24/7 OFF → `startAloneTimer` (1 menit); channel baru = channel bot → `cancelAloneTimer`. `musicEvents.ts` tidak disentuh.
+- **Tests** — `voiceStateUpdate.test.ts` baru (7 test, fake timers, `vi.hoisted`): moved → destroy 60s, move balik → cancel, manusia lain tersisa → no-op, 24/7 → no-op, bot tak di channel → no-op, lavalink down → skip, regression manual leave.
+
 ## 2026-08-01 — v3.3.1
 
 ### Search Platform — Kembali ke `ytmsearch` (VPS sudah mendukung MUSIC client)
