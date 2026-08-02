@@ -94,6 +94,30 @@ describe("verifySpotifyMatch", () => {
     expect(verifySpotifyMatch(item, track)).toBe(false);
   });
 
+  test("violin version rejected", () => {
+    const track = mk("Lay All Your Love On Me (Violin)", "ABBA - Topic", 269_000);
+    const item = mkSpotify("Lay All Your Love On Me", ["ABBA"], 269_000);
+    expect(verifySpotifyMatch(item, track)).toBe(false);
+  });
+
+  test("violin solo version rejected", () => {
+    const track = mk("Lay All Your Love On Me (Violin Solo)", "ABBA - Topic", 269_000);
+    const item = mkSpotify("Lay All Your Love On Me", ["ABBA"], 269_000);
+    expect(verifySpotifyMatch(item, track)).toBe(false);
+  });
+
+  test("chinese instrumental version rejected", () => {
+    const track = mk("Lay All Your Love On Me 纯音乐", "ABBA - Topic", 269_000);
+    const item = mkSpotify("Lay All Your Love On Me", ["ABBA"], 269_000);
+    expect(verifySpotifyMatch(item, track)).toBe(false);
+  });
+
+  test("song title containing instrument word without parens passes", () => {
+    const track = mk("Piano Man", "Billy Joel - Topic", 270_000);
+    const item = mkSpotify("Piano Man", ["Billy Joel"], 270_000);
+    expect(verifySpotifyMatch(item, track)).toBe(true);
+  });
+
   test("empty spotify artists does not block", () => {
     const track = mk("Manusia Bodoh", "Ada Band - Topic", 180_000);
     const item = { name: "Manusia Bodoh", artists: [], duration: 180_000 };

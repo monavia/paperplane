@@ -39,6 +39,10 @@ export const STYLE_RE = /version|ver\.|tribute|keroncong|kroncong|akustik|acoust
 // gaya/seni non-Latin (KR/CN/JP/AR/TH) — weight 1 (soft): bantu turunkan ranking remix/cover/live
 export const STYLE_ML_RE = /(?:翻唱|伴奏|卡拉OK|커버|리믹스|노래방|라이브|カバー|リミックス|ライブ|カラオケ|ريمكس|كاريوكي|คัฟเวอร์|รีมิกซ์|คาราโอเกะ)/i;
 
+// versi instrumen — nama instrumen HANYA di dalam kurung (hindari false positive "Piano Man"/"Solo"),
+// plus kata non-Latin instrumental yang tidak ambigu (演奏/纯音乐/연주/บรรเลง)
+export const INSTRUMENT_RE = /\((?:[^()]*\b(?:violin|piano|guitar|sax(?:ophone)?|cello|flute|harp|ukulele|kalimba|recorder|trumpet|banjo|mandolin|solo)\b[^()]*)\)|演奏|纯音乐|연주|บรรเลง/i;
+
 // live/konser/concert markers (EN/ID + TH/KR/JP/CN) — deprioritize live/concert uploads
 export const LIVE_RE = /\b(?:live|konser|concert|unplugged|mtv|session|performance)\b|คอนเสิร์ต|สด|ไลฟ์|콘서트|라이브|コンサート|ライブ|演唱会|直播|现场/i;
 

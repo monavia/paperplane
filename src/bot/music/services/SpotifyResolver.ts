@@ -1,9 +1,9 @@
 import { cleanTitle, isCover } from "./TitleResolver.js";
 import { pickBestTrack, searchWithRetry } from "./SearchService.js";
-import { LIVE_RE, STYLE_RE, STYLE_ML_RE } from "../engine/JunkKeywords.js";
+import { LIVE_RE, STYLE_RE, STYLE_ML_RE, INSTRUMENT_RE } from "../engine/JunkKeywords.js";
 import Logger from "../../core/utils/Logger.js";
 
-const VARIANT_MARKERS = [LIVE_RE, STYLE_RE, STYLE_ML_RE];
+const VARIANT_MARKERS = [LIVE_RE, STYLE_RE, STYLE_ML_RE, INSTRUMENT_RE];
 
 const MATCH_STOPWORDS = new Set(["feat", "ft", "featuring", "the", "and", "with", "of", "remix", "remastered", "radio", "edit", "version"]);
 

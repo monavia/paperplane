@@ -203,4 +203,13 @@ describe("pickBestTrack live handling", () => {
     const best = pickBestTrack(tracks, "abba lay all your love on me");
     assert.strictEqual(best.info.title, "Lay All Your Love On Me");
   });
+
+  test("violin version loses to studio version even when first", () => {
+    const tracks = [
+      mk("Lay All Your Love On Me (Violin)", "ABBA - Topic"),
+      mk("Lay All Your Love On Me", "ABBA - Topic"),
+    ];
+    const best = pickBestTrack(tracks, "abba lay all your love on me");
+    assert.strictEqual(best.info.title, "Lay All Your Love On Me");
+  });
 });

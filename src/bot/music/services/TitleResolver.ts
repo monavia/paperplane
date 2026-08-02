@@ -82,6 +82,7 @@ const COVER_PATTERNS = [
   /\binstrumental\b/i,
   /\b(?:karaoke|backing\s*track|minus\s*one|sing\s*-?\s*along)\b|伴奏|カラオケ|卡拉OK|노래방|คาราโอเกะ/i,
   /\b(?:keroncong|kroncong|akustik|acoustic|dangdut|remix|dj\s+remix)\b/i,
+  /\((?:[^()]*\b(?:violin|piano|guitar|sax(?:ophone)?|cello|flute|harp|ukulele|kalimba|recorder|trumpet|banjo|mandolin|solo)\b[^()]*)\)|演奏|纯音乐|연주|บรรเลง/i,
 ];
 
 export function isCover(title: string, author?: string): boolean {

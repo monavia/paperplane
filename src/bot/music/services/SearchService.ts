@@ -3,7 +3,7 @@ import { cleanTitle, isCover } from "./TitleResolver.js";
 import { getBestNode, getPenalty, recordError, recordHtmlError, isDraining, isUnhealthy } from "../engine/NodePenaltyService.js";
 import { get } from "../engine/lavalink.js";
 import { isJunkTrack } from "../engine/RecommendationEngine.js";
-import { HARD_JUNK_RE, SOFT_JUNK_RE, STYLE_RE, STYLE_ML_RE, LIVE_RE } from "../engine/JunkKeywords.js";
+import { HARD_JUNK_RE, SOFT_JUNK_RE, STYLE_RE, STYLE_ML_RE, LIVE_RE, INSTRUMENT_RE } from "../engine/JunkKeywords.js";
 
 const BAD_KEYWORDS = [
   "remix", "cover", "live", "karaoke", "nightcore", "slowed", "sped up",
@@ -29,6 +29,7 @@ function scoreTrack(track: any): number {
   if (SOFT_JUNK_RE.test(title)) score -= 1;
   if (STYLE_ML_RE.test(title)) score -= 1;
   if (STYLE_RE.test(title)) score -= 3;
+  if (INSTRUMENT_RE.test(title)) score -= 3;
   if (LIVE_RE.test(title)) score -= 6;
   if (title.includes("official") || author.includes("vevo")) score += 2;
 
