@@ -1,6 +1,24 @@
 # Changelog — Paperplane
 
-## 2026-08-01 — v3.3.4 (unreleased)
+## 2026-08-02 — v3.3.5 (unreleased)
+
+### Spotify Playlists >100 Tracks — "Could not extract playlist data" Fixed
+
+- **Problem (user report)** — playlists with more than ~100 tracks failed with `Could not extract playlist data from Spotify` while smaller playlists worked. The embed endpoint always serves a fixed ~100-track payload and **ignores `?offset=`** (5 fetches returned byte-identical payloads); the regular playlist HTML page is now a ~6KB shell without track data (embed + HTML scrape both dead ends); anonymous API tokens are closed (403 / 429 QUOTA_EXCEEDED).
+- **Fix** — `SpotifyScraper.ts`: single embed fetch (offset 0) + dedup — no pagination attempts, no HTML scrape fallback; `_extractFromHtml`/`_findAllItems`/`_mapTracks` removed; `scrapePlaylist`/`scrapeAlbum` share a `_scrapeCollection` helper; empty result throws the original per-type error. **Playlist 164-track case now resolves 100 tracks instead of erroring** (embed cap; full pagination would require the Web API + credentials, intentionally out of scope).
+- **Tests** — `SpotifyScraper.test.ts` rewritten with mocked fetch/cache/dns: single-fetch result, dedup of repeated payloads, empty embed throws. **553/553 pass**, typecheck clean.
+
+### Spotify→YouTube Music Resolution Hardening — Live/Cover/Artist Mismatch
+
+- **Problem (user report)** — Spotify playlist items resolved to the wrong YouTube Music version: `คิด(แต่ไม่)ถึง` (Same Page) picked a live concert recording ("...คอนเสิร์ต") because it won the keyword match; the old `resolveSpotifyTrack` never verified the picked track — YT metadata was blindly overwritten with the Spotify title/artist.
+- **Fix**
+  - `JunkKeywords.ts` — new `LIVE_RE` (EN/ID/TH/KR/JP/CN: live, konser, concert, unplugged, mtv, session, performance, ไลฟ์, 라이브, ライブ, คอนเสิร์ต, 演唱会…); `STYLE_RE` extended with the same terms (also guards autoplay recommendations).
+  - `SearchService.ts` — `scoreTrack` penalizes live markers (−6); `pickBestTrack` scores a non-live pool first (filter + trust branches), fallback to full pool when only live versions exist.
+  - **New `SpotifyResolver.ts`** — `verifySpotifyMatch()` gate on **raw** title/author (before `pickBestTrack` cleaning): rejects live/cover markers not present in the Spotify name, symmetric token overlap (title ≥0.6, artist ≥0.75 with `- Topic`/VEVO/official/channel noise stripped), containment for non-latin scripts, ±90s duration tolerance; `buildQueryVariants()` = "Artist Title" → "Title" → "Title Artist"; `resolveSpotifyTrack()` tries each variant until verified, **best-effort fallback** (plays the closest match with a `[SpotifyResolver] Unverified fallback` warning) when nothing verifies.
+  - `slash/play.ts` & `prefix/play.ts` — duplicated local `resolveSpotifyTrack` removed; both import the shared resolver (same signature, callers unchanged).
+- **Tests** — `SpotifyResolver.test.ts` (18): latin/Thai/feat. match, live & cover rejection, artist mismatch ("Bukan Ada Band" vs "Ada Band"), duration tolerance, query-variant fallback chain, best-effort, empty result. **553/553 pass**, typecheck clean.
+
+## 2026-08-01 — v3.3.4
 
 ### Equalizer — Shared Presets, Resume Fix, and Stop Reset
 

@@ -2,7 +2,8 @@ import botConfig from "../../../../bot/config/bot.js";
 import { EmbedBuilder } from "discord.js";
 import * as NowPlayingEmbed from "../../../../bot/ui/embeds/NowPlayingEmbed.js";
 import * as ErrorEmbed from "../../../../bot/ui/embeds/ErrorEmbed.js";
-import { pickBestTrack, searchWithRetry } from "../../../../bot/music/services/SearchService.js";
+import { pickBestTrack } from "../../../../bot/music/services/SearchService.js";
+import { resolveSpotifyTrack } from "../../../../bot/music/services/SpotifyResolver.js";
 import { cachedSearch } from "../../../../bot/music/services/SearchCache.js";
 import { parseUrl as parseSpotifyUrl, scrape as scrapeSpotify } from "../../../../bot/music/engine/SpotifyScraper.js";
 import { markTrackStartSuppressed } from "../../../../bot/music/engine/musicEvents.js";
@@ -18,24 +19,6 @@ import { getEngine } from "../../../music/services/PlayerService.js";
 import * as EventBus from "../../../music/events/EventBus.js";
 
 const MAX_SPOTIFY = botConfig.maxSpotify;
-
-async function resolveSpotifyTrack(player: any, spotifyItem: any, user: any): Promise<any> {
-  const q = spotifyItem.query || `${spotifyItem.artists?.join(" ") || ""} ${spotifyItem.name}`.trim();
-  if (!q) return null;
-  let tracks: any;
-  try { const ytm = await searchWithRetry(player, { query: `ytmsearch:${q}` }, user); tracks = ytm?.tracks; } catch {}
-  if (tracks?.length) {
-    const track = pickBestTrack(tracks, q);
-    if (!track.info) track.info = {};
-    const artistStr = spotifyItem.artists?.join(", ") || track.info.author || "";
-    track.info.author = artistStr;
-    track.info.title = spotifyItem.name || track.info.title;
-    track.info.originalUrl = track.info.uri;
-    track.info.spotifyUrl = spotifyItem.spotifyUri || null;
-    return track;
-  }
-  return null;
-}
 
 async function resolveSpotifyBatch(items: any[], player: any, guildId: string, user: any, onProgress?: (done: number, total: number) => void): Promise<any[]> {
   const resolved: any[] = [];

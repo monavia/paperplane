@@ -34,10 +34,13 @@ export const POST_OFFICIAL_RE = /\(\s*official\s*(?:music\s*video|mv|live\s*musi
 
 export const AUTHOR_OFFICIAL_RE = /official\s*(?:mv|music\s*video)/i;
 
-export const STYLE_RE = /version|ver\.|tribute|keroncong|kroncong|akustik|acoustic|instrumental|karaoke|session\b/i;
+export const STYLE_RE = /version|ver\.|tribute|keroncong|kroncong|akustik|acoustic|instrumental|karaoke|session\b|\blive\b|\bkonser\b|\bconcert\b|\bunplugged\b|ไลฟ์|라이브|ライブ|คอนเสิร์ต|演唱会/i;
 
 // gaya/seni non-Latin (KR/CN/JP/AR/TH) — weight 1 (soft): bantu turunkan ranking remix/cover/live
 export const STYLE_ML_RE = /(?:翻唱|伴奏|卡拉OK|커버|리믹스|노래방|라이브|カバー|リミックス|ライブ|カラオケ|ريمكس|كاريوكي|คัฟเวอร์|รีมิกซ์|คาราโอเกะ)/i;
+
+// live/konser/concert markers (EN/ID + TH/KR/JP/CN) — deprioritize live/concert uploads
+export const LIVE_RE = /\b(?:live|konser|concert|unplugged|mtv|session|performance)\b|คอนเสิร์ต|สด|ไลฟ์|콘서트|라이브|コンサート|ライブ|演唱会|直播|现场/i;
 
 // 1 hit = berat (weight 3, langsung block di autoplay): reupload lyrics + frasa editorial/news-channel
 export const HARD_JUNK_RE = /(?:^|[^\w])(?:lyrics?|lirik|가사|歌词|歌詞|字幕|中字|자막|كلمات|เนื้อเพลง|बोल|lời bài hát|vietsub|kan\/rom\/eng|engsub)(?:[^\w]|$)|facts?\s+(?:about|of|on|behind)\b|you\s+should\s+know|everything\s+about|behind\s+the\s+scenes|documentary|explained|top\s+\d+|interview\b|podcast|lecture|seminar|audiobook|뉴스|팩트|순위|사연|新闻|故事|解说|盘点|排名|ニュース|解説|ランキング|まとめ|事実|أخبار|قصة|حقائق|شرح|ข่าว|เรื่องราว/i;

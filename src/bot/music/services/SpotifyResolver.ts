@@ -1,0 +1,124 @@
+import { cleanTitle, isCover } from "./TitleResolver.js";
+import { pickBestTrack, searchWithRetry } from "./SearchService.js";
+import { LIVE_RE } from "../engine/JunkKeywords.js";
+import Logger from "../../core/utils/Logger.js";
+
+const MATCH_STOPWORDS = new Set(["feat", "ft", "featuring", "the", "and", "with", "of", "remix", "remastered", "radio", "edit", "version"]);
+
+const AUTHOR_NOISE_RE = /\b(?:topic|vevo|official|channel|records?|entertainment|production|music|sounds?|videos?|audio|lyrics?)\b/gi;
+
+const MAX_DURATION_DIFF_MS = 90_000;
+
+function compact(s: string): string {
+  return s.toLowerCase().normalize("NFKC").replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+function tokens(s: string): string[] {
+  return (s.toLowerCase().normalize("NFKC").match(/[\p{L}\p{N}]{2,}/gu) || []).filter((t) => !MATCH_STOPWORDS.has(t));
+}
+
+function ratioOverlap(aTokens: string[], bTokens: string[], bCompact: string): number {
+  if (!aTokens.length) return 0;
+  const bSet = new Set(bTokens);
+  const hits = aTokens.filter((t) => bSet.has(t) || bCompact.includes(t));
+  return hits.length / aTokens.length;
+}
+
+function symmetricMatch(aTokens: string[], bTokens: string[], aCompact: string, bCompact: string, threshold: number): boolean {
+  if (!aTokens.length || !bTokens.length) return aCompact === bCompact && aCompact.length > 0;
+  return ratioOverlap(aTokens, bTokens, bCompact) >= threshold && ratioOverlap(bTokens, aTokens, aCompact) >= threshold;
+}
+
+function titleMatches(spTitle: string, ytTitle: string): boolean {
+  const sp = compact(spTitle);
+  const yt = compact(ytTitle);
+  if (!sp || !yt) return false;
+  if (sp === yt) return true;
+  if (!/[a-z]/i.test(sp)) {
+    return yt.includes(sp) || sp.includes(yt);
+  }
+  const spTokens = tokens(spTitle).filter((t) => t.length >= 3);
+  const ytTokens = tokens(ytTitle).filter((t) => t.length >= 3);
+  if (!spTokens.length || !ytTokens.length) return yt.includes(sp) || sp.includes(yt);
+  return symmetricMatch(spTokens, ytTokens, sp, yt, 0.6);
+}
+
+function artistMatches(spArtists: string[], ytAuthor: string): boolean {
+  const main = spArtists[0];
+  if (!main) return true;
+  const ytClean = ytAuthor.replace(/\s*[-–—]\s*Topic$/i, "").replace(AUTHOR_NOISE_RE, "").trim();
+  const yt = compact(ytClean);
+  if (!yt) return true;
+  const sp = compact(main);
+  if (!sp) return true;
+  if (!/[a-z]/i.test(sp)) {
+    return yt.includes(sp) || sp.includes(yt);
+  }
+  const spTokens = tokens(main).filter((t) => t.length >= 3);
+  const ytTokens = tokens(ytClean).filter((t) => t.length >= 3);
+  if (!spTokens.length || !ytTokens.length) return yt.includes(sp) || sp.includes(yt);
+  return symmetricMatch(spTokens, ytTokens, sp, yt, 0.75);
+}
+
+export function verifySpotifyMatch(spotifyItem: any, track: any, rawInfo?: { title?: string; author?: string }): boolean {
+  const rawTitle = (rawInfo?.title ?? track.info?.title) || "";
+  const rawAuthor = (rawInfo?.author ?? track.info?.author) || "";
+  const spotName = spotifyItem.name || "";
+
+  if (LIVE_RE.test(rawTitle) && !LIVE_RE.test(spotName)) return false;
+  if (isCover(rawTitle, rawAuthor) && !isCover(spotName)) return false;
+
+  const cleaned = cleanTitle(rawTitle, rawAuthor);
+  if (!titleMatches(spotName, cleaned.title)) return false;
+  if (!artistMatches(spotifyItem.artists || [], cleaned.author)) return false;
+
+  const spMs = spotifyItem.duration;
+  const ytMs = track.info?.duration ?? track.info?.length ?? null;
+  if (spMs && ytMs && Math.abs(spMs - ytMs) > MAX_DURATION_DIFF_MS) return false;
+
+  return true;
+}
+
+export function buildQueryVariants(spotifyItem: any): string[] {
+  const name = (spotifyItem.name || "").trim();
+  const artistStr = (spotifyItem.artists || []).map((a: string) => a.trim()).filter(Boolean).join(" ");
+  const variants: string[] = [];
+  if (artistStr && name) variants.push(`${artistStr} ${name}`);
+  if (name && !variants.includes(name)) variants.push(name);
+  if (artistStr && name) variants.push(`${name} ${artistStr}`);
+  return variants;
+}
+
+function finalizeSpotifyTrack(track: any, spotifyItem: any): any {
+  if (!track.info) track.info = {};
+  const artistStr = spotifyItem.artists?.join(", ") || track.info.author || "";
+  track.info.author = artistStr;
+  track.info.title = spotifyItem.name || track.info.title;
+  track.info.originalUrl = track.info.uri;
+  track.info.spotifyUrl = spotifyItem.spotifyUri || null;
+  return track;
+}
+
+export async function resolveSpotifyTrack(player: any, spotifyItem: any, user: any, searchFn: any = searchWithRetry): Promise<any> {
+  const variants = buildQueryVariants(spotifyItem);
+  if (!variants.length) return null;
+  let bestEffort: any = null;
+  for (const q of variants) {
+    let result: any;
+    try { result = await searchFn(player, { query: `ytmsearch:${q}` }, user); } catch { continue; }
+    if (!result?.tracks?.length) continue;
+    const raws = new Map<any, { title: string; author: string }>();
+    for (const t of result.tracks) raws.set(t, { title: t.info?.title || "", author: t.info?.author || "" });
+    const track = pickBestTrack(result.tracks, q);
+    if (!track) continue;
+    if (!bestEffort) bestEffort = track;
+    if (verifySpotifyMatch(spotifyItem, track, raws.get(track))) {
+      return finalizeSpotifyTrack(track, spotifyItem);
+    }
+  }
+  if (bestEffort) {
+    Logger.warn(`[SpotifyResolver] Unverified fallback: "${spotifyItem.name || ""}" by ${(spotifyItem.artists || []).join(", ")} — playing best match`);
+    return finalizeSpotifyTrack(bestEffort, spotifyItem);
+  }
+  return null;
+}

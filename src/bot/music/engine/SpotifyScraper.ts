@@ -65,55 +65,9 @@ class SpotifyScraper {
     const cached = await this.getCached(cacheKey);
     if (cached) return cached;
 
-    const allTracks: any[] = [];
-    let offset = 0;
-    while (allTracks.length < 500) {
-      const data = await this._fetchEntity("playlist", id, offset);
-      if (!data?.entity?.trackList?.length) break;
-      const mapped = data.entity.trackList.map((t: any) => ({
-        name: t.title,
-        artists: t.subtitle ? [t.subtitle] : [],
-        query: `${t.subtitle || ""} ${t.title}`.trim(),
-        duration: this._getDurationMs(t),
-        spotifyUri: t.uri || t.id || null,
-      }));
-      allTracks.push(...mapped);
-      if (mapped.length < 50) break;
-      offset += 50;
-    }
-
-    const unique = this._deduplicate(allTracks);
-
-    // Embed pagination via ?offset= is unreliable — Spotify ignores it.
-    // If we tried paginating (offset went >0) but stopped with tracks,
-    // fall through to HTML scrape which has the full track list.
-    if (unique.length && offset === 0) {
-      Logger.info(`[SpotifyScraper] Embed path: ${unique.length} tracks`);
-      await this.setCached(cacheKey, unique);
-      return unique;
-    }
-
-    if (unique.length) {
-      Logger.info(`[SpotifyScraper] Embed partial (${unique.length}), trying HTML scrape supplement`);
-      const html = await this._fetchPage(`https://open.spotify.com/playlist/${id}`);
-      const htmlTracks = this._extractFromHtml(html);
-      if (htmlTracks?.length) {
-        Logger.info(`[SpotifyScraper] HTML scrape: ${htmlTracks.length} tracks`);
-        await this.setCached(cacheKey, htmlTracks);
-        return htmlTracks;
-      }
-    }
-
-    Logger.info(`[SpotifyScraper] Embed empty, trying HTML scrape`);
-    const html = await this._fetchPage(`https://open.spotify.com/playlist/${id}`);
-    const htmlTracks = this._extractFromHtml(html);
-    if (htmlTracks?.length) {
-      Logger.info(`[SpotifyScraper] HTML scrape: ${htmlTracks.length} tracks`);
-      await this.setCached(cacheKey, htmlTracks);
-      return htmlTracks;
-    }
-
-    throw new Error("Could not extract playlist data from Spotify");
+    const tracks = await this._scrapeCollection("playlist", id, cacheKey, "Could not extract playlist data from Spotify");
+    Logger.info(`[SpotifyScraper] Embed: ${tracks.length} tracks`);
+    return tracks;
   }
 
   async scrapeTrack(id: any): Promise<any> {
@@ -141,22 +95,31 @@ class SpotifyScraper {
     const cached = await this.getCached(cacheKey);
     if (cached) return cached;
 
-    const data = await this._fetchEntity("album", id);
-    if (data?.entity?.trackList?.length) {
-      const mapped = data.entity.trackList.map((t: any) => ({
-        name: t.title, artists: t.subtitle ? [t.subtitle] : [],
-        query: `${t.subtitle || ""} ${t.title}`.trim(),
-        duration: this._getDurationMs(t), spotifyUri: t.uri || t.id || null,
-      }));
-      const unique = this._deduplicate(mapped);
-      if (unique.length) { await this.setCached(cacheKey, unique); return unique; }
-    }
+    return this._scrapeCollection("album", id, cacheKey, "Could not extract album data from Spotify");
+  }
 
-    const html = await this._fetchPage(`https://open.spotify.com/album/${id}`);
-    const tracks = this._extractFromHtml(html);
-    if (tracks?.length) { await this.setCached(cacheKey, tracks); return tracks; }
+  private async _scrapeCollection(type: any, id: any, cacheKey: string, errorMsg: string): Promise<any> {
+    // Spotify embed ignores ?offset= — it always serves the same first ~100 tracks.
+    // Single fetch is all there is; no point paginating.
+    const data = await this._fetchEntity(type, id, 0);
+    const mapped = data?.entity?.trackList?.length
+      ? data.entity.trackList.map((t: any) => ({
+          name: t.title,
+          artists: t.subtitle ? [t.subtitle] : [],
+          query: `${t.subtitle || ""} ${t.title}`.trim(),
+          duration: this._getDurationMs(t),
+          spotifyUri: t.uri || t.id || null,
+        }))
+      : [];
+    const unique = this._deduplicate(mapped);
+    if (!unique.length) throw new Error(errorMsg);
+    await this.setCached(cacheKey, unique);
+    return unique;
+  }
 
-    throw new Error("Could not extract album data from Spotify");
+  _deduplicate(tracks: any[]): any[] {
+    const seen = new Set();
+    return tracks.filter((t: any) => { const k = t.query.toLowerCase().replace(/\s+/g, " "); if (seen.has(k)) return false; seen.add(k); return true; });
   }
 
   async _fetchEntity(type: any, id: any, offset: any = 0): Promise<any> {
@@ -251,47 +214,6 @@ class SpotifyScraper {
     }
   }
 
-  _extractFromHtml(html: any): any {
-    const n = html.match(/<script id="__NEXT_DATA__"[^>]*type="application\/json"[^>]*>([\s\S]*?)<\/script>/);
-    if (n) { try { const d = JSON.parse(n[1]); const c = this._findAllItems(d); if (c.length) { const b = c.reduce((a: any, b: any) => a.length >= b.length ? a : b); if (b?.length) return this._mapTracks(b); } } catch { Logger.safe("SpotifyScraper")(); } }
-    const s = html.match(/<script[^>]*type="text\/json"[^>]*>([A-Za-z0-9+/=]+)<\/script>/);
-    if (s) { try { const d = JSON.parse(Buffer.from(s[1], "base64").toString("utf-8")); const c = this._findAllItems(d); if (c.length) { const b = c.reduce((a: any, b: any) => a.length >= b.length ? a : b); if (b?.length) return this._mapTracks(b); } } catch { Logger.safe("SpotifyScraper")(); } }
-    const m = html.match(/window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\})\s*;?\s*\n?<\/script>/);
-    if (m) { try { const d = JSON.parse(m[1]); const c = this._findAllItems(d); if (c.length) { const b = c.reduce((a: any, b: any) => a.length >= b.length ? a : b); if (b?.length) return this._mapTracks(b); } } catch { Logger.safe("SpotifyScraper")(); } }
-    return null;
-  }
-
-  _findAllItems(obj: any, results: any[] = [], depth: number = 0): any[] {
-    if (!obj || typeof obj !== "object" || depth > 8) return results;
-    if (Array.isArray(obj)) { for (const i of obj) this._findAllItems(i, results, depth + 1); return results; }
-    if (obj.items && Array.isArray(obj.items) && (obj.items[0]?.track?.name || obj.items[0]?.name || obj.items[0]?.title)) results.push(obj.items);
-    if (obj.trackList && Array.isArray(obj.trackList)) results.push(obj.trackList);
-    if (obj.data?.playlistV2?.content?.items) results.push(obj.data.playlistV2.content.items);
-    if (obj.playlist?.tracks?.items) results.push(obj.playlist.tracks.items);
-    if (obj.tracks && Array.isArray(obj.tracks)) results.push(obj.tracks);
-    if (results.length) return results;
-    for (const k of Object.keys(obj)) { this._findAllItems(obj[k], results, depth + 1); if (results.length) break; }
-    return results;
-  }
-
-  _deduplicate(tracks: any[]): any[] {
-    const seen = new Set();
-    return tracks.filter((t: any) => { const k = t.query.toLowerCase().replace(/\s+/g, " "); if (seen.has(k)) return false; seen.add(k); return true; });
-  }
-
-  _mapTracks(items: any[]): any[] {
-    return items.map((item: any) => {
-      let track: any;
-      if (item.title && item.subtitle) return { name: item.title, artists: item.subtitle ? [item.subtitle] : [], query: `${item.subtitle || ""} ${item.title}`.trim(), duration: this._getDurationMs(item), spotifyUri: item.uri || null };
-      if (item.itemV2?.data) track = item.itemV2.data; else if (item.track) track = item.track; else track = item;
-      const name = track.name || track.title || "";
-      const artistArr: any[] = [];
-      if (track.artists?.items) for (const a of track.artists.items) { if (a.profile?.name) artistArr.push(a.profile.name); else if (a.name) artistArr.push(a.name); }
-      else if (track.artists && Array.isArray(track.artists)) for (const a of track.artists) { if (typeof a === "string") artistArr.push(a); else if (a.name) artistArr.push(a.name); }
-      else if (track.subtitle) artistArr.push(track.subtitle);
-      return { name, artists: artistArr, query: `${artistArr.join(" ")} ${name}`.trim(), duration: this._getDurationMs(track), spotifyUri: track.uri || track.id || null };
-    }).filter((t: any) => t.name);
-  }
 }
 
 const _instance = new SpotifyScraper();

@@ -160,3 +160,38 @@ describe("isInDurationRange", () => {
     assert.ok(isInDurationRange({ info: {} }));
   });
 });
+
+describe("pickBestTrack live handling", () => {
+  test("live concert version loses to studio version despite full keyword match", () => {
+    const tracks = [
+      mk("Manusia Bodoh", "Ada Band"),
+      mk("Ada Band - Manusia Bodoh (Live at Konser 2015)", "Ada Band"),
+    ];
+    const best = pickBestTrack(tracks, "ada band manusia bodoh");
+    assert.strictEqual(best.info.title, "Manusia Bodoh");
+  });
+
+  test("thai live concert version loses to studio version", () => {
+    const tracks = [
+      { info: { title: "คิด(แต่ไม่)ถึง คอนเสิร์ต", author: "Same Page", sourceName: "youtube" } },
+      { info: { title: "คิด(แต่ไม่)ถึง", author: "Same Page", sourceName: "youtube" } },
+    ];
+    const best = pickBestTrack(tracks, "same page คิด(แต่ไม่)ถึง");
+    assert.strictEqual(best.info.title, "คิด(แต่ไม่)ถึง");
+  });
+
+  test("script-mismatch trust skipped when top result is live", () => {
+    const tracks = [
+      { info: { title: "คิด(แต่ไม่)ถึง คอนเสิร์ต", author: "เสมเพจ", sourceName: "youtube" } },
+      { info: { title: "คิด(แต่ไม่)ถึง", author: "เสมเพจ", sourceName: "youtube" } },
+    ];
+    const best = pickBestTrack(tracks, "same page คิด(แต่ไม่)ถึง");
+    assert.strictEqual(best.info.title, "คิด(แต่ไม่)ถึง");
+  });
+
+  test("live-only result still playable", () => {
+    const tracks = [mk("Manusia Bodoh (Live at Konser 2015)", "Ada Band")];
+    const best = pickBestTrack(tracks, "ada band manusia bodoh");
+    assert.ok(best.info.title.toLowerCase().includes("live"));
+  });
+});

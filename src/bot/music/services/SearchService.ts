@@ -3,7 +3,7 @@ import { cleanTitle, isCover } from "./TitleResolver.js";
 import { getBestNode, getPenalty, recordError, recordHtmlError, isDraining, isUnhealthy } from "../engine/NodePenaltyService.js";
 import { get } from "../engine/lavalink.js";
 import { isJunkTrack } from "../engine/RecommendationEngine.js";
-import { HARD_JUNK_RE, SOFT_JUNK_RE, STYLE_ML_RE } from "../engine/JunkKeywords.js";
+import { HARD_JUNK_RE, SOFT_JUNK_RE, STYLE_ML_RE, LIVE_RE } from "../engine/JunkKeywords.js";
 
 const BAD_KEYWORDS = [
   "remix", "cover", "live", "karaoke", "nightcore", "slowed", "sped up",
@@ -28,6 +28,7 @@ function scoreTrack(track: any): number {
   if (HARD_JUNK_RE.test(title)) score -= 3;
   if (SOFT_JUNK_RE.test(title)) score -= 1;
   if (STYLE_ML_RE.test(title)) score -= 1;
+  if (LIVE_RE.test(title)) score -= 6;
   if (title.includes("official") || author.includes("vevo")) score += 2;
 
   return score;
@@ -79,8 +80,8 @@ export function pickBestTrack(tracks: any[], query?: string): any {
   const firstTitle = (first.info?.title || "").toLowerCase();
 
   let best = first;
-  if (hasBadKeyword(firstTitle, first.info?.author) || isJunkTrack(first.info?.title || "", first.info?.author)) {
-    const filtered = candidates.filter((t) => !hasBadKeyword((t.info?.title || "").toLowerCase(), t.info?.author) && !isJunkTrack(t.info?.title || "", t.info?.author));
+  if (hasBadKeyword(firstTitle, first.info?.author) || isJunkTrack(first.info?.title || "", first.info?.author) || LIVE_RE.test(firstTitle)) {
+    const filtered = candidates.filter((t) => !hasBadKeyword((t.info?.title || "").toLowerCase(), t.info?.author) && !isJunkTrack(t.info?.title || "", t.info?.author) && !LIVE_RE.test((t.info?.title || "").toLowerCase()));
     if (filtered.length) {
       const scored = filtered.map((t: any) => ({ track: t, score: scoreTrack(t) + scoreQuery(t, keywords) }));
       scored.sort((a, b) => b.score - a.score);
@@ -95,7 +96,9 @@ export function pickBestTrack(tracks: any[], query?: string): any {
       // substring match tak bisa mencocokkan; percaya urutan node (YTM).
       best = candidates[0];
     } else {
-      const scored = candidates.map((t: any) => ({ track: t, score: scoreTrack(t) + scoreQuery(t, keywords) }));
+      const nonLive = candidates.filter((t) => !LIVE_RE.test((t.info?.title || "").toLowerCase()));
+      const scorePool = nonLive.length ? nonLive : candidates;
+      const scored = scorePool.map((t: any) => ({ track: t, score: scoreTrack(t) + scoreQuery(t, keywords) }));
       scored.sort((a, b) => b.score - a.score);
       best = scored[0].track;
     }
