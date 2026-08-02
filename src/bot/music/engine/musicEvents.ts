@@ -16,6 +16,7 @@ import { getPrefix } from "../../database/repositories/GuildRepository.js";
 import botConfig from "../../config/bot.js";
 import * as EventBus from "../events/EventBus.js";
 import { cleanTitle, saveSpotifyMeta, applySpotifyMeta } from "../services/TitleResolver.js";
+import { resolveStoredSpotifyTrack } from "../services/SpotifyResolver.js";
 import { findTrackWithDuration, pickBestTrack, searchWithRetry } from "../services/SearchService.js";
 import { getAdapter } from "../../cache/CacheAdapter.js";
 import { markDead, deadFingerprint } from "../../cache/DeadTrackService.js";
@@ -353,11 +354,17 @@ function register(client: any): void {
         if (!next?.info?.uri) return;
         const uri = next.info.uri;
         const isSpotify = /open\.spotify\.com/i.test(uri) || /^spotify:/.test(uri);
-        const search = await player.search({ query: isSpotify ? `ytmsearch:${next.info.author || ""} ${next.info.title || ""}` : uri }, { id: "system" }).catch(() => null);
-        if (search?.tracks?.[0]?.encoded) {
-          next.encoded = search.tracks[0].encoded;
+        let resolved: any = null;
+        if (isSpotify) {
+          resolved = await resolveStoredSpotifyTrack(player, next, { id: "system" }).catch(() => null);
+        } else {
+          const search = await player.search({ query: uri }, { id: "system" }).catch(() => null);
+          resolved = search?.tracks?.[0] || null;
+        }
+        if (resolved?.encoded) {
+          next.encoded = resolved.encoded;
           
-          applySpotifyMeta(search.tracks[0], saveSpotifyMeta(next));
+          applySpotifyMeta(resolved, saveSpotifyMeta(next));
         }
       } catch { Logger.warn("[trackStart] Track re-resolution failed"); }
     });
@@ -621,7 +628,8 @@ function register(client: any): void {
         const author = orig?.info?.author || "";
         const q = author ? `${author} ${title}` : title;
         if (q) {
-          const found = await findTrackWithDuration(player, q, track, clientRef?.user);
+          const spotResolved = savedMeta ? await resolveStoredSpotifyTrack(player, track, clientRef?.user).catch(() => null) : null;
+          const found = spotResolved || await findTrackWithDuration(player, q, track, clientRef?.user);
           if (found) {
             if (!found.info) found.info = {};
             found.info.source = track?.info?.source || "youtube";

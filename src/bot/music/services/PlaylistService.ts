@@ -4,6 +4,7 @@ import { withQueueLock } from "../../core/state/QueueLock.js";
 import { saveState } from "./StateService.js";
 import { getEngine } from "./PlayerService.js";
 import { get } from "../engine/lavalink.js";
+import { resolveSpotifyTrack } from "./SpotifyResolver.js";
 
 export interface PortableTrack {
   title: string;
@@ -101,10 +102,21 @@ export async function importPlaylist(guildId: string, tracks: PortableTrack[], u
 
       // Fast path: try URI direct resolve
       if (pt.uri) {
-        try {
-          const result = await player.search({ query: pt.uri }, { id: userId });
-          if (result?.tracks?.[0]) resolved = result.tracks[0];
-        } catch {}
+        const isSpotify = /^spotify:/.test(pt.uri) || /open\.spotify\.com/i.test(pt.uri);
+        if (isSpotify) {
+          const item = {
+            name: pt.title || "",
+            artists: (pt.author || "").split(",").map((s: string) => s.trim()).filter(Boolean),
+            duration: pt.duration || 0,
+            spotifyUri: pt.uri,
+          };
+          resolved = await resolveSpotifyTrack(player, item, { id: userId }).catch(() => null);
+        } else {
+          try {
+            const result = await player.search({ query: pt.uri }, { id: userId });
+            if (result?.tracks?.[0]) resolved = result.tracks[0];
+          } catch {}
+        }
       }
 
       // Fallback: search by title + author

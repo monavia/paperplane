@@ -2,6 +2,7 @@ import { isDead, markDead, deadFingerprint, deadSpotifyFingerprint } from "../..
 import { getAdapter } from "../../cache/CacheAdapter.js";
 import { findTrackWithDuration } from "../services/SearchService.js";
 import { saveSpotifyMeta, applySpotifyMeta } from "../services/TitleResolver.js";
+import { resolveStoredSpotifyTrack } from "../services/SpotifyResolver.js";
 import Logger from "../../core/utils/Logger.js";
 
 export interface ValidateResult {
@@ -50,7 +51,8 @@ export async function validateTrack(
 
       if (isSpotify) {
         const q = `${track.info.author || ""} ${track.info.title || ""}`.trim();
-        const found = await findTrackWithDuration(player, q, track, requester);
+        const spotResolved = await resolveStoredSpotifyTrack(player, track, requester).catch(() => null);
+        const found = spotResolved || await findTrackWithDuration(player, q, track, requester);
         if (found) {
           Object.assign(track, found);
           if (savedMeta) applySpotifyMeta(track, savedMeta);

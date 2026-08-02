@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { verifySpotifyMatch, buildQueryVariants, resolveSpotifyTrack } from "./SpotifyResolver.js";
+import { verifySpotifyMatch, buildQueryVariants, buildSpotifyItemFromTrack, resolveStoredSpotifyTrack, resolveSpotifyTrack } from "./SpotifyResolver.js";
 
 function mk(title: string, author: string, duration = 180_000) {
   return { info: { title, author, uri: `https://youtu.be/${encodeURIComponent(title)}`, duration, length: duration, sourceName: "youtube" } };
@@ -164,5 +164,62 @@ describe("resolveSpotifyTrack", () => {
     const item = mkSpotify("Manusia Bodoh", ["Ada Band"]);
     const result = await resolveSpotifyTrack({}, item, {}, searchFn);
     expect(result).toBeNull();
+  });
+});
+
+describe("buildSpotifyItemFromTrack", () => {
+  test("reconstructs item from stored spotify metadata", () => {
+    const stored = { info: { title: "Lay All Your Love On Me", author: "ABBA, Benny Andersson", duration: 269_000, spotifyUrl: "spotify:track:abc" } };
+    const item = buildSpotifyItemFromTrack(stored);
+    expect(item).not.toBeNull();
+    expect(item.name).toBe("Lay All Your Love On Me");
+    expect(item.artists).toEqual(["ABBA", "Benny Andersson"]);
+    expect(item.duration).toBe(269_000);
+    expect(item.spotifyUri).toBe("spotify:track:abc");
+  });
+
+  test("accepts open.spotify.com uri as spotify source", () => {
+    const stored = { info: { title: "Song", author: "Artist", spotifyUrl: "https://open.spotify.com/track/xyz" } };
+    expect(buildSpotifyItemFromTrack(stored)).not.toBeNull();
+  });
+
+  test("returns null for non-spotify track", () => {
+    const stored = { info: { title: "Song", author: "Artist", uri: "https://youtu.be/abc", spotifyUrl: null } };
+    expect(buildSpotifyItemFromTrack(stored)).toBeNull();
+  });
+});
+
+describe("resolveStoredSpotifyTrack", () => {
+  test("re-resolves with verification, skipping cover in first position", async () => {
+    const searchFn = vi.fn(async () => ({
+      tracks: [
+        mk("Lay All Your Love On Me (Cover)", "Cover Artists", 269_000),
+        mk("Lay All Your Love On Me", "ABBA - Topic", 269_000),
+      ],
+    }));
+    const stored = { info: { title: "Lay All Your Love On Me", author: "ABBA", duration: 269_000, spotifyUrl: "spotify:track:abc" } };
+    const result = await resolveSpotifyTrack({}, buildSpotifyItemFromTrack(stored)!, {}, searchFn);
+    expect(result).not.toBeNull();
+    expect(result.info.title).toBe("Lay All Your Love On Me");
+    expect(result.info.author).toBe("ABBA");
+  });
+
+  test("returns null for non-spotify stored track", async () => {
+    const stored = { info: { title: "Song", author: "Artist", uri: "https://youtu.be/abc" } };
+    const result = await resolveStoredSpotifyTrack({}, stored, {});
+    expect(result).toBeNull();
+  });
+
+  test("verified resolution wins over unverified first result on karaoke", async () => {
+    const searchFn = vi.fn(async () => ({
+      tracks: [
+        mk("Lay All Your Love On Me (Karaoke Version)", "ABBA - Topic", 269_000),
+        mk("Lay All Your Love On Me", "ABBA - Topic", 269_000),
+      ],
+    }));
+    const stored = { info: { title: "Lay All Your Love On Me", author: "ABBA", duration: 269_000, spotifyUrl: "spotify:track:abc" } };
+    const result = await resolveSpotifyTrack({}, buildSpotifyItemFromTrack(stored)!, {}, searchFn);
+    expect(result).not.toBeNull();
+    expect(result.info.title).toBe("Lay All Your Love On Me");
   });
 });

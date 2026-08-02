@@ -11,6 +11,7 @@ import { setFilter, setEqualizer } from "./PlayerService.js";
 import * as EventBus from "../events/EventBus.js";
 import { EmbedBuilder } from "discord.js";
 import { resolveEQBands } from "../../core/constants/EQPresets.js";
+import { resolveStoredSpotifyTrack } from "./SpotifyResolver.js";
 
 let restoreRetryTimer: NodeJS.Timeout | null = null;
 let uncachedRetries = 0;
@@ -340,16 +341,22 @@ async function restoreGuildState(client: any, saved: any): Promise<boolean> {
       const trackTitle = first.info?.title || "";
       const trackAuthor = first.info?.author || "";
       if (trackTitle || trackAuthor) {
-        const q = `${trackAuthor} ${trackTitle}`.trim();
-        const search = await player.search({ query: `ytmsearch:${q}` }, { id: "system" }).catch(() => null);
-        if (search?.tracks?.length) {
-          const fresh = search.tracks[0];
-          // Preserve original URI for display (e.g. Spotify URL)
-          if (first.info?.uri && !/^spotify:/i.test(first.info.uri) && !/open\.spotify\.com/i.test(first.info.uri)) {
-            fresh.info.uri = first.info.uri;
-          }
-          first = fresh;
+        const spotResolved = await resolveStoredSpotifyTrack(player, first, { id: "system" }).catch(() => null);
+        if (spotResolved) {
+          first = spotResolved;
           state.nowPlaying.set(saved.guildId, first);
+        } else {
+          const q = `${trackAuthor} ${trackTitle}`.trim();
+          const search = await player.search({ query: `ytmsearch:${q}` }, { id: "system" }).catch(() => null);
+          if (search?.tracks?.length) {
+            const fresh = search.tracks[0];
+            // Preserve original URI for display (e.g. Spotify URL)
+            if (first.info?.uri && !/^spotify:/i.test(first.info.uri) && !/open\.spotify\.com/i.test(first.info.uri)) {
+              fresh.info.uri = first.info.uri;
+            }
+            first = fresh;
+            state.nowPlaying.set(saved.guildId, first);
+          }
         }
       }
 

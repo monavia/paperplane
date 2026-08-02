@@ -101,6 +101,25 @@ function finalizeSpotifyTrack(track: any, spotifyItem: any): any {
   return track;
 }
 
+export function buildSpotifyItemFromTrack(track: any): any | null {
+  const info = track?.info;
+  if (!info) return null;
+  const uri = info.spotifyUrl || info.uri || "";
+  if (!/^spotify:|open\.spotify\.com/i.test(uri)) return null;
+  return {
+    name: info.title || "",
+    artists: (info.author || "").split(",").map((s: string) => s.trim()).filter(Boolean),
+    duration: info.duration || info.length || 0,
+    spotifyUri: info.spotifyUrl || uri || null,
+  };
+}
+
+export async function resolveStoredSpotifyTrack(player: any, track: any, user: any): Promise<any | null> {
+  const item = buildSpotifyItemFromTrack(track);
+  if (!item) return null;
+  return (await resolveSpotifyTrack(player, item, user)) || null;
+}
+
 export async function resolveSpotifyTrack(player: any, spotifyItem: any, user: any, searchFn: any = searchWithRetry): Promise<any> {
   const variants = buildQueryVariants(spotifyItem);
   if (!variants.length) return null;
