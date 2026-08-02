@@ -1,6 +1,6 @@
 # Changelog — Paperplane
 
-## 2026-08-02 — v3.3.5 (unreleased)
+## 2026-08-02 — v3.3.5
 
 ### Spotify Playlists >100 Tracks — "Could not extract playlist data" Fixed
 
