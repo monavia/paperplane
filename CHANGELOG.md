@@ -18,6 +18,15 @@
   - `slash/play.ts` & `prefix/play.ts` — duplicated local `resolveSpotifyTrack` removed; both import the shared resolver (same signature, callers unchanged).
 - **Tests** — `SpotifyResolver.test.ts` (18): latin/Thai/feat. match, live & cover rejection, artist mismatch ("Bukan Ada Band" vs "Ada Band"), duration tolerance, query-variant fallback chain, best-effort, empty result. **553/553 pass**, typecheck clean.
 
+### Karaoke/Instrumental Versions Rejected from Spotify Resolution
+
+- **Problem (user report)** — "Lay All Your Love On Me" (ABBA, from Spotify) played a karaoke version. `verifySpotifyMatch` only rejected live/cover markers, so a "Karaoke Version" upload passed verification (token overlap ≥0.6 tolerates extra tokens, "ABBA - Topic" author cleans to ABBA, duration within ±90s).
+- **Fix**
+  - `SpotifyResolver.ts` — verifier now rejects when any of `LIVE_RE | STYLE_RE | STYLE_ML_RE` hits the raw YT title but not the Spotify item name (symmetric), covering karaoke, instrumental, acoustic, tribute, keroncong, 翻唱, 伴奏, カラオケ, 卡拉OK, 노래방, คาราโอเกะ…; a Spotify item that is itself karaoke still passes.
+  - `TitleResolver.ts` — `isCover`'s `COVER_PATTERNS` extended with the karaoke family (`karaoke`, backing track, minus one, sing-along, 伴奏, カラオケ, 卡拉OK, 노래방, คาราโอเกะ) — non-latin terms kept outside `\b` (CJK/Thai aren't word chars) — also hardening `pickBestTrack`/autoplay.
+  - `SearchService.ts` — `scoreTrack` now applies the `STYLE_RE` penalty (−3) alongside `STYLE_ML_RE` (−1) so studio versions win the scoring branch even when the karaoke upload ranks first.
+- **Tests** — `SpotifyResolver.test.ts` +4 (karaoke EN rejected, karaoke non-latin rejected, legit karaoke Spotify item passes, instrumental rejected); `SearchService.test.ts` +1 (karaoke version loses to studio even when first). **558/558 pass**, typecheck clean.
+
 ## 2026-08-01 — v3.3.4
 
 ### Equalizer — Shared Presets, Resume Fix, and Stop Reset

@@ -70,6 +70,30 @@ describe("verifySpotifyMatch", () => {
     expect(verifySpotifyMatch(item, track)).toBe(true);
   });
 
+  test("karaoke version rejected", () => {
+    const track = mk("Lay All Your Love On Me (Karaoke Version)", "ABBA - Topic", 270_000);
+    const item = mkSpotify("Lay All Your Love On Me", ["ABBA"], 269_000);
+    expect(verifySpotifyMatch(item, track)).toBe(false);
+  });
+
+  test("karaoke in non-latin script rejected", () => {
+    const track = mk("เพลงรัก (คาราโอเกะ)", "นักร้อง", 180_000);
+    const item = mkSpotify("เพลงรัก", ["นักร้อง"], 180_000);
+    expect(verifySpotifyMatch(item, track)).toBe(false);
+  });
+
+  test("spotify item that is itself karaoke still passes", () => {
+    const track = mk("Lay All Your Love On Me (Karaoke Version)", "Karaoke Universe", 270_000);
+    const item = mkSpotify("Lay All Your Love On Me (Karaoke Version)", ["Karaoke Universe"], 270_000);
+    expect(verifySpotifyMatch(item, track)).toBe(true);
+  });
+
+  test("instrumental version rejected", () => {
+    const track = mk("Lay All Your Love On Me (Instrumental)", "ABBA - Topic", 269_000);
+    const item = mkSpotify("Lay All Your Love On Me", ["ABBA"], 269_000);
+    expect(verifySpotifyMatch(item, track)).toBe(false);
+  });
+
   test("empty spotify artists does not block", () => {
     const track = mk("Manusia Bodoh", "Ada Band - Topic", 180_000);
     const item = { name: "Manusia Bodoh", artists: [], duration: 180_000 };

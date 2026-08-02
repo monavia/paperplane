@@ -80,6 +80,7 @@ const COVER_PATTERNS = [
   /\([^)]*\blive\b[^)]*\bcover\b[^)]*\)/i,
   /\bcover\b/i,
   /\binstrumental\b/i,
+  /\b(?:karaoke|backing\s*track|minus\s*one|sing\s*-?\s*along)\b|伴奏|カラオケ|卡拉OK|노래방|คาราโอเกะ/i,
   /\b(?:keroncong|kroncong|akustik|acoustic|dangdut|remix|dj\s+remix)\b/i,
 ];
 

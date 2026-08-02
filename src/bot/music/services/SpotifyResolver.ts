@@ -1,7 +1,9 @@
 import { cleanTitle, isCover } from "./TitleResolver.js";
 import { pickBestTrack, searchWithRetry } from "./SearchService.js";
-import { LIVE_RE } from "../engine/JunkKeywords.js";
+import { LIVE_RE, STYLE_RE, STYLE_ML_RE } from "../engine/JunkKeywords.js";
 import Logger from "../../core/utils/Logger.js";
+
+const VARIANT_MARKERS = [LIVE_RE, STYLE_RE, STYLE_ML_RE];
 
 const MATCH_STOPWORDS = new Set(["feat", "ft", "featuring", "the", "and", "with", "of", "remix", "remastered", "radio", "edit", "version"]);
 
@@ -65,7 +67,7 @@ export function verifySpotifyMatch(spotifyItem: any, track: any, rawInfo?: { tit
   const rawAuthor = (rawInfo?.author ?? track.info?.author) || "";
   const spotName = spotifyItem.name || "";
 
-  if (LIVE_RE.test(rawTitle) && !LIVE_RE.test(spotName)) return false;
+  if (VARIANT_MARKERS.some((re) => re.test(rawTitle)) && !VARIANT_MARKERS.some((re) => re.test(spotName))) return false;
   if (isCover(rawTitle, rawAuthor) && !isCover(spotName)) return false;
 
   const cleaned = cleanTitle(rawTitle, rawAuthor);
