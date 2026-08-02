@@ -123,6 +123,24 @@ describe("verifySpotifyMatch", () => {
     const item = { name: "Manusia Bodoh", artists: [], duration: 180_000 };
     expect(verifySpotifyMatch(item, track)).toBe(true);
   });
+
+  test("duet artist with joined collaborators passes", () => {
+    const track = mk("Lose You Now", "Lindsey Stirling, Mako", 236_000);
+    const item = mkSpotify("Lose You Now", ["Lindsey Stirling", "Mako"], 236_000);
+    expect(verifySpotifyMatch(item, track)).toBe(true);
+  });
+
+  test("duet artist with & or ft. formatting passes", () => {
+    const item = mkSpotify("Lose You Now", ["Lindsey Stirling", "Mako"], 236_000);
+    expect(verifySpotifyMatch(item, mk("Lose You Now", "Lindsey Stirling & Mako", 236_000))).toBe(true);
+    expect(verifySpotifyMatch(item, mk("Lose You Now", "Lindsey Stirling ft. Mako", 236_000))).toBe(true);
+  });
+
+  test("unknown extra artist token still rejected", () => {
+    const track = mk("If Walls Could Talk", "If Walls Could Talk", 183_000);
+    const item = mkSpotify("If Walls Could Talk", ["Halsey"], 183_000);
+    expect(verifySpotifyMatch(item, track)).toBe(false);
+  });
 });
 
 describe("buildQueryVariants", () => {
@@ -203,6 +221,17 @@ describe("resolveSpotifyTrack", () => {
     const item = mkSpotify("If Walls Could Talk", ["Halsey"], 183_000);
     const result = await resolveSpotifyTrack({}, item, {}, searchFn);
     expect(result).toBeNull();
+  });
+
+  test("uses primary artist only for Deezer fallback on duet tracks", async () => {
+    const searchFn = vi.fn(async (_p: any, qo: any) => {
+      if (qo.query.startsWith("ytmsearch:")) return { tracks: [mk("Lose You Now", "Wrong Artist", 236_000)] };
+      return { tracks: [mk("Lose You Now", "Lindsey Stirling", 236_000)] };
+    });
+    const item = mkSpotify("Lose You Now", ["Lindsey Stirling", "Mako"], 236_000);
+    const result = await resolveSpotifyTrack({}, item, {}, searchFn);
+    expect(result).not.toBeNull();
+    expect(searchFn.mock.calls[searchFn.mock.calls.length - 1][1].query).toBe("dzsearch:Lindsey Stirling Lose You Now");
   });
 
   test("returns null when no tracks at all", async () => {

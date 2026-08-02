@@ -57,8 +57,16 @@ function artistMatches(spArtists: string[], ytAuthor: string): boolean {
     return yt.includes(sp) || sp.includes(yt);
   }
   const spTokens = tokens(main).filter((t) => t.length >= 3);
-  const ytTokens = tokens(ytClean).filter((t) => t.length >= 3);
+  let ytTokens = tokens(ytClean).filter((t) => t.length >= 3);
   if (!spTokens.length || !ytTokens.length) return yt.includes(sp) || sp.includes(yt);
+  // YT/Deezer authors legitimately join collaborators ("X, Y", "X & Y", "X ft. Y").
+  // Drop tokens belonging to the other Spotify artists before the strict symmetric
+  // check so duet/collab tracks pass while unknown extras are still rejected.
+  const otherArtistTokens = new Set<string>();
+  for (let i = 1; i < spArtists.length; i++) {
+    for (const t of tokens(spArtists[i]).filter((x) => x.length >= 3)) otherArtistTokens.add(t);
+  }
+  if (otherArtistTokens.size) ytTokens = ytTokens.filter((t) => !otherArtistTokens.has(t));
   return symmetricMatch(spTokens, ytTokens, sp, yt, 1.0);
 }
 
@@ -139,9 +147,10 @@ export async function resolveSpotifyTrack(player: any, spotifyItem: any, user: a
   // Deezer fallback — strictly verified too; anything that fails is skipped silently.
   const name = (spotifyItem.name || "").trim();
   const artistStr = (spotifyItem.artists || []).filter(Boolean).join(" ").trim();
-  if (artistStr && name) {
+  const primaryArtist = ((spotifyItem.artists || [])[0] || "").trim();
+  if (primaryArtist && name) {
     try {
-      const result: any = await searchFn(player, { query: `dzsearch:${artistStr} ${name}` }, user);
+      const result: any = await searchFn(player, { query: `dzsearch:${primaryArtist} ${name}` }, user);
       if (result?.tracks?.length) {
         const raws = new Map<any, { title: string; author: string }>();
         for (const t of result.tracks) raws.set(t, { title: t.info?.title || "", author: t.info?.author || "" });

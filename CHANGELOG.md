@@ -14,6 +14,14 @@
   - Call sites updated to "skip silently, no embed": `messageCreate.ts` AI play/playlist now detects a Spotify URL → scrape + `resolveSpotifyTrack` per item (skips items that fail, silent return if nothing passes); `slash/play.ts` & `prefix/play.ts` — no-results / nothing-resolved no longer throw into an error embed (warn + return, progress embed deleted). Manual text/YouTube search (`pickBestTrack`, `TitleResolver` cover patterns, `JunkKeywords`) is **untouched**; `PlaylistService.ts` already skipped null resolutions.
 - **Tests** — `SpotifyResolver.test.ts`: best-effort test replaced by a strict-null test (4 calls = 3 variants + Deezer), new Deezer-fallback-success (wrong-artist YT → correct Deezer `dzsearch:Halsey If Walls Could Talk` asserted), new Deezer-also-fails → null. **577/577 pass**, typecheck clean.
 
+### Duet/Collab Artists Rejected by Strict Verification — Multi-Artist Author Fix
+
+- **Problem (user report, log)** — "Lose You Now" by **Lindsey Stirling & Mako** was skipped ("No strict match on YouTube/Deezer") even though the exact song exists on YouTube Music. Root cause: `artistMatches` only compared the **primary** Spotify artist and required a **symmetric 1.0** token match — any YT/Deezer author that legitimately lists the collaborator (`"Lindsey Stirling, Mako"`, `"& Mako"`, `"ft. Mako"`) carried one extra token (`mako`) and the reverse ratio dropped below 1.0 → false reject.
+- **Fix**
+  - `SpotifyResolver.ts` — `artistMatches` now strips tokens belonging to the **other Spotify artists** (`artists[1..]`) from the YT/Deezer author before the strict symmetric 1.0 check. Duet/collab formats pass; unknown extras (and the wrong-artist cases like "If Walls Could Talk", "Bukan Ada Band") still fail.
+  - Deezer fallback now queries the **primary artist only** (`dzsearch:Lindsey Stirling Lose You Now`) instead of joining every artist — better hit-rate, still verified at 1.0. No caller changes (all routes use the shared resolver).
+- **Tests** — `SpotifyResolver.test.ts` +4: duet `,` passes, `&`/`ft.` pass, unknown-extra-artist rejected, multi-artist Deezer fallback uses `dzsearch:<primary artist> <title>`. **583/583 pass**, typecheck clean.
+
 ### Spotify Playlists >100 Tracks — "Could not extract playlist data" Fixed
 
 - **Problem (user report)** — playlists with more than ~100 tracks failed with `Could not extract playlist data from Spotify` while smaller playlists worked. The embed endpoint always serves a fixed ~100-track payload and **ignores `?offset=`** (5 fetches returned byte-identical payloads); the regular playlist HTML page is now a ~6KB shell without track data (embed + HTML scrape both dead ends); anonymous API tokens are closed (403 / 429 QUOTA_EXCEEDED).
