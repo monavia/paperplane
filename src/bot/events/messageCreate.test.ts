@@ -54,6 +54,7 @@ const mockSkip = vi.fn();
 const mockStop = vi.fn();
 const mockPause = vi.fn();
 const mockResume = vi.fn();
+const mockApplySavedVolume = vi.fn().mockResolvedValue(true);
 vi.mock("../music/services/MusicService.js", () => ({
   isLavalinkReady: mockIsLavalinkReady,
   getEngine: mockGetEngineM,
@@ -61,6 +62,7 @@ vi.mock("../music/services/MusicService.js", () => ({
   stop: mockStop,
   pause: mockPause,
   resume: mockResume,
+  applySavedVolume: mockApplySavedVolume,
 }));
 
 const mockGetQueue = vi.fn();

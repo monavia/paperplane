@@ -1,8 +1,7 @@
 import Logger from "../../core/utils/Logger.js";
 import PlayerState from "../../database/models/PlayerState.js";
-import { getEngine, destroyEngine } from "./PlayerService.js";
-import { getTextChannelId, setTextChannelId } from "./TextChannelStore.js";
-import state from "../../core/state/StateManager.js";
+import { getEngine, destroyEngine, applySavedVolume } from "./PlayerService.js";
+import { getTextChannelId, setTextChannelId } from "./TextChannelStore.js";import state from "../../core/state/StateManager.js";
 import { withQueueLock } from "../../core/state/QueueLock.js";
 import * as lavalink from "../engine/lavalink.js";
 import { isUsingPrisma } from "../../database/connection.js";
@@ -364,6 +363,7 @@ async function restoreGuildState(client: any, saved: any): Promise<boolean> {
       const region = player.node?.options?.regions?.[0] || saved.nodeId || "?";
       Logger.info(`[StateRestore] guild=${saved.guildId} title="${(first?.info?.title || "").slice(0,40)}" restorePos=${saved.position} cappedPos=${pos} duration=${first?.info?.duration || 0} encoded=${!!first?.encoded} region=${region}`);
       state.restored.add(saved.guildId);
+      await applySavedVolume(saved.guildId, player).catch(() => {});
       try {
         await player.play({ track: first, clientTrack: first, position: pos });
         Logger.info(`[StateRestore] Play OK guild=${saved.guildId} pos=${pos} region=${region}`);

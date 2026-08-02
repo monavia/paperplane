@@ -1,4 +1,5 @@
 import { get, getLeastLoadedNode } from "./lavalink.js";
+import { applySavedVolume } from "../services/PlayerService.js";
 
 const voiceJoinTimes = new Map<string, number>();
 
@@ -22,6 +23,7 @@ export function createPlayer(guildId: string, voiceChannelId: string | null, tex
     ...(nodeId ? { node: nodeId } : {}),
     ...(vcRegion ? { vcRegion } : {}),
   });
+  applySavedVolume(guildId, player).catch(() => {});
   return player;
 }
 

@@ -17,7 +17,7 @@ export interface IGuild extends Document {
 const guildSchema = new mongoose.Schema<IGuild>({
   guildId: { type: String, required: true, unique: true },
   prefix: { type: String, default: "-" },
-  volume: { type: Number, default: 80 },
+  volume: { type: Number, default: 100 },
   lastFilter: { type: String, default: "none" },
   lastEqualizer: { type: mongoose.Schema.Types.Mixed, default: null },
   autoplay: { type: Boolean, default: false },

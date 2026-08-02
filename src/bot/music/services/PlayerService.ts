@@ -6,7 +6,7 @@ import { deleteTextChannelId } from "./TextChannelStore.js";
 import { saveState, deleteState, stopPositionSync } from "./StateService.js";
 import { get, connectWithRetry } from "../engine/lavalink.js";
 import { deletePlayerData } from "../services/PersistentPlayerStore.js";
-import { setAutoplay, setLastFilter, setShuffle, setLastEqualizer } from "../../database/repositories/GuildRepository.js";
+import { setAutoplay, setLastFilter, setShuffle, setLastEqualizer, getVolume } from "../../database/repositories/GuildRepository.js";
 import { withQueueLock } from "../../core/state/QueueLock.js";
 import ActivityService from "../../services/ActivityService.js";
 import { resolveEQBands } from "../../core/constants/EQPresets.js";
@@ -66,6 +66,7 @@ export function getEngine(guildId: string): Engine {
         });
         await connectWithRetry(player, guildId);
         e!.player = player;
+        applySavedVolume(guildId, player).catch(() => {});
         // Sync any pre-join RAM queue data to player.queue (queueStore persists it)
         state.queues.syncToPlayer(guildId);
         Logger.info(`[VoiceJoin] guild=${guildId} vc=${voiceChannelId} vcRegion=${vcRegion || "?"} node=${player.node?.id || "?"} nodeRegion=${player.node?.options?.regions?.[0] || "?"}`);
@@ -211,6 +212,17 @@ export async function resume(guildId: string, _userId: string, _userName: string
 export function setVolume(guildId: string, volume: number, _userId: string, _userName: string): boolean {
   const engine = getEngine(guildId);
   return engine.playback.setVolume(volume);
+}
+export async function applySavedVolume(guildId: string, player?: any): Promise<boolean> {
+  const p = player || getEngine(guildId)?.player;
+  if (!p?.setVolume) return false;
+  let vol: number;
+  try {
+    vol = await getVolume(guildId);
+  } catch { return false; }
+  if (typeof vol !== "number" || !isFinite(vol)) return false;
+  await p.setVolume(vol).catch(() => {});
+  return true;
 }
 export async function resolveAndQueueTracks(guildId: string, tracks: any[], user: any): Promise<void> {
   

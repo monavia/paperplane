@@ -4,7 +4,7 @@ import { saveSpotifyMeta, applySpotifyMeta } from "../services/TitleResolver.js"
 import { getTextChannelId } from "../services/TextChannelStore.js";
 import { getEngine } from "../services/PlayerService.js";
 import { getBestNode, getBestNodeForFailover, getPenalty, isDraining, recordDisconnect, recordError } from "./NodePenaltyService.js";
-import { applyFilters, setFilter, setEqualizer } from "../services/PlayerService.js";
+import { applyFilters, setFilter, setEqualizer, applySavedVolume } from "../services/PlayerService.js";
 import { searchWithRetry } from "../services/SearchService.js";
 import { resolveStoredSpotifyTrack } from "../services/SpotifyResolver.js";
 import { resolveEQBands } from "../../core/constants/EQPresets.js";
@@ -155,6 +155,7 @@ export async function failoverFromNode(nodeId: string) {
             selfMute: false,
           });
           await newPlayer.connect();
+          applySavedVolume(guildId, newPlayer).catch(Logger.safe("bot/music/engine/FailoverManager.ts"));
           const savedMeta = track?.info?.uri ? saveSpotifyMeta(track) : null;
           let resolved: any = null;
 

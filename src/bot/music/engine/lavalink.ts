@@ -9,7 +9,7 @@ import { getPlayerData, setPlayerData } from "../services/PersistentPlayerStore.
 import { pickBestTrack } from "../services/SearchService.js";
 import { getTextChannelId } from "../services/TextChannelStore.js";
 import PlayerState from "../../database/models/PlayerState.js";
-import { getEngine } from "../services/PlayerService.js";
+import { getEngine, applySavedVolume } from "../services/PlayerService.js";
 import { setFilter, setEqualizer } from "../services/PlayerService.js";
 import { getBestNode, recordDisconnect, recordError, recordHtmlError, startDrain } from "./NodePenaltyService.js";
 import * as FailoverManager from "./FailoverManager.js";
@@ -299,6 +299,7 @@ export async function init(client: any): Promise<boolean> {
           });
           await connectWithRetry(player, guildId);
           getEngine(guildId).player = player;
+          applySavedVolume(guildId, player).catch(Logger.safe("bot/music/engine/lavalink.ts"));
 
           const queue = state.queues.get(guildId) || [];
           const first = queue.shift() || dbNowPlaying;
@@ -342,6 +343,7 @@ export async function init(client: any): Promise<boolean> {
         });
         await connectWithRetry(player, data.guildId);
         await new Promise(r => setTimeout(r, 2500));
+        applySavedVolume(data.guildId, player).catch(Logger.safe("bot/music/engine/lavalink.ts"));
         if (data.filters) player.filterManager.data = data.filters;
         if (data.track) player.queue.current = l.utils.buildTrack(data.track, player.queue.current?.requester || clientRef.user);
         player.paused = data.paused;
@@ -540,6 +542,7 @@ export async function recoverPlayer(guildId: string): Promise<any> {
     node: nodeId,
   });
   await connectWithRetry(newPlayer, guildId);
+  applySavedVolume(guildId, newPlayer).catch(Logger.safe("bot/music/engine/lavalink.ts"));
   return newPlayer;
 }
 

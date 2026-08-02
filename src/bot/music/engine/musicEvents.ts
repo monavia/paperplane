@@ -1,7 +1,7 @@
 import * as Sentry from "@sentry/node";
 
 import * as lavalink from "./lavalink.js";
-import { destroyEngine } from "../services/PlayerService.js";
+import { destroyEngine, applySavedVolume } from "../services/PlayerService.js";
 import state from "../../core/state/StateManager.js";
 import { withQueueLock } from "../../core/state/QueueLock.js";
 import Logger from "../../core/utils/Logger.js";
@@ -832,6 +832,7 @@ function register(client: any): void {
               selfMute: false,
             });
             await newPlayer.connect();
+            applySavedVolume(guildId, newPlayer).catch(Logger.safe("bot/music/engine/musicEvents.ts"));
           }
         } catch { Logger.warn(`[playerDisconnect] Reconnect failed for ${guildId}`); }
       }

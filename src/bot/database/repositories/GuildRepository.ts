@@ -53,6 +53,18 @@ export async function updateVolume(guildId: string, volume: number): Promise<voi
   }
 }
 
+export async function getVolume(guildId: string): Promise<number> {
+  try {
+    if (usePg()) {
+      const p = await getPrisma();
+      const g = await p.guild.findUnique({ where: { guildId }, select: { volume: true } });
+      return g?.volume ?? 100;
+    }
+    const g = await Guild.findOne({ guildId }).lean();
+    return (g as any)?.volume ?? 100;
+  } catch { Logger.warn(`[GuildRepo] getVolume failed for ${guildId}`); return 100; }
+}
+
 export async function setLastFilter(guildId: string, filter: string): Promise<void> {
   if (usePg()) {
     const p = await getPrisma();

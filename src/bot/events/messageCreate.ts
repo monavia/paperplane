@@ -153,6 +153,7 @@ export function start(client: any): void {
           if (!player) {
             player = lavalink.createPlayer({ guildId, voiceChannelId: voice.id, textChannelId: message.channelId, selfDeaf: true, selfMute: false, vcRegion: voice.rtcRegion });
             await player.connect();
+            await MusicService.applySavedVolume(guildId, player).catch(() => {});
           }
           MusicService.getEngine(guildId).player = player;
           setTextChannelId(guildId, message.channelId);
@@ -300,6 +301,7 @@ export function start(client: any): void {
               if (!voice) return message.channel.send({ embeds: [ErrorEmbed.build("You must be in a voice channel.")] });
               player = lavalink.createPlayer({ guildId, voiceChannelId: voice.id, textChannelId: message.channelId, selfDeaf: true, selfMute: false, vcRegion: voice.rtcRegion });
               await player.connect();
+              await MusicService.applySavedVolume(guildId, player).catch(() => {});
             }
             MusicService.getEngine(guildId).player = player;
             setTextChannelId(guildId, message.channelId);
@@ -340,7 +342,7 @@ export function start(client: any): void {
           case "volume": {
             const player = MusicService.getEngine(guildId).player;
             if (!player) return message.channel.send({ embeds: [new EmbedBuilder().setDescription("No track playing.").setColor(Colors.INFO)] });
-            const vol = player.volume ?? 80;
+            const vol = player.volume ?? 100;
             return confirmReply(message, { summary: `Volume set to ${vol}%.`, poolKey: "volume", poolVars: { vol } });
           }
           case "help":

@@ -1,5 +1,5 @@
 import { getEngine, destroyEngine, play, skip, stop, seek, pause, resume, setVolume, resolveAndQueueTracks, setFilter, setEqualizer, resetFilters, getFilterState, playSoundboard, search } from "./PlayerService.js";
-export { getEngine, destroyEngine, play, skip, stop, seek, pause, resume, setVolume, resolveAndQueueTracks, setFilter, toggleFilter, applyFilters, setEqualizer, resetFilters, getFilterState, playSoundboard, search } from "./PlayerService.js";
+export { getEngine, destroyEngine, play, skip, stop, seek, pause, resume, setVolume, applySavedVolume, resolveAndQueueTracks, setFilter, toggleFilter, applyFilters, setEqualizer, resetFilters, getFilterState, playSoundboard, search } from "./PlayerService.js";
 export { saveState } from "./StateService.js";
 export { setTextChannelId } from "./TextChannelStore.js";
 export { getQueue, clearQueue, removeFromQueue, swapTracks, moveTrack, removeByQuery, removeRange, jumpTo } from "./QueueService.js";

@@ -35,6 +35,27 @@
   - All re-resolution paths now go through the verifier when the stored track carries Spotify metadata: `StateService.ts` restore (session restart), `musicEvents.ts` trackStart prefetch of queued items & trackError first-attempt fallback, `FailoverManager.ts` node failover (both changeNode and destroy-recreate paths, dropping the blind `ytmsearch|ytsearch|scsearch|dzsearch` prefix loop for Spotify), `TrackValidator.ts` re-resolution, `PlaylistService.ts` playlist import (Spotify-URI tracks). Non-Spotify tracks keep their previous behavior.
 - **Tests** — `SpotifyResolver.test.ts` +6: `buildSpotifyItemFromTrack` reconstruction (comma artists, open.spotify.com, non-Spotify → null), re-resolution skips a cover in first position, karaoke loses to studio, non-Spotify stored track → null. **564/564 pass**, typecheck clean.
 
+### Instrumental Version Rejection — Resolution, Search Ranking & Re-Resolution
+
+- **Problem** — instrumental/violin/piano covers of Spotify songs could still slip through: `VARIANT_MARKERS` only covered live/style markers, `isCover` had no instrument patterns, and `scoreTrack` never penalized instrumentals — an instrumental upload could win `pickBestTrack` or pass `verifySpotifyMatch` (token overlap tolerates extra tokens like "(Violin)").
+- **Fix**
+  - `JunkKeywords.ts` — new `INSTRUMENT_RE`: instrument names (violin, piano, guitar, sax, cello, flute, harp, ukulele, kalimba, recorder, trumpet, banjo, mandolin, solo) **only matched inside parentheses** + unambiguous non-Latin terms (演奏, 纯音乐, 연주, บรรเลง). Paren-scoping deliberately avoids false positives like "Piano Man" (Billy Joel) or "Solo" (Clean Bandit).
+  - `SpotifyResolver.ts` — `VARIANT_MARKERS` now includes `INSTRUMENT_RE` → an instrumental YT upload no longer passes `verifySpotifyMatch` (symmetric: Spotify item that is itself instrumental still passes).
+  - `TitleResolver.ts` — `COVER_PATTERNS` includes `INSTRUMENT_RE` → also hardens `pickBestTrack` filtering and autoplay recommendations.
+  - `SearchService.ts` — `scoreTrack` applies `INSTRUMENT_RE` penalty (−3) → studio versions win the scoring branch when an instrumental ranks first.
+- **Tests** — `SpotifyResolver.test.ts` +4 (violin rejected, violin-solo rejected, 纯音乐 rejected, "Piano Man" still passes as regression guard); `SearchService.test.ts` +1 (violin version loses to studio even when first). 569/569 pass (volume section below brings the total to **577/577**), typecheck clean.
+
+### Per-Guild Volume Restored on Join/Recreate/Failover — Default 100%
+
+- **Problem** — the bot never passed a volume to Lavalink when creating players, and Lavalink defaults new players to 100; `volumeDecrementer: 0.75` in the Lavalink client was irrelevant because `applyVolumeAsFilter` is false. Any guild that set a volume (e.g. 80) got reset to 100 after: bot restart (StateService restore), 24/7 rejoin (PlayerService.join), node failover (FailoverManager destroy-recreate, lavalink reconnect/resume/ensurePlayer), or a musicEvents reconnect — silent volume reset each time.
+- **Fix**
+  - `GuildRepository.ts` — new `getVolume(guildId)` (Prisma select `volume` / Mongo `.lean()`; falls back to **100** when unset or on DB error; logs via `Logger.warn`).
+  - `Guild.ts` & `prisma/schema.prisma` — `volume` default `80` → `100` (applies to new guild rows; existing saved values keep their number).
+  - `PlayerService.ts` — new `applySavedVolume(guildId, player?)`: reads `getVolume`, validates finite number, `player.setVolume(vol)` (swallows rejections, never throws) — re-exported via `MusicService.ts`.
+  - Wired into every player (re)creation site: `PlayerManager.createPlayer` (fire-and-forget), `PlayerService.join`, `StateService` restore (before `player.play`), `FailoverManager` destroy-recreate, `lavalink.ts` ×3 (reconnect, node resumed, ensurePlayer), `musicEvents.ts` reconnect (247), `messageCreate.ts` AI play & correct_playlist (after `player.connect()`).
+  - Fallback `?? 80` → `?? 100` in `messageCreate.ts` AI volume confirm, `slash/settings.ts`, `prefix/settings.ts`.
+- **Tests** — new `GuildRepository.test.ts` (3: stored volume, fallback 100 when unset, fallback 100 on error); new `PlayerService.test.ts` (5: sets saved volume, no player → false, no `setVolume` → false, `getVolume` throws → false, non-finite → false); `messageCreate.test.ts` mock extended with `applySavedVolume`. **577/577 pass**, typecheck clean.
+
 ## 2026-08-01 — v3.3.4
 
 ### Equalizer — Shared Presets, Resume Fix, and Stop Reset

@@ -25,7 +25,7 @@ export default {
     const player = engine?.player;
     const queueSize = state.queues.get(guildId)?.length || 0;
     const np = state.nowPlaying.get(guildId);
-    const volume = player?.volume ?? 80;
+    const volume = player?.volume ?? 100;
     const lavalinkOk = isLavalinkReady();
 
     let vcName = "None";
