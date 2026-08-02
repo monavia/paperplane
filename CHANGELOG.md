@@ -2,6 +2,18 @@
 
 ## 2026-08-02 — v3.3.5
 
+### Strict "100% Artist+Title" Spotify Verification — Deezer Fallback, Silent Skip
+
+- **Problem (user reports)** — Spotify links could still resolve to the wrong song:
+  1. **"The Box" (Roddy Ricch)** — a `(Made Popular By) [Instrumental Version]` mixtape upload passed verification and played instead of the studio track.
+  2. **"Walls Could Talk" (Halsey)** — played **"If Walls Could Talk - Topic"**, a different song by a different artist.
+  Root causes: `verifySpotifyMatch` still accepted ≥0.6/≥0.75 token overlap, and `resolveSpotifyTrack` had a **best-effort fallback** that played the closest **unverified** match whenever nothing verified.
+- **Fix**
+  - `SpotifyResolver.ts` — `verifySpotifyMatch` is now **strict 1.0**: full symmetric token match for title **and** artist (non-latin containment unchanged). The best-effort fallback is **removed** — an unverified upload is never played.
+  - New **Deezer fallback**: after all YouTube Music variants fail, `resolveSpotifyTrack` retries via `dzsearch:Artist Title`, re-verified at 1.0. Only a strict Deezer hit is played; anything that still fails is **skipped silently** (`[SpotifyResolver] No strict match on YouTube/Deezer — skipped` log, no audio).
+  - Call sites updated to "skip silently, no embed": `messageCreate.ts` AI play/playlist now detects a Spotify URL → scrape + `resolveSpotifyTrack` per item (skips items that fail, silent return if nothing passes); `slash/play.ts` & `prefix/play.ts` — no-results / nothing-resolved no longer throw into an error embed (warn + return, progress embed deleted). Manual text/YouTube search (`pickBestTrack`, `TitleResolver` cover patterns, `JunkKeywords`) is **untouched**; `PlaylistService.ts` already skipped null resolutions.
+- **Tests** — `SpotifyResolver.test.ts`: best-effort test replaced by a strict-null test (4 calls = 3 variants + Deezer), new Deezer-fallback-success (wrong-artist YT → correct Deezer `dzsearch:Halsey If Walls Could Talk` asserted), new Deezer-also-fails → null. **577/577 pass**, typecheck clean.
+
 ### Spotify Playlists >100 Tracks — "Could not extract playlist data" Fixed
 
 - **Problem (user report)** — playlists with more than ~100 tracks failed with `Could not extract playlist data from Spotify` while smaller playlists worked. The embed endpoint always serves a fixed ~100-track payload and **ignores `?offset=`** (5 fetches returned byte-identical payloads); the regular playlist HTML page is now a ~6KB shell without track data (embed + HTML scrape both dead ends); anonymous API tokens are closed (403 / 429 QUOTA_EXCEEDED).

@@ -22,6 +22,8 @@ import { withQueueLock } from "../core/state/QueueLock.js";
 import { markTrackStartSuppressed, markStopDisconnect } from "../music/engine/musicEvents.js";
 import { saveState } from "../music/services/StateService.js";
 import { pickBestTrack } from "../music/services/SearchService.js";
+import { parseUrl as parseSpotifyUrl, scrape as scrapeSpotify } from "../music/engine/SpotifyScraper.js";
+import { resolveSpotifyTrack } from "../music/services/SpotifyResolver.js";
 import * as NowPlayingEmbed from "../ui/embeds/NowPlayingEmbed.js";
 import { build as buildQueueEmbed } from "../ui/embeds/QueueEmbed.js";
 import CooldownManager from "../core/utils/CooldownManager.js";
@@ -159,34 +161,67 @@ export function start(client: any): void {
           setTextChannelId(guildId, message.channelId);
 
           const queries = interpreted.type === "playlist" ? interpreted.songs : [interpreted.query];
-          let firstTrack: any = null;
-          for (let i = 0; i < queries.length; i++) {
-            const q = queries[i];
-            const result = await player.search({ query: `ytmsearch:${q}` }, message.author);
-            const track = result?.tracks?.[0] ? pickBestTrack(result.tracks, q) : null;
-            if (!track) continue;
-            if (i === 0) firstTrack = track;
-            if (i === 0 && !player.playing && !player.paused) {
-              await withQueueLock(guildId, async () => {
-                state.nowPlaying.set(guildId, track);
-                markTrackStartSuppressed(guildId);
-                await player.play({ track, clientTrack: track });
-                await saveState(guildId);
-              });
-            } else {
+          const resolvedTracks: any[] = [];
+          for (const raw of queries) {
+            if (parseSpotifyUrl(raw)) {
+              const items = (await scrapeSpotify(raw).catch((err: any) => {
+                Logger.warn(`[AI] Spotify scrape failed: ${err?.message || err}`);
+                return null;
+              }))?.slice(0, Config.maxSpotify);
+              if (!items?.length) {
+                Logger.warn(`[AI] Spotify returned no items for "${raw.slice(0, 60)}" — skipped silently`);
+                continue;
+              }
+              for (const item of items) {
+                const t = await resolveSpotifyTrack(player, item, message.author).catch(() => null);
+                if (!t) {
+                  Logger.warn(`[AI] Skipped Spotify item "${item?.name || ""}" — no strict match on YouTube/Deezer`);
+                  continue;
+                }
+                resolvedTracks.push(t);
+              }
+              continue;
+            }
+            const result = await player.search({ query: `ytmsearch:${raw}` }, message.author);
+            const track = result?.tracks?.[0] ? pickBestTrack(result.tracks, raw) : null;
+            if (!track) {
+              Logger.warn(`[AI] No results for "${raw}" — skipped silently`);
+              continue;
+            }
+            resolvedTracks.push(track);
+          }
+          if (!resolvedTracks.length) {
+            Logger.warn(`[AI] "${prompt.slice(0, 60)}" resolved nothing — silent skip (no embed)`);
+            return;
+          }
+          const firstTrack = resolvedTracks[0];
+          const rest = resolvedTracks.slice(1);
+          if (player.playing || player.paused) {
+            await withQueueLock(guildId, async () => {
+              const q2 = state.queues.get(guildId) || [];
+              state.queues.set(guildId, [...q2, ...resolvedTracks]);
+              await saveState(guildId);
+            });
+          } else {
+            await withQueueLock(guildId, async () => {
+              state.nowPlaying.set(guildId, firstTrack);
+              markTrackStartSuppressed(guildId);
+              await player.play({ track: firstTrack, clientTrack: firstTrack });
+              await saveState(guildId);
+            });
+            if (rest.length) {
               await withQueueLock(guildId, async () => {
                 const q2 = state.queues.get(guildId) || [];
-                state.queues.set(guildId, [...q2, track]);
+                state.queues.set(guildId, [...q2, ...rest]);
                 await saveState(guildId);
               });
             }
           }
-          if (queries.length > 1) {
-            const firstTitle = firstTrack?.info?.title;
+          if (resolvedTracks.length > 1) {
             return confirmReply(message, {
-              summary: `Queued ${queries.length} tracks${firstTitle ? `, first: "${firstTitle}"` : ""}.`,
+              summary: `Queued ${resolvedTracks.length} tracks, first: "${firstTrack.info?.title || ""}".`,
               poolKey: "queued",
-              poolVars: { n: queries.length },
+              poolVars: { n: resolvedTracks.length },
             });
           }
           return message.channel.send({ embeds: [NowPlayingEmbed.build(firstTrack, null)] });

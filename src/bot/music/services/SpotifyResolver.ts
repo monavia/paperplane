@@ -42,7 +42,7 @@ function titleMatches(spTitle: string, ytTitle: string): boolean {
   const spTokens = tokens(spTitle).filter((t) => t.length >= 3);
   const ytTokens = tokens(ytTitle).filter((t) => t.length >= 3);
   if (!spTokens.length || !ytTokens.length) return yt.includes(sp) || sp.includes(yt);
-  return symmetricMatch(spTokens, ytTokens, sp, yt, 0.6);
+  return symmetricMatch(spTokens, ytTokens, sp, yt, 1.0);
 }
 
 function artistMatches(spArtists: string[], ytAuthor: string): boolean {
@@ -59,7 +59,7 @@ function artistMatches(spArtists: string[], ytAuthor: string): boolean {
   const spTokens = tokens(main).filter((t) => t.length >= 3);
   const ytTokens = tokens(ytClean).filter((t) => t.length >= 3);
   if (!spTokens.length || !ytTokens.length) return yt.includes(sp) || sp.includes(yt);
-  return symmetricMatch(spTokens, ytTokens, sp, yt, 0.75);
+  return symmetricMatch(spTokens, ytTokens, sp, yt, 1.0);
 }
 
 export function verifySpotifyMatch(spotifyItem: any, track: any, rawInfo?: { title?: string; author?: string }): boolean {
@@ -123,7 +123,6 @@ export async function resolveStoredSpotifyTrack(player: any, track: any, user: a
 export async function resolveSpotifyTrack(player: any, spotifyItem: any, user: any, searchFn: any = searchWithRetry): Promise<any> {
   const variants = buildQueryVariants(spotifyItem);
   if (!variants.length) return null;
-  let bestEffort: any = null;
   for (const q of variants) {
     let result: any;
     try { result = await searchFn(player, { query: `ytmsearch:${q}` }, user); } catch { continue; }
@@ -132,14 +131,29 @@ export async function resolveSpotifyTrack(player: any, spotifyItem: any, user: a
     for (const t of result.tracks) raws.set(t, { title: t.info?.title || "", author: t.info?.author || "" });
     const track = pickBestTrack(result.tracks, q);
     if (!track) continue;
-    if (!bestEffort) bestEffort = track;
     if (verifySpotifyMatch(spotifyItem, track, raws.get(track))) {
       return finalizeSpotifyTrack(track, spotifyItem);
     }
   }
-  if (bestEffort) {
-    Logger.warn(`[SpotifyResolver] Unverified fallback: "${spotifyItem.name || ""}" by ${(spotifyItem.artists || []).join(", ")} — playing best match`);
-    return finalizeSpotifyTrack(bestEffort, spotifyItem);
+
+  // Deezer fallback — strictly verified too; anything that fails is skipped silently.
+  const name = (spotifyItem.name || "").trim();
+  const artistStr = (spotifyItem.artists || []).filter(Boolean).join(" ").trim();
+  if (artistStr && name) {
+    try {
+      const result: any = await searchFn(player, { query: `dzsearch:${artistStr} ${name}` }, user);
+      if (result?.tracks?.length) {
+        const raws = new Map<any, { title: string; author: string }>();
+        for (const t of result.tracks) raws.set(t, { title: t.info?.title || "", author: t.info?.author || "" });
+        for (const t of result.tracks) {
+          if (verifySpotifyMatch(spotifyItem, t, raws.get(t))) {
+            return finalizeSpotifyTrack(t, spotifyItem);
+          }
+        }
+      }
+    } catch { /* dzsearch unavailable — skip */ }
   }
+
+  Logger.warn(`[SpotifyResolver] No strict match on YouTube/Deezer for "${spotifyItem.name || ""}" by ${(spotifyItem.artists || []).join(", ") || "-"} — skipped`);
   return null;
 }

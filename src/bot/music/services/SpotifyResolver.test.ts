@@ -174,13 +174,35 @@ describe("resolveSpotifyTrack", () => {
     expect(result.info.title).toBe("Manusia Bodoh");
   });
 
-  test("returns best-effort track when all variants unverified", async () => {
+  test("returns null when all variants unverified (no best-effort)", async () => {
     const searchFn = vi.fn(async () => ({ tracks: [mk("Manusia Bodoh (Live)", "Ada Band", 300_000)] }));
     const item = mkSpotify("Manusia Bodoh", ["Ada Band"], 180_000);
     const result = await resolveSpotifyTrack({}, item, {}, searchFn);
+    expect(result).toBeNull();
+    expect(searchFn).toHaveBeenCalledTimes(4);
+  });
+
+  test("falls back to Deezer when YouTube has no strict match", async () => {
+    const searchFn = vi.fn(async (_p: any, qo: any) => {
+      if (qo.query.startsWith("ytmsearch:")) {
+        return { tracks: [mk("If Walls Could Talk", "If Walls Could Talk", 183_000)] };
+      }
+      return { tracks: [mk("If Walls Could Talk", "Halsey", 183_000)] };
+    });
+    const item = mkSpotify("If Walls Could Talk", ["Halsey"], 183_000);
+    const result = await resolveSpotifyTrack({}, item, {}, searchFn);
     expect(result).not.toBeNull();
-    expect(result.info.title).toBe("Manusia Bodoh");
-    expect(searchFn).toHaveBeenCalledTimes(3);
+    expect(result.info.title).toBe("If Walls Could Talk");
+    expect(result.info.author).toBe("Halsey");
+    expect(result.info.spotifyUrl).toBe(item.spotifyUri);
+    expect(searchFn.mock.calls[searchFn.mock.calls.length - 1][1].query).toBe("dzsearch:Halsey If Walls Could Talk");
+  });
+
+  test("skips when Deezer fallback also fails strict verification", async () => {
+    const searchFn = vi.fn(async () => ({ tracks: [mk("If Walls Could Talk", "If Walls Could Talk", 183_000)] }));
+    const item = mkSpotify("If Walls Could Talk", ["Halsey"], 183_000);
+    const result = await resolveSpotifyTrack({}, item, {}, searchFn);
+    expect(result).toBeNull();
   });
 
   test("returns null when no tracks at all", async () => {

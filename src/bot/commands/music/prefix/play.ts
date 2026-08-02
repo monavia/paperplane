@@ -87,7 +87,10 @@ export default {
         const items = (await scrapeSpotify(query).catch((err: any) => {
           throw new Error(`Spotify: ${err.message}`);
         }))?.slice(0, MAX_SPOTIFY);
-        if (!items?.length) throw new Error("No tracks found on Spotify.");
+        if (!items?.length) {
+          Logger.warn(`[Spotify] No tracks scraped for "${query.slice(0, 60)}" — skipped silently`);
+          return;
+        }
         Logger.info(`[Spotify] Scraped ${items.length} items. First query: "${items[0]?.query?.slice(0, 80)}"`);
 
         if (player.playing || player.paused || state.queues.get(message.guildId)?.length) {
@@ -97,6 +100,11 @@ export default {
           const added = await resolveSpotifyBatch(items, player, message.guildId, message.author, (done, total) => {
             statusMsg?.edit({ embeds: [new EmbedBuilder().setDescription(`Resolved ${done}/${total} tracks from Spotify...`).setColor(Colors.INFO)] }).catch(() => {});
           });
+          if (!added.length) {
+            Logger.warn(`[Spotify] All ${items.length} items rejected by strict verification — skipped silently`);
+            statusMsg?.delete().catch(() => {});
+            return;
+          }
           statusMsg?.edit({ embeds: [new EmbedBuilder().setDescription(`Added ${added.length} tracks from Spotify.`).setColor(Colors.SUCCESS)] }).catch(() => {});
           Logger.info(`[Spotify] Resolved ${added.length}/${items.length} tracks`);
           return;
@@ -104,7 +112,10 @@ export default {
 
         // Nothing playing — play first track now, queue rest in background
         const firstResolved = await resolveSpotifyTrack(player, items[0], message.author);
-        if (!firstResolved) throw new Error("Could not resolve Spotify track on YouTube.");
+        if (!firstResolved) {
+          Logger.warn(`[Spotify] No strict match for first item "${items[0]?.name || ""}" — skipped silently`);
+          return;
+        }
         const rest = items.slice(1);
         await withQueueLock(message.guildId, async () => {
           state.nowPlaying.set(message.guildId, firstResolved);
@@ -126,6 +137,11 @@ export default {
           const added = await resolveSpotifyBatch(rest, player, message.guildId, message.author, (done, total) => {
             statusMsg?.edit({ embeds: [new EmbedBuilder().setDescription(`Resolved ${done}/${total} tracks from Spotify...`).setColor(Colors.INFO)] }).catch(() => {});
           });
+          if (!added.length) {
+            Logger.warn(`[Spotify] Rest of playlist rejected by strict verification — skipped silently`);
+            statusMsg?.delete().catch(() => {});
+            return;
+          }
           statusMsg?.edit({ embeds: [new EmbedBuilder().setDescription(`Added ${added.length} tracks from Spotify.`).setColor(Colors.SUCCESS)] }).catch(() => {});
           Logger.info(`[Spotify] Resolved ${added.length}/${rest.length} tracks`);
         }
@@ -235,7 +251,7 @@ export default {
         });
        await message.channel.send({ embeds: [NowPlayingEmbed.build(track, null)] });
     } catch (err: any) {
-      if (String(err?.message || "").includes("spotify")) { Logger.info(`[Spotify] Suppressed: ${err.message}`); return; }
+      if (String(err?.message || "").toLowerCase().includes("spotify")) { Logger.info(`[Spotify] Suppressed: ${err.message}`); return; }
       const msg = err?.message || "";
       if (/aborted|timeout|timed\s?out/i.test(msg)) {
         Logger.error(`[Play] Search timeout: ${msg} query="${query.slice(0, 60)}"`);

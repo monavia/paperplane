@@ -76,7 +76,10 @@ export default {
         const items = (await scrapeSpotify(query).catch((err: any) => {
           throw new Error(`Spotify: ${err.message}`);
         }))?.slice(0, MAX_SPOTIFY);
-        if (!items?.length) throw new Error("No tracks found on Spotify.");
+        if (!items?.length) {
+          Logger.warn(`[Spotify] No tracks scraped for "${query.slice(0, 60)}" — skipped silently`);
+          return;
+        }
 
         const resolvedTracks: any[] = [];
         const BATCH = botConfig.spotifyBatch;
@@ -94,7 +97,10 @@ export default {
             }).catch(() => {});
           }
         }
-        if (!resolvedTracks.length) throw new Error("No tracks could be resolved from Spotify.");
+        if (!resolvedTracks.length) {
+          Logger.warn(`[Spotify] No strict match for "${query.slice(0, 60)}" (${items.length} items) — skipped silently`);
+          return;
+        }
 
         if (player.playing || player.paused) {
           return await withQueueLock(interaction.guildId, async () => {
@@ -241,7 +247,7 @@ export default {
         embeds: [NowPlayingEmbed.build(track, null)],
       });
     } catch (err: any) {
-      if (String(err?.message || "").includes("spotify")) return;
+      if (String(err?.message || "").toLowerCase().includes("spotify")) return;
       const msg = err?.message || "";
       if (/aborted|timeout|timed\s?out/i.test(msg)) {
         Logger.error(`[Play] Search timeout: ${msg} query="${query.slice(0, 60)}"`);
