@@ -27,6 +27,14 @@
   - `SearchService.ts` — `scoreTrack` now applies the `STYLE_RE` penalty (−3) alongside `STYLE_ML_RE` (−1) so studio versions win the scoring branch even when the karaoke upload ranks first.
 - **Tests** — `SpotifyResolver.test.ts` +4 (karaoke EN rejected, karaoke non-latin rejected, legit karaoke Spotify item passes, instrumental rejected); `SearchService.test.ts` +1 (karaoke version loses to studio even when first). **558/558 pass**, typecheck clean.
 
+### Cover/Karaoke Rejection Extended to All Re-Resolution Paths
+
+- **Problem (user report)** — after restart/failover/trackError, a Spotify-sourced song still resolved to a cover/karaoke version. The verifier (`verifySpotifyMatch`) only ran in the direct play path (`resolveSpotifyTrack`); every re-resolution path searched `ytmsearch:Artist Title` and blindly took the first result, ignoring the stored Spotify metadata.
+- **Fix**
+  - `SpotifyResolver.ts` — new `buildSpotifyItemFromTrack(track)` reconstructs a Spotify item from stored metadata (`spotifyUrl`/`spotify:` uri, comma-split artists, duration) and `resolveStoredSpotifyTrack(player, track, user)` runs the full verified resolution chain on it (variant loop + `verifySpotifyMatch` + best-effort fallback).
+  - All re-resolution paths now go through the verifier when the stored track carries Spotify metadata: `StateService.ts` restore (session restart), `musicEvents.ts` trackStart prefetch of queued items & trackError first-attempt fallback, `FailoverManager.ts` node failover (both changeNode and destroy-recreate paths, dropping the blind `ytmsearch|ytsearch|scsearch|dzsearch` prefix loop for Spotify), `TrackValidator.ts` re-resolution, `PlaylistService.ts` playlist import (Spotify-URI tracks). Non-Spotify tracks keep their previous behavior.
+- **Tests** — `SpotifyResolver.test.ts` +6: `buildSpotifyItemFromTrack` reconstruction (comma artists, open.spotify.com, non-Spotify → null), re-resolution skips a cover in first position, karaoke loses to studio, non-Spotify stored track → null. **564/564 pass**, typecheck clean.
+
 ## 2026-08-01 — v3.3.4
 
 ### Equalizer — Shared Presets, Resume Fix, and Stop Reset
