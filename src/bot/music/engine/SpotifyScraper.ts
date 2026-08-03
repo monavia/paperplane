@@ -9,6 +9,13 @@ const MAX_RETRIES = 2;
 const RETRY_DELAY = 1000;
 const SPOTIFY_HOST = "open.spotify.com";
 
+const ARTIST_SEPARATOR_RE = /[,，、;]+|\s*[&\uFF06]\s*|\s+(?:feat(?:uring)?|ft)\.?\s+/gi;
+
+export function splitArtists(subtitle: string): string[] {
+  if (!subtitle || typeof subtitle !== "string") return [];
+  return subtitle.split(ARTIST_SEPARATOR_RE).map((s) => s.trim()).filter(Boolean);
+}
+
 class SpotifyScraper {
   headers: any;
 
@@ -103,13 +110,16 @@ class SpotifyScraper {
     // Single fetch is all there is; no point paginating.
     const data = await this._fetchEntity(type, id, 0);
     const mapped = data?.entity?.trackList?.length
-      ? data.entity.trackList.map((t: any) => ({
-          name: t.title,
-          artists: t.subtitle ? [t.subtitle] : [],
-          query: `${t.subtitle || ""} ${t.title}`.trim(),
-          duration: this._getDurationMs(t),
-          spotifyUri: t.uri || t.id || null,
-        }))
+      ? data.entity.trackList.map((t: any) => {
+          const artists = splitArtists(t.subtitle);
+          return {
+            name: t.title,
+            artists,
+            query: `${artists.join(" ")} ${t.title}`.trim(),
+            duration: this._getDurationMs(t),
+            spotifyUri: t.uri || t.id || null,
+          };
+        })
       : [];
     const unique = this._deduplicate(mapped);
     if (!unique.length) throw new Error(errorMsg);

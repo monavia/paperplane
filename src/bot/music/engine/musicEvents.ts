@@ -612,8 +612,26 @@ function register(client: any): void {
       if (isPermanent) {
         retried.delete(trackId);
         retryTracks.set(player.guildId, retried);
-        Logger.warn(`[trackError] Permanent error — skipping retries, multi-source fallback: "${track?.info?.title?.slice(0, 30) || "?"}"`);
-        alt = await findMultiSourceFallback(player, track, clientRef?.user);
+        const savedMeta = saveSpotifyMeta(track);
+        if (savedMeta) {
+          // Spotify-sourced: fallback must be verified — never play an unverified random upload.
+          const spotResolved = await resolveStoredSpotifyTrack(player, track, clientRef?.user).catch(() => null);
+          const sameUri = spotResolved?.info?.uri && track?.info?.uri && spotResolved.info.uri === track.info.uri;
+          if (spotResolved && !sameUri) {
+            if (!spotResolved.info) spotResolved.info = {};
+            spotResolved.info.source = track?.info?.source || "youtube";
+            spotResolved.info.originalUrl = spotResolved.info.uri;
+            spotResolved.info.requester = track?.info?.requester;
+            applySpotifyMeta(spotResolved, savedMeta);
+            alt = spotResolved;
+            Logger.info(`[trackError] Verified Spotify fallback: "${spotResolved.info?.title?.slice(0, 40) || "?"}"`);
+          } else {
+            Logger.warn(`[trackError] No verified Spotify fallback for "${track?.info?.title?.slice(0, 30) || "?"}" — track will be skipped`);
+          }
+        } else {
+          Logger.warn(`[trackError] Permanent error — skipping retries, multi-source fallback: "${track?.info?.title?.slice(0, 30) || "?"}"`);
+          alt = await findMultiSourceFallback(player, track, clientRef?.user);
+        }
       } else if (isDeezerError || isNetworkError) {
         retried.set(trackId, 1);
         retryTracks.set(player.guildId, retried);

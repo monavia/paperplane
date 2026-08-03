@@ -110,13 +110,20 @@ export default {
           return;
         }
 
-        // Nothing playing — play first track now, queue rest in background
-        const firstResolved = await resolveSpotifyTrack(player, items[0], message.author);
+        // Nothing playing — play the first resolvable track now, queue rest in background
+        let firstResolved: any = null;
+        let firstIdx = 0;
+        while (firstIdx < items.length) {
+          firstResolved = await resolveSpotifyTrack(player, items[firstIdx], message.author);
+          if (firstResolved) break;
+          Logger.warn(`[Spotify] No strict match for "${items[firstIdx]?.name || ""}" — skipped, advancing`);
+          firstIdx++;
+        }
         if (!firstResolved) {
-          Logger.warn(`[Spotify] No strict match for first item "${items[0]?.name || ""}" — skipped silently`);
+          Logger.warn(`[Spotify] No strict match for any of ${items.length} items — skipped silently`);
           return;
         }
-        const rest = items.slice(1);
+        const rest = items.filter((_: any, i: number) => i !== firstIdx);
         await withQueueLock(message.guildId, async () => {
           state.nowPlaying.set(message.guildId, firstResolved);
           markTrackStartSuppressed(message.guildId);

@@ -1,5 +1,29 @@
 # Changelog — Paperplane
 
+## 2026-08-03 — v3.3.6
+
+### Spotify Resolution — ytsearch Fallback (playlist 49/49)
+
+- **Problem (user report)** — Spotify playlist items with official YouTube uploads still missed: YouTube Music search (`ytmsearch:`) ranks releases/albums and hides the official upload; on a 49-track playlist two items had zero verified candidates (only covers on YTM).
+- **Fix** — `SpotifyResolver.ts`: after all `ytmsearch:` variants fail and before the Deezer block, retry the clean/primary variants (`variants.slice(-2)`) with `ytsearch:` — plain YouTube surfaces the official upload. Verification stays strict 1.0; only `verifySpotifyMatch()` passes are accepted.
+- **Tests** — `SpotifyResolver.test.ts` +2 (ytsearch resolves a track ytmsearch missed without touching Deezer; ytsearch still enforced strict → null); Deezer-flow mocks updated so Deezer is genuinely reached. **611/611 pass**, typecheck clean. Live: playlist re-run **49/49**.
+
+### Thai Script ↔ Romanized Latin Titles (playlist 44/45)
+
+- **Problem (user report)** — Thai playlist resolved 42/45. Three misses were script mismatches: YouTube titles carry the Thai song title verbatim but write artists/feats romanized ("Pra Ma Ha Prai Wan" for "พระมหาไพรวัลย์") or wrapped in verbose prose (`… Feat.ออม TELEx TELEXs「Official Video」`); the token matcher could not bridge Thai ↔ Latin.
+- **Fix**
+  - New `ScriptUtils.ts` — `hasThai`, `normalizeFullWidth`, `toLatinCandidates` (char-level RTGS-ish romanization, strict + loose variants), `levenshtein`, `romanizedApproxEqual` (exact | contains when shorter ≥5 | Levenshtein ≤2).
+  - `SpotifyResolver.ts` — `CLUSTER_LABEL_TOKENS` allowlist (official/video/mv/lyric/audio/clip…) + **B-containment fallback** in `titleMatches`: every Spotify title token must be present in the YT title (exact or romanized-approx) and every YT-only token must be a known artist, romanized artist, or benign cluster label — rescues verbose official-upload titles.
+  - Feat guard accepts romanized credits: a YT feat string now matches when its Latin form equals a romanized candidate of a listed Thai Spotify artist.
+  - `THAI_NAME_OVERRIDES` — canonical RTGS overrides for names the naive romanizer breaks (vowel-prefix order, silent ย์): `"พระมหาไพรวัลย์": ["phramahaphraiwan", "pramahaphraiwan"]`.
+- **Tests** — `ScriptUtils.test.ts` new (12: hasThai, fullwidth normalize, candidates, levenshtein, approx-equal, RTGS override); `SpotifyResolver.test.ts` +6 Thai tests (B-containment verbose official video, romanized feat artist, multiword romanized feat via override, unknown romanized feat rejected, romanized-only title rejected, unrelated Thai words rejected). **630/630 pass**, typecheck clean. Live: **44/45** — the single remaining miss is "This City Won't Be Lonely Anymore" (only a 72s upload on YouTube vs 183s Spotify; the ±90s duration window intentionally keeps it null).
+
+### trackError Permanent — No More Random Unverified Replacements
+
+- **Problem (user report)** — a Thai playlist track mid-playback hit a YouTube age-gate (`This video requires login` across WEB/ANDROID_VR/TVHTML5 with a stream read error), was classified as a permanent track error, and the bot's multi-source fallback (`ytsearch "Tilly Birds |Official MV|"`) returned the first raw hit and played it from position 0 — user perceived it as "the song restarted" but the track was actually replaced with an unverified video.
+- **Fix** — `musicEvents.ts` (`trackError` permanent branch): if the failing track carries Spotify metadata, fallback now uses `resolveStoredSpotifyTrack` (verified, strict 1.0). If no verified candidate exists, the track is **skipped silently** — never replaced with an unverified random upload. Non-Spotify tracks keep the existing multi-source fallback (unchanged behavior).
+- **Tests** — `musicEvents.test.ts` +3: Spotify permanent error never plays unverified multi-source video; verified Spotify fallback plays; non-Spotify permanent error keeps multi-source fallback. **633/633 pass**, typecheck clean.
+
 ## 2026-08-02 — v3.3.5
 
 ### Strict "100% Artist+Title" Spotify Verification — Deezer Fallback, Silent Skip

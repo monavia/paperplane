@@ -30,7 +30,12 @@ vi.mock("../services/TitleResolver.js", () => ({
   saveSpotifyMeta: vi.fn(() => ({})),
   applySpotifyMeta: vi.fn(),
 }));
-vi.mock("../services/SearchService.js", () => ({ findTrackWithDuration: vi.fn(() => null) }));
+vi.mock("../services/SearchService.js", () => ({
+  findTrackWithDuration: vi.fn(() => null),
+  pickBestTrack: vi.fn((tracks: any) => tracks?.[0] || null),
+  searchWithRetry: vi.fn(() => null),
+}));
+vi.mock("../services/SpotifyResolver.js", () => ({ resolveStoredSpotifyTrack: vi.fn(() => null) }));
 vi.mock("../../cache/CacheAdapter.js", () => ({ getAdapter: vi.fn(() => ({ get: vi.fn(), set: vi.fn() })) }));
 vi.mock("../../cache/DeadTrackService.js", () => ({
   isDead: vi.fn(() => false), markDead: vi.fn(), deadFingerprint: vi.fn(() => ""), deadSpotifyFingerprint: vi.fn(() => ""),
@@ -43,6 +48,9 @@ vi.mock("../../ui/embeds/NowPlayingEmbed.js", () => ({ getSourceEmoji: vi.fn(() 
 
 import * as musicEvents from "./musicEvents.js";
 import * as lavalink from "./lavalink.js";
+import * as SearchService from "../services/SearchService.js";
+import * as SpotifyResolver from "../services/SpotifyResolver.js";
+import * as TitleResolver from "../services/TitleResolver.js";
 import state from "../../core/state/StateManager.js";
 import Logger from "../../core/utils/Logger.js";
 import * as EventBus from "../events/EventBus.js";
@@ -296,5 +304,67 @@ describe("trackStart autoplay prefetch scheduling", () => {
     assert.ok(handler);
     await handler(player, { info: { title: "Live", author: "A" } });
     assert.strictEqual(inst.schedulePrefetch.mock.calls.length, 0);
+  });
+});
+
+describe("trackError spotify fallback verification", () => {
+  beforeEach(() => {
+    (lavalink.get as any).mockReturnValue({ on: (e: string, h: Function) => { registeredHandlers.set(e, h); } });
+    musicEvents.register({} as any);
+  });
+
+  const PERM_MSG = "All clients failed to load the item. Client [WEB] failed: This video requires login.";
+
+  function mkPlayer(guildId: string) {
+    return {
+      guildId,
+      node: { connected: true },
+      play: vi.fn(() => Promise.resolve()) as any,
+      stopPlaying: vi.fn(() => Promise.resolve()) as any,
+    };
+  }
+
+  function mkSpotifyTrack(uri = "youtube:orig") {
+    return { info: { title: "Thai Song", author: "Artist", uri, spotifyUrl: "https://open.spotify.com/track/x", duration: 192_000 } };
+  }
+
+  test("spotify permanent error never plays unverified multi-source video", async () => {
+    const player = mkPlayer("te-1");
+    const track = mkSpotifyTrack();
+    state.nowPlaying.get = vi.fn(() => track);
+    (SearchService.searchWithRetry as any).mockResolvedValue({ tracks: [{ info: { title: "RANDOM WRONG VIDEO", uri: "youtube:wrong" } }] });
+    (SpotifyResolver.resolveStoredSpotifyTrack as any).mockResolvedValue(null);
+    const handler = registeredHandlers.get("trackError");
+    assert.ok(handler, "trackError handler registered");
+    await handler(player, track, { error: PERM_MSG });
+    const playedUris = player.play.mock.calls.map((c: any[]) => c[0]?.track?.info?.uri);
+    assert.ok(!playedUris.includes("youtube:wrong"), "must not play unverified random upload");
+  });
+
+  test("spotify permanent error plays verified fallback when one exists", async () => {
+    const player = mkPlayer("te-2");
+    const track = mkSpotifyTrack();
+    state.nowPlaying.get = vi.fn(() => track);
+    const verified = { info: { title: "Thai Song (Official)", uri: "youtube:verified", duration: 192_000 } };
+    (SpotifyResolver.resolveStoredSpotifyTrack as any).mockResolvedValue(verified);
+    const handler = registeredHandlers.get("trackError");
+    assert.ok(handler);
+    await handler(player, track, { error: PERM_MSG });
+    const played = player.play.mock.calls[0]?.[0] as any;
+    assert.strictEqual(player.play.mock.calls.length, 1);
+    assert.strictEqual(played?.track?.info?.uri, "youtube:verified");
+  });
+
+  test("non-spotify permanent error keeps multi-source fallback", async () => {
+    const player = mkPlayer("te-3");
+    const track = { info: { title: "Plain Song", author: "A", uri: "youtube:orig" } };
+    state.nowPlaying.get = vi.fn(() => track);
+    (TitleResolver.saveSpotifyMeta as any).mockReturnValueOnce(null);
+    (SearchService.searchWithRetry as any).mockResolvedValue({ tracks: [{ info: { title: "Fallback Video", uri: "youtube:fb" } }] });
+    const handler = registeredHandlers.get("trackError");
+    assert.ok(handler);
+    await handler(player, track, { error: PERM_MSG });
+    const played = player.play.mock.calls[0]?.[0] as any;
+    assert.strictEqual(played?.track?.info?.uri, "youtube:fb");
   });
 });

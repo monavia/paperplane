@@ -1,6 +1,6 @@
 import { describe, test, vi, beforeEach } from "vitest";
 import assert from "node:assert";
-import { parseUrl, scrape } from "./SpotifyScraper.js";
+import { parseUrl, scrape, splitArtists } from "./SpotifyScraper.js";
 
 const { cache } = vi.hoisted(() => ({ cache: new Map<string, any>() }));
 
@@ -58,8 +58,45 @@ describe("SpotifyScraper parseUrl", () => {
   });
 });
 
+describe("SpotifyScraper splitArtists", () => {
+  test("single artist stays intact", () => {
+    assert.deepStrictEqual(splitArtists("Ada Band"), ["Ada Band"]);
+  });
+
+  test("comma-joined artists split", () => {
+    assert.deepStrictEqual(splitArtists("Lindsey Stirling, Mako"), ["Lindsey Stirling", "Mako"]);
+  });
+
+  test("ampersand-joined artists split", () => {
+    assert.deepStrictEqual(splitArtists("Lindsey Stirling & Mako"), ["Lindsey Stirling", "Mako"]);
+  });
+
+  test("ft. joined artists split", () => {
+    assert.deepStrictEqual(splitArtists("Allan ft. X"), ["Allan", "X"]);
+  });
+
+  test("feat. joined artists split", () => {
+    assert.deepStrictEqual(splitArtists("DJ feat. M"), ["DJ", "M"]);
+  });
+
+  test("empty or missing subtitle returns empty array", () => {
+    assert.deepStrictEqual(splitArtists(""), []);
+    assert.deepStrictEqual(splitArtists(undefined as unknown as string), []);
+  });
+});
+
 describe("SpotifyScraper scrape playlist", () => {
   beforeEach(() => cache.clear());
+
+  test("maps comma-joined subtitle to a separate artists array", async () => {
+    const tracks = [{ title: "Lose You Now", subtitle: "Lindsey Stirling, Mako", uri: "spotify:track:500" }];
+    const fetchMock = vi.fn(async () => new Response(embedHtml(tracks), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await scrape("https://open.spotify.com/playlist/abc123");
+    assert.deepStrictEqual(result[0].artists, ["Lindsey Stirling", "Mako"]);
+    assert.strictEqual(result[0].query, "Lindsey Stirling Mako Lose You Now");
+    vi.unstubAllGlobals();
+  });
 
   test("returns embed tracks with a single fetch when offset is ignored", async () => {
     const tracks = Array.from({ length: 100 }, (_, i) => mkTrack(i));
