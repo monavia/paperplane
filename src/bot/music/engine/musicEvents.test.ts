@@ -355,16 +355,47 @@ describe("trackError spotify fallback verification", () => {
     assert.strictEqual(played?.track?.info?.uri, "youtube:verified");
   });
 
-  test("non-spotify permanent error keeps multi-source fallback", async () => {
+  test("yt non-spotify permanent error retries original URI without ytsearch", async () => {
     const player = mkPlayer("te-3");
-    const track = { info: { title: "Plain Song", author: "A", uri: "youtube:orig" } };
+    const track = { info: { title: "Empire Of The Sun", author: "Empire Of The Sun - Topic", uri: "https://www.youtube.com/watch?v=hN5X4kGhAtU" } };
     state.nowPlaying.get = vi.fn(() => track);
     (TitleResolver.saveSpotifyMeta as any).mockReturnValueOnce(null);
-    (SearchService.searchWithRetry as any).mockResolvedValue({ tracks: [{ info: { title: "Fallback Video", uri: "youtube:fb" } }] });
+    (SearchService.searchWithRetry as any).mockResolvedValue({ tracks: [{ info: { title: "FlicFlac Remix", uri: "youtube:remix" } }] });
     const handler = registeredHandlers.get("trackError");
     assert.ok(handler);
     await handler(player, track, { error: PERM_MSG });
+    assert.strictEqual(player.play.mock.calls.length, 1);
     const played = player.play.mock.calls[0]?.[0] as any;
-    assert.strictEqual(played?.track?.info?.uri, "youtube:fb");
+    assert.strictEqual(played?.track?.info?.uri, "https://www.youtube.com/watch?v=hN5X4kGhAtU");
+    assert.strictEqual((SearchService.searchWithRetry as any).mock.calls.length, 0, "must never call ytsearch for non-Spotify permanent error");
+  });
+
+  test("yt non-spotify retry failure skips silently (no ytsearch)", async () => {
+    const player = mkPlayer("te-4");
+    player.play = vi.fn(() => Promise.reject(new Error("node timeout"))) as any;
+    const track = { info: { title: "Restricted Video", author: "A", uri: "https://www.youtube.com/watch?v=ABC" } };
+    state.nowPlaying.get = vi.fn(() => track);
+    (TitleResolver.saveSpotifyMeta as any).mockReturnValueOnce(null);
+    (SearchService.searchWithRetry as any).mockResolvedValue({ tracks: [{ info: { title: "Wrong Fallback", uri: "youtube:wrong" } }] });
+    const handler = registeredHandlers.get("trackError");
+    assert.ok(handler);
+    await handler(player, track, { error: PERM_MSG });
+    assert.strictEqual(player.play.mock.calls.length, 1, "retried once with original");
+    assert.strictEqual(player.stopPlaying.mock.calls.length, 1, "skipped silent after retry failed");
+    assert.strictEqual((SearchService.searchWithRetry as any).mock.calls.length, 0, "must never call ytsearch when retry fails");
+  });
+
+  test("track without URI and without Spotify meta skips silently", async () => {
+    const player = mkPlayer("te-5");
+    const track = { info: { title: "Orphan Track", author: "A" } };
+    state.nowPlaying.get = vi.fn(() => track);
+    (TitleResolver.saveSpotifyMeta as any).mockReturnValueOnce(null);
+    (SearchService.searchWithRetry as any).mockResolvedValue({ tracks: [{ info: { title: "Any Fallback", uri: "youtube:any" } }] });
+    const handler = registeredHandlers.get("trackError");
+    assert.ok(handler);
+    await handler(player, track, { error: PERM_MSG });
+    assert.strictEqual(player.play.mock.calls.length, 0, "no replay for orphan track");
+    assert.strictEqual(player.stopPlaying.mock.calls.length, 1, "skip silent");
+    assert.strictEqual((SearchService.searchWithRetry as any).mock.calls.length, 0, "no ytsearch fallback");
   });
 });

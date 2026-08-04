@@ -24,6 +24,17 @@
 - **Fix** — `musicEvents.ts` (`trackError` permanent branch): if the failing track carries Spotify metadata, fallback now uses `resolveStoredSpotifyTrack` (verified, strict 1.0). If no verified candidate exists, the track is **skipped silently** — never replaced with an unverified random upload. Non-Spotify tracks keep the existing multi-source fallback (unchanged behavior).
 - **Tests** — `musicEvents.test.ts` +3: Spotify permanent error never plays unverified multi-source video; verified Spotify fallback plays; non-Spotify permanent error keeps multi-source fallback. **633/633 pass**, typecheck clean.
 
+### trackError Permanent — YouTube Mix Playlist No More Random Remixes
+
+- **Problem (user report, log)** — a YouTube Mix playlist (`?list=RDMMhN5X4kGhAtU`) — track *pertama* (video spesifik yang dituju) selalu `trackError` permanent di tengah durasi karena age-gate (`This video requires login`) atau region-lock; track kedua dst aman karena video lain di Mix tidak kena age-gate yang sama. Sebelumnya `findMultiSourceFallback` ytsearch dengan query literal `author title` → return video beda (mis. "FlicFlac Remix" dari query "Empire Of The Sun We Are The People") → play dari posisi 0 dengan lagu beda.
+- **Fix** — `musicEvents.ts` permanent branch restructured:
+  - Track bersumber **Spotify** (`savedMeta`): `resolveStoredSpotifyTrack` (verified strict 1.0) — unchanged dari v3.3.6
+  - Track **YouTube non-Spotify** dengan HTTP/HTTPS URI: **retry track asli 1x** (encoded fresh dari node sehat, `player.play({ track, clientTrack: track })`) — tidak panggil ytsearch
+  - Track tanpa URI + tanpa Spotify meta: **skip silent**
+  - Multi-source fallback ytsearch untuk non-Spotify **dihapus** — tidak ada cara strict-verify track YouTube non-Spotify tanpa metadata Spotify, dan ytsearch cenderung return upload berbeda/versi beda
+- **Tests** — `musicEvents.test.ts` `trackError spotify fallback verification` rewritten: +3 (yt non-Spotify retries original URI without ytsearch; yt non-Spotify retry failure skips silently; track without URI + Spotify meta skips silently). Test lama `non-spotify permanent error keeps multi-source fallback` dihapus karena behaviour itu yang diganti. **635/635 pass**, typecheck clean.
+- **Live behavior** — track pertama Mix playlist yang kena age-gate sekarang restart dengan track sama dari encoded fresh (kalau gagal → skip ke track berikutnya, bukan play video beda/remix).
+
 ## 2026-08-02 — v3.3.5
 
 ### Strict "100% Artist+Title" Spotify Verification — Deezer Fallback, Silent Skip

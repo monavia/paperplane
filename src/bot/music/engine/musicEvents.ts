@@ -628,9 +628,26 @@ function register(client: any): void {
           } else {
             Logger.warn(`[trackError] No verified Spotify fallback for "${track?.info?.title?.slice(0, 30) || "?"}" — track will be skipped`);
           }
+        } else if (track?.info?.uri && /^https?:\/\//.test(track.info.uri)) {
+          // YouTube non-Spotify: re-issue original URI for a fresh encoded from any healthy node.
+          // Never call ytsearch — that swaps to a different upload/version (e.g. a remix).
+          Logger.warn(`[trackError] Permanent on YT track — retrying original URI: "${track?.info?.title?.slice(0, 30) || "?"}"`);
+          try {
+            markTrackStartSuppressed(player.guildId);
+            await player.play({ track, clientTrack: track });
+            return;
+          } catch (err: any) {
+            Logger.warn(`[trackError] Original YT retry failed — skipping: ${err?.message?.slice(0, 60) || "unknown"}`);
+            manualAdvances.delete(player.guildId);
+            player.stopPlaying().catch(Logger.safe("bot/music/engine/musicEvents.ts"));
+            return;
+          }
         } else {
-          Logger.warn(`[trackError] Permanent error — skipping retries, multi-source fallback: "${track?.info?.title?.slice(0, 30) || "?"}"`);
-          alt = await findMultiSourceFallback(player, track, clientRef?.user);
+          // No Spotify meta and no HTTP URI — no good fallback available. Skip silent.
+          Logger.warn(`[trackError] Permanent error on track without URI — skipping silently: "${track?.info?.title?.slice(0, 30) || "?"}"`);
+          manualAdvances.delete(player.guildId);
+          player.stopPlaying().catch(Logger.safe("bot/music/engine/musicEvents.ts"));
+          return;
         }
       } else if (isDeezerError || isNetworkError) {
         retried.set(trackId, 1);
