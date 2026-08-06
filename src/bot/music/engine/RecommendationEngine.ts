@@ -28,11 +28,11 @@ const DEFAULT_SIGNAL_WEIGHTS: Record<string, number> = {
 
 const playedTracks = new Map<string, Set<string>>();
 const playedEntries = new Map<string, { title: string; author: string; identifier?: string }[]>();
-const VARIANT_PAREN_RE = /[([][^()\]]*(?:official|remix|radio\s*edit|lyrics?|lyric\s*video|slowed|sped\s*up|cover|karaoke|instrumental|audio|video|mv|4k|hd|720p|1080p)[^()\]]*[)\]]/gi;
-const VARIANT_DASH_RE = /[-\u2013\u2014]\s*(?:official(?:\s*(?:music\s*)?(?:video|audio)|\s*lyrics?)?|lyric\s*video|remix|radio\s*edit|slowed(?:\s*\+?\s*reverb)?|sped\s*up|cover|karaoke|instrumental|mv|4k|hd|720p|1080p)\s*$/i;
-const stripTitleVariants = (s: string) => s.replace(VARIANT_PAREN_RE, "").replace(VARIANT_DASH_RE, "").trim();
-const AUTHOR_SUFFIX_RE = /[-–—]\s*topic\s*$|\s*official\s*$/i;
-const normAuthor = (s: any) => (s || "").toLowerCase().replace(AUTHOR_SUFFIX_RE, "").replace(/[^\p{L}\p{N}]/gu, "");
+export const VARIANT_PAREN_RE = /[([][^()\]]*(?:official|remix|radio\s*edit|lyrics?|lyric\s*video|slowed|sped\s*up|cover|karaoke|instrumental|audio|video|mv|4k|hd|720p|1080p)[^()\]]*[)\]]/gi;
+export const VARIANT_DASH_RE = /[-\u2013\u2014]\s*(?:official(?:\s*(?:music\s*)?(?:video|audio)|\s*lyrics?)?|lyric\s*video|remix|radio\s*edit|slowed(?:\s*\+?\s*reverb)?|sped\s*up|cover|karaoke|instrumental|mv|4k|hd|720p|1080p)\s*$/i;
+export const stripTitleVariants = (s: string) => s.replace(VARIANT_PAREN_RE, "").replace(VARIANT_DASH_RE, "").trim();
+export const AUTHOR_SUFFIX_RE = /[-–—]\s*topic\s*$|\s*official\s*$/i;
+export const normAuthor = (s: any) => (s || "").toLowerCase().replace(AUTHOR_SUFFIX_RE, "").replace(/[^\p{L}\p{N}]/gu, "");
 const CJK_RE = /[\u3040-\u30FF\u3400-\u9FFF\uAC00-\uD7AF]/;
 const levenshtein = (a: string, b: string): number => {
   if (a === b) return 0;

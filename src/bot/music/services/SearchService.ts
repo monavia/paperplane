@@ -13,8 +13,34 @@ const BAD_KEYWORDS = [
 
 const BAD_WORDS_RE = BAD_KEYWORDS.map((kw) => new RegExp("\\b" + kw.replace(/ /g, "\\s") + "\\b", "i"));
 
+const DJ_MASHUP_RE = /^dj\b/i;
+const MASHUP_X_RE = /\bx\b/i;
+
+function isDjMashup(title: string, author?: string): boolean {
+  return DJ_MASHUP_RE.test(title) && MASHUP_X_RE.test(title) && !DJ_MASHUP_RE.test(author || "");
+}
+
+const SELF_TITLE_AUTHOR_RE = /\s*[-–—]\s*topic\s*$/i;
+
+function isSelfTitledAuthor(title: string, author?: string): boolean {
+  const t = title.toLowerCase().trim();
+  const a = (author || "").toLowerCase().replace(SELF_TITLE_AUTHOR_RE, "").trim();
+  if (!t || !a) return false;
+  if (t === a) return true;
+  const segments = t.split(/\s*[-–—]\s*/).map((s) => s.trim()).filter(Boolean);
+  return segments.length >= 2 && segments.every((s) => s === a);
+}
+
 function hasBadKeyword(title: string, author?: string): boolean {
-  return BAD_WORDS_RE.some((re) => re.test(title)) || isCover(title, author);
+  return BAD_WORDS_RE.some((re) => re.test(title)) || isCover(title, author) || isDjMashup(title, author);
+}
+
+function cleanCandidates(candidates: any[]): any[] {
+  return candidates.filter((t) => {
+    const title = (t.info?.title || "").toLowerCase();
+    const author = t.info?.author;
+    return !hasBadKeyword(title, author) && !isJunkTrack(t.info?.title || "", author) && !LIVE_RE.test(title);
+  });
 }
 
 const PREFERRED_SOURCES = new Set(["youtube", "ytmusic", "youtubemusic"]);
@@ -49,11 +75,12 @@ function scoreQuery(track: any, keywords: string[]): number {
   const author = (track.info?.author || "").toLowerCase();
   let score = 0;
   let matched = 0;
+  const selfTitled = isSelfTitledAuthor(title, author);
   for (const kw of keywords) {
     const inTitle = title.includes(kw);
-    const inAuthor = author.includes(kw);
+    const inAuthor = !selfTitled && author.includes(kw);
     if (inTitle) score += 5;
-    if (inAuthor) score += 3;
+    if (inAuthor) score += 5;
     if (inTitle || inAuthor) matched++;
   }
   if (matched === keywords.length) score += 10;
@@ -83,7 +110,7 @@ export function pickBestTrack(tracks: any[], query?: string): any {
 
   let best = first;
   if (hasBadKeyword(firstTitle, first.info?.author) || isJunkTrack(first.info?.title || "", first.info?.author) || LIVE_RE.test(firstTitle)) {
-    const filtered = candidates.filter((t) => !hasBadKeyword((t.info?.title || "").toLowerCase(), t.info?.author) && !isJunkTrack(t.info?.title || "", t.info?.author) && !LIVE_RE.test((t.info?.title || "").toLowerCase()));
+    const filtered = cleanCandidates(candidates);
     if (filtered.length) {
       const scored = filtered.map((t: any) => ({ track: t, score: scoreTrack(t) + scoreQuery(t, keywords) }));
       scored.sort((a, b) => b.score - a.score);
@@ -98,8 +125,8 @@ export function pickBestTrack(tracks: any[], query?: string): any {
       // substring match tak bisa mencocokkan; percaya urutan node (YTM).
       best = candidates[0];
     } else {
-      const nonLive = candidates.filter((t) => !LIVE_RE.test((t.info?.title || "").toLowerCase()));
-      const scorePool = nonLive.length ? nonLive : candidates;
+      const cleanPool = cleanCandidates(candidates);
+      const scorePool = cleanPool.length ? cleanPool : candidates;
       const scored = scorePool.map((t: any) => ({ track: t, score: scoreTrack(t) + scoreQuery(t, keywords) }));
       scored.sort((a, b) => b.score - a.score);
       best = scored[0].track;

@@ -1,4 +1,4 @@
-import RecommendationEngine from "./RecommendationEngine.js";
+import RecommendationEngine, { stripTitleVariants, normAuthor } from "./RecommendationEngine.js";
 import Logger from "../../core/utils/Logger.js";
 import { MIN_DURATION_MS, MAX_DURATION_MS } from "../services/DurationFilter.js";
 
@@ -33,8 +33,7 @@ class AutoplayEngine {
   }
 
   private _trackKey(track: any): string {
-    const norm = (s: any) => (s || "").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
-    return `${norm(track?.info?.author || "")}-${norm(track?.info?.title || "")}`;
+    return `${normAuthor(track?.info?.author || "")}-${stripTitleVariants(track?.info?.title || "").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "")}`;
   }
 
   private _sourceKey(track: any): string {
@@ -105,6 +104,12 @@ class AutoplayEngine {
     if (!track?.info) return null;
 
     if (this._isDisabled(guildId)) return null;
+
+    // Seed track ke history supaya loop-detect bekerja dari awal (hindar repeat seed).
+    const seedKey = this._trackKey(track);
+    let keys = this.recentAutoplay.get(guildId);
+    if (!keys) { keys = []; this.recentAutoplay.set(guildId, keys); }
+    if (!keys.includes(seedKey)) keys.push(seedKey);
 
     // Prefetch hit: rec sudah dihitung saat lagu masih berjalan → return instan
     // (YouTube-style: gap < 300ms). Cache dibuang setelah dipakai.

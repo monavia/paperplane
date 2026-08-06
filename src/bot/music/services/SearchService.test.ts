@@ -213,3 +213,93 @@ describe("pickBestTrack live handling", () => {
     assert.strictEqual(best.info.title, "Lay All Your Love On Me");
   });
 });
+
+describe("pickBestTrack DJ mashup handling", () => {
+  test("DJ remix mashup loses to original track despite title keyword density", () => {
+    const tracks = [
+      mk("Bunga", "Fade2Black & Bondan Prakoso"),
+      mk("Hayat Fvnkyy - DJ BUNGA BONDAN x PURA PURA BAHAGIA", "Hayat Fvnkyy"),
+    ];
+    const best = pickBestTrack(tracks, "bondan bunga");
+    assert.strictEqual(best.info.title, "Bunga");
+  });
+
+  test("DJ mashup in middle position is filtered during keyword scoring", () => {
+    const tracks = [
+      mk("Bunga", "Fade2Black & Bondan Prakoso"),
+      mk("Lagu Lain", "Artis Lain"),
+      mk("DJ BUNGA BONDAN x PURA PURA BAHAGIA", "Hayat Fvnkyy"),
+    ];
+    const best = pickBestTrack(tracks, "bondan bunga");
+    assert.strictEqual(best.info.title, "Bunga");
+  });
+
+  test("author match ties with title match and keeps node order", () => {
+    const tracks = [
+      mk("Bunga", "Bondan Prakoso"),
+      mk("Bunga Bondan", "Mix Master"),
+    ];
+    const best = pickBestTrack(tracks, "bondan bunga");
+    assert.strictEqual(best.info.title, "Bunga");
+  });
+
+  test("artist whose name starts with DJ is not treated as mashup", () => {
+    const tracks = [
+      mk("CYKA BLYAT", "DJ Blyatman"),
+      mk("CYKA BLYAT (Remix)", "Someone Else"),
+    ];
+    const best = pickBestTrack(tracks, "cyka blyat");
+    assert.strictEqual(best.info.author, "DJ Blyatman");
+  });
+
+  test("DJ-mashup-only result still playable", () => {
+    const tracks = [mk("DJ BUNGA BONDAN x PURA PURA BAHAGIA", "Hayat Fvnkyy")];
+    const best = pickBestTrack(tracks, "bondan bunga");
+    assert.strictEqual(best.info.title, "DJ BUNGA BONDAN x PURA PURA BAHAGIA");
+  });
+});
+
+describe("pickBestTrack self-titled channel handling", () => {
+  test("self-titled auto channel loses to official video even when first", () => {
+    const tracks = [
+      mk("Full Senyum Sayang - Full Senyum Sayang", "Full Senyum Sayang"),
+      mk("EVAN LOSS - FULL SENYUM SAYANG (OFFICIAL MUSIC VIDEO)", "EVAN LOSS"),
+    ];
+    const best = pickBestTrack(tracks, "full senyum sayang");
+    assert.strictEqual(best.info.author, "EVAN LOSS");
+  });
+
+  test("self-titled '- Topic' channel loses to real artist channel", () => {
+    const tracks = [
+      mk("Full Senyum Sayang", "Full Senyum Sayang - Topic"),
+      mk("FULL SENYUM SAYANG (Official Music Video)", "EVAN LOSS"),
+    ];
+    const best = pickBestTrack(tracks, "full senyum sayang");
+    assert.strictEqual(best.info.author, "EVAN LOSS");
+  });
+
+  test("self-titled channel in middle position loses during keyword scoring", () => {
+    const tracks = [
+      mk("Lagu Lain", "Artis Lain"),
+      mk("Full Senyum Sayang - Full Senyum Sayang", "Full Senyum Sayang"),
+      mk("FULL SENYUM SAYANG (Official Music Video)", "EVAN LOSS"),
+    ];
+    const best = pickBestTrack(tracks, "full senyum sayang");
+    assert.strictEqual(best.info.author, "EVAN LOSS");
+  });
+
+  test("self-titled-only result still playable", () => {
+    const tracks = [mk("Full Senyum Sayang - Full Senyum Sayang", "Full Senyum Sayang")];
+    const best = pickBestTrack(tracks, "full senyum sayang");
+    assert.strictEqual(best.info.title, "Full Senyum Sayang");
+  });
+
+  test("non-self-titled author still gets keyword credit", () => {
+    const tracks = [
+      mk("Lagu X", "Artis Lain"),
+      mk("Lagu X", "Band Bondan"),
+    ];
+    const best = pickBestTrack(tracks, "bondan");
+    assert.strictEqual(best.info.author, "Band Bondan");
+  });
+});
